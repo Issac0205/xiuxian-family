@@ -5,6 +5,7 @@
 所有数值、规则、界面都写在一个 HTML 里 —— 没有构建步骤对玩家可见，不需要服务器，不需要联网。
 
 > **直接玩**：下载 [`game.html`](game.html) 用浏览器打开即可。
+> 也可 **[在线试玩](https://Issac0205.github.io/xiuxian-family/game.html)**（需先在仓库 Settings → Pages 里启用）。
 > 存档在浏览器 localStorage（键 `xiuxian-family/save/v1`），**换浏览器或清缓存会丢档**。
 
 ---
