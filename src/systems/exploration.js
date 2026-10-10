@@ -105,10 +105,11 @@ function mapIsPacified(state, nodeId) {
 /** 所有已占领节点的产出合计（灵石/秒）。镇守不足的不产出。 */
 function mapYieldPerSec(state) {
   const w = worldOf(state);
+  const tax = moralityTaxMult(state);
   let total = 0;
   for (const id of w.held) {
     if (!mapIsPacified(state, id)) continue;
-    total += mapNode(id)?.yield || 0;
+    total += (mapNode(id)?.yield || 0) * tax;
   }
   return total;
 }
@@ -164,8 +165,9 @@ function advanceTerritories(state, dt, now = Date.now()) {
     const node = mapNode(id);
     if (!node) continue;
     if (mapIsPacified(state, id)) {
-      // 金手指：掌天瓶翻材料、气运加身砍灵石
-      state.spiritStones = (state.spiritStones || 0) + (node.yield || 0) * dt * metaStoneMult(state);
+      // 金手指：掌天瓶翻材料、气运加身砍灵石；再乘一层道心的民心倍率
+      // —— 魔道能打，但治下的人不肯交粮
+      state.spiritStones = (state.spiritStones || 0) + (node.yield || 0) * dt * metaStoneMult(state) * moralityTaxMult(state);
       // 药材、矿料、符文跟赋税同规则：只有当有效镇守时才产出
       const matMult = metaMaterialMult(state);
       if (node.herb) addHerbs(state, node.herb, (node.herbYield || 0) * dt * matMult);
@@ -227,9 +229,11 @@ function mapPlan(state, nodeId) {
     return { ok: false, reason: '至少需要一名修士', status };
   }
   const power = derive(state).totalPower;
-  // 破阵符挂着的「下一次」加成（百分点，直接加在胜算上）
+  // 破阵符挂着的「下一次」加成（百分点，直接加在胜算上）；
+  // 道心的「凶名」（魔道守方先怯）与剑修的攻伐加成也加在这里
   const rune = runePending(state, 'attack');
-  const rate = Math.max(.05, Math.min(.95, power / (power + node.power) + rune));
+  const moral = moralityWarBonus(state) + schoolFx(state, 'warBonus');
+  const rate = Math.max(.05, Math.min(.95, power / (power + node.power) + rune + moral));
   return {
     ok: true, kind: 'foe', node, status,
     name: node.name, tier: node.tier,

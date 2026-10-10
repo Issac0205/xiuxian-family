@@ -104,10 +104,12 @@ function caveSurvival(state, person, cave) {
   const rune = runePending(state, 'cave');
   // 金手指「气运加身」的常驻加成
   const meta = metaSurvivalBonus(state);
+  // 道心（低则天谴）与剑修流派（好斗，进洞天反而吃亏）
+  const moral = moralityCaveBonus(state) + schoolFx(state, 'caveBonus');
   // 层差按全局 realmIndex 算。炼气期的 index 与「层数」同值，所以既有的配平不变。
   const levelGap = Math.max(0, (cave?.realm || 1) - (person?.realmIndex || 1));
   const base = .82 * Math.exp(-.78 * levelGap) * (person?.talent || 1);
-  return Math.max(.015, Math.min(.98, base + mb.survive + art.survive + rune + meta));
+  return Math.max(.015, Math.min(.98, base + mb.survive + art.survive + rune + meta + moral));
 }
 
 /** 该道途当前是否已被某个位置占用（同途不可两立）。 */function manualDaoTaken(state, dao, exceptId) {

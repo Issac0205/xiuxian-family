@@ -2992,6 +2992,13 @@ function createState(now = Date.now()) {
     /** 灵石。凡人换来的修行货币，兑率极低，所以是小数。 */
     spiritStones: 0,
 
+    /**
+     * 道心（道德值）0–100。
+     * 它不是「善恶评分」，而是**你在这个世界里被当成什么人**：
+     * 凶名在外能镇住人，也会招来天谴。三条后果见 data/morality.js。
+     */
+    morality: MORALITY_START,
+
     /** 已发现的秘闻在 SECRETS 里的下标。 */
     secrets: [],
 
@@ -3006,6 +3013,7 @@ function createState(now = Date.now()) {
       nextId: 1,
       poolBlueprint:false, pool:0, compass:false, veins:[], mineLevel:0, mineWorkers:0, clues:0, caveRuns:0, conquests:[],
       pills: 0,       // 已服下的祛障丹
+      humanPills: 0,  // 人丹存量（血煞一脉独有，见 systems/schools.js）
       unlocked: false, // 是否已踏入炼气篇
     },
 
@@ -3485,16 +3493,19 @@ function derive(state) {
     (crowdRatio - CROWD.threshold) / (1 - CROWD.threshold),
   );
 
+  // 出生率最后乘一层「流派倍率」——合欢双修走的就是这一条
   const birthRate =
-    BASE.birthRate + fx.birthFlat + (b.field || 0) * FIELD_BIRTH * (1 + fx.fieldBonus);
+    (BASE.birthRate + fx.birthFlat + (b.field || 0) * FIELD_BIRTH * (1 + fx.fieldBonus))
+    * schoolBirthMult(state);
 
   /**
    * 死亡率 = 基础 + 拥挤 + 对外扩张的代价。
    * 演武台与商队驿站各按座数计——走出去的人回不来，人口基就薄一层。
+   * 最后再乘一层「流派倍率」——血煞魔功养功要拿人填。
    */
   const expandDeath = (b.arena || 0) * ARENA_DEATH + (b.caravan || 0) * CARAVAN_DEATH;
   const crowdDeath = CROWD.k * crowdOver * crowdOver;
-  const deathRate = BASE.deathRate + crowdDeath + expandDeath + fx.deathFlat;
+  const deathRate = (BASE.deathRate + crowdDeath + expandDeath + fx.deathFlat) * schoolDeathMult(state);
   const netRate = birthRate - deathRate;
 
   // ── 银两 ──────────────────────────────────────────────────
@@ -4167,12 +4178,15 @@ function rollRoot(rng = Math.random, innate = false) {
  * 区块：功法表：道途 / 品阶 / 十五本 / 参悟调参常量
  * 原属 src/data/cultivation.js 第 39–110 行
  * ──────────────────────────────────────────────────────────────── */
-/* ────────────── 秘籍：道途 × 品阶，主修 + 辅修 ──────────────
+/* ────────────── 秘籍：道途 × 品阶 × 流派，主修 + 辅修 ──────────────
  *
- * 设计要点（详见 docs/秘籍机制策划.md）：
+ * 设计要点（详见 docs/秘籍机制策划.md、docs/85-流派与道心.md）：
  *  - 五条「道途」各服务一种玩法，正好对应五种修士职责；
  *  - 三个「品阶」决定数值档位，也决定出处（洞天/攻伐的难度）；
+ *  - **流派**给功法一个玩法身份：主修位的流派会带来独有机制与代价。
+ *    前十五本（无 school 字段）一律按「玄门正宗」处理 —— 没有机制，也没有代价。
  *  - 主修吃满效果，辅修只吃 45%，且同一道途不可占两个位置 —— 这才是选择；
+ *  - **只有主修位的流派生效**，所以「主修选哪本」就是「这一世走哪条路」；
  *  - 重复获得转为「参悟」，也可以花灵石+线索主动参悟，重复掉落不再是废物。
  *
  * 前三个 id（breath/spring/star）沿用旧版的 id 与数值，所以旧存档
@@ -4225,6 +4239,26 @@ const CULTIVATION_MANUALS = [
   { id:'jianxing', name:'健行散',   dao:'peril', tier:1, effect:{ survive:0.08, stones:0.15 } },
   { id:'guixi',    name:'龟息功',   dao:'peril', tier:2, effect:{ survive:0.18, stones:0.35 } },
   { id:'dayan',    name:'大衍遁法', dao:'peril', tier:3, effect:{ survive:0.35, stones:0.70 } },
+
+  /* ── 以下九本带「流派」，独有机制与代价见 data/schools.js ──
+     数值普遍比同阶的玄门功法略高一点 —— 代价写在流派上，不写在这里。 */
+
+  // 血煞魔功：以血肉养功。主修任意一本都解锁「炼人丹」
+  { id:'xuesha', name:'血煞炼形诀', dao:'ward',  tier:1, school:'demonic', effect:{ power:0.45 } },
+  { id:'wanhun', name:'万魂幡',     dao:'ward',  tier:2, school:'demonic', effect:{ power:0.95 } },
+  { id:'rendan', name:'人丹要术',   dao:'breath', tier:3, school:'demonic', effect:{ training:1.85 } },
+
+  // 合欢双修：人丁兴旺，进境亦快，但不善斗
+  { id:'hehuan', name:'合欢采补术', dao:'breath', tier:1, school:'dual', effect:{ training:0.55 } },
+  { id:'huanxi', name:'欢喜禅功',   dao:'breath', tier:2, school:'dual', effect:{ training:1.35 } },
+
+  // 剑修：一剑破万法，但静不下心
+  { id:'qinglian', name:'青莲剑歌', dao:'ward', tier:2, school:'sword', effect:{ power:0.80 } },
+  { id:'zhanwang', name:'斩妄剑经', dao:'ward', tier:3, school:'sword', effect:{ power:1.55 } },
+
+  // 丹修 / 器修：各自抬高本行的成功率
+  { id:'danding',  name:'丹鼎真解', dao:'breath', tier:2, school:'alchemy', effect:{ training:0.85 } },
+  { id:'shengong', name:'神工录',   dao:'ward',   tier:2, school:'forge',   effect:{ power:0.55 } },
 ];
 const CULTIVATION_MANUAL_MAP = Object.fromEntries(CULTIVATION_MANUALS.map(m=>[m.id,m]));
 /** 兼容旧引用：UI 与存档校验都还叫这个名字。 */
@@ -4239,6 +4273,204 @@ const MANUAL_ATTUNE_CLUE_COST = 2;
 const MANUAL_DUPLICATE_STONES = 2;      // 参悟满后重复掉落折算的灵石
 
 /** 一本功法在某位置上的实际效果（已计参悟与位置比例）。 */
+/* ══════════ src/data/morality.js ══════════ */
+
+/* ────────────────────────────────────────────────────────────────
+ * 区块：道心（道德值）
+ * 职责：一个 0–100 的全局轴。它不是「善恶评分」，而是**你在这个世界里
+ *       被当成什么人**——凶名在外能镇住人，也会招来天谴。
+ * 依赖：无（纯数据 + 纯查表函数）
+ * 调参：
+ *   MORALITY_START      初始道心（中庸）
+ *   MORALITY_TIERS      五个档位与各自的后果
+ *   MORALITY_DRIFT_*    每秒漂移速率（邪修功法拉低、无邪修时回升）
+ *   MORALITY_GOOD_DEED  施粥赈济：花银两买道心
+ * 文档：docs/85-流派与道心.md
+ * ──────────────────────────────────────────────────────────────── */
+
+/** 道心从 50（中庸）开始。 */
+const MORALITY_START = 50;
+const MORALITY_MAX = 100;
+const MORALITY_MIN = 0;
+
+/**
+ * 五个档位。
+ *
+ * caveBonus   洞天生还率的**百分点**增减 —— 道心越低，天谴越重
+ * warBonus    攻伐胜算的百分点增减 —— 凶名在外，守方先怯
+ * taxMult     领地赋税倍率 —— 民心归附才交得出粮
+ *
+ * 这三条构成一组真正的取舍：**魔道能打但养不起地，正道养得起但打不动。**
+ */
+const MORALITY_TIERS = [
+  {
+    id: 'demon', name: '魔道', min: 0, max: 19,
+    caveBonus: -0.25, warBonus: 0.10, taxMult: 0.70,
+    desc: '血债缠身。入洞天如入鬼门，但凶名所至，守方未战先怯。',
+  },
+  {
+    id: 'heretic', name: '旁门', min: 20, max: 39,
+    caveBonus: -0.10, warBonus: 0.05, taxMult: 0.85,
+    desc: '走在边缘。族中老人开始不安，但手段确实比旁人狠。',
+  },
+  {
+    id: 'neutral', name: '中庸', min: 40, max: 60,
+    caveBonus: 0, warBonus: 0, taxMult: 1.00,
+    desc: '不功不过。既不招天谴，也不得民心。',
+  },
+  {
+    id: 'upright', name: '正道', min: 61, max: 80,
+    caveBonus: 0.05, warBonus: -0.03, taxMult: 1.15,
+    desc: '乡里称善。领地愿交粮，但正道中人讲究规矩，出手没那么利落。',
+  },
+  {
+    id: 'saint', name: '道心通明', min: 81, max: 100,
+    caveBonus: 0.10, warBonus: -0.06, taxMult: 1.30,
+    desc: '问心无愧。天不降灾，人愿归附，代价是你下不去狠手。',
+  },
+];
+
+/** 每秒漂移：邪修功法生效时按住 MORALITY_DRIFT_EVIL（负），否则按 GOOD 回升。 */
+const MORALITY_DRIFT_EVIL = -0.010;
+const MORALITY_DRIFT_GOOD = 0.004;
+
+/** 炼一枚人丹的道心代价。 */
+const MORALITY_HUMAN_PILL_COST = -8;
+
+/** 施粥赈济：花银两买道心。 */
+const GOOD_DEED_SILVER = 60000;   // 每次消耗银两
+const GOOD_DEED_GAIN = 6;         // 每次加多少道心
+const GOOD_DEED_PER_SEC_LIMIT = 1; // 每秒最多几次（防连点）
+
+/** 取某个道心值所属的档位。 */
+function moralityTier(v) {
+  const n = Math.max(MORALITY_MIN, Math.min(MORALITY_MAX, Number(v) || 0));
+  for (const t of MORALITY_TIERS) if (n >= t.min && n <= t.max) return t;
+  return MORALITY_TIERS[MORALITY_TIERS.length - 1];
+}
+
+/* ══════════ src/data/schools.js ══════════ */
+
+/* ────────────────────────────────────────────────────────────────
+ * 区块：功法流派
+ * 职责：给功法一个「玩法身份」。原来的十五本只差数值大小，
+ *       选哪本只是选大小；加上流派之后，选哪本变成**走哪条路**。
+ * 依赖：无（纯数据 + 纯查表函数）
+ * 调参：
+ *   MANUAL_SCHOOLS —— 六个流派。每个都必须同时有 fx（拿到什么）与 price（付出什么）
+ *
+ * ⚠️ 约定：**只有「主修」位的功法会触发流派机制**，辅修只贡献数值。
+ *    所以「主修选哪本」就是「这一世走哪条路」，一个角色只能有一条路。
+ * 文档：docs/85-流派与道心.md
+ * ──────────────────────────────────────────────────────────────── */
+
+/**
+ * 流派表。
+ *
+ * fx 的键与「生效处」一一对应：
+ *   training    修炼速度（加到 1 之上，如 0.55 表示 ×1.55 的那部分）
+ *   power       修士战力（加到已有的百分比上）
+ *   birthMult   凡人出生率**倍率**
+ *   deathMult   凡人死亡率**倍率**
+ *   alchemyRate 炼丹成功率（百分点）
+ *   forgeRate   炼器成功率（百分点）
+ *   caveBonus   洞天生还率（百分点）
+ *   warBonus    攻伐胜算（百分点）
+ *
+ * drift  主修该流派时，道心每秒漂移多少（负=越练越邪）
+ * unlock 解锁的动作 id（目前只有炼人丹）
+ * price  给玩家看的代价文案
+ */
+const MANUAL_SCHOOLS = [
+  {
+    id: 'orthodox', name: '玄门正宗', tone: 'plain',
+    tagline: '不偏不倚，稳当',
+    desc: '中规中矩的正统法门。没有任何额外机制，也没有任何代价。',
+    lore: '玄门的路子最笨：一步一个脚印，不取巧，也不走火。'
+      + '族里若有人问「练这个有什么坏处」，答案是「没有」——'
+      + '在这个世道里，这四个字本身就是最大的好处。',
+    fx: {}, drift: 0, unlock: null,
+    price: '无代价，但也没有任何额外手段。',
+  },
+  {
+    id: 'demonic', name: '血煞魔功', tone: 'evil',
+    tagline: '以血养功，进境极快',
+    desc: '解锁「炼人丹」：献祭凡人换修为。战力大增，但道心持续下坠。',
+    lore: '血煞一门不忌人。他们认为凡人本就是灵气所聚，与其老死田垄，'
+      + '不如炼成一枚丹，把这点灵气还给修士。话说得漂亮，做的事却难看——'
+      + '族中人口会一年比一年少，而修为什么都不缺。',
+    fx: { training: -0.10, power: 0.35, deathMult: 1.25 },
+    drift: -0.010, unlock: 'humanPill',
+    price: '修炼 −10%、凡人死亡率 ×1.25、**道心持续下坠**。道心越低，入洞天越容易死。',
+  },
+  {
+    id: 'dual', name: '合欢双修', tone: 'rose',
+    tagline: '人丁兴旺，进境亦快',
+    desc: '凡人出生率大增，修炼速度提升，但战力偏弱。',
+    lore: '合欢宗的法子讲究阴阳相济，最看重「有人」。别人练功要静室独处，'
+      + '他们练功要满城灯火。族中人口翻得比谁都快，'
+      + '只是真动起手来，同阶的合欢修士往往是最先倒下的那个。',
+    fx: { training: 0.35, birthMult: 1.40, power: -0.25 },
+    drift: -0.003, unlock: null,
+    price: '战力 −25%、道心略微下坠（世人多有非议）。',
+  },
+  {
+    id: 'sword', name: '剑修', tone: 'steel',
+    tagline: '一剑破万法',
+    desc: '战力与攻伐胜算大幅提升，但修炼变慢、洞天里更容易折损。',
+    lore: '剑修只信手里的东西。同阶之中剑修最能打，也最不肯绕路——'
+      + '遇事第一反应是拔剑。所以在需要小心谨慎的洞天里，'
+      + '剑修反而比谁都不顶用。',
+    fx: { power: 0.55, training: -0.18, caveBonus: -0.06, warBonus: 0.06 },
+    drift: 0, unlock: null,
+    price: '修炼 −18%、洞天生还 −6 个百分点。',
+  },
+  {
+    id: 'alchemy', name: '丹修', tone: 'jade',
+    tagline: '以丹证道',
+    desc: '炼丹成功率与修为俱增，但不擅争斗。',
+    lore: '丹修一辈子守在炉前。他们论战力排不上号，可整个地界的修士'
+      + '都要看他们的脸色——毕竟谁都想要一枚好丹。'
+      + '走丹修这条路的家族，往往不是最强的，却是活得最久的。',
+    fx: { training: 0.20, alchemyRate: 0.12, power: -0.20 },
+    drift: 0, unlock: null,
+    price: '战力 −20%。',
+  },
+  {
+    id: 'forge', name: '器修', tone: 'ember',
+    tagline: '以器载道',
+    desc: '炼器成功率提升，战力小增，但分心于炉火。',
+    lore: '器修信「手中无器，心中有器」。他们不亲自去争，'
+      + '而是把力气花在别人手里的剑上。一个器修坐镇的家族，'
+      + '战力上未必顶尖，但每一件法器都比旁人的多撑几年。',
+    fx: { power: 0.15, forgeRate: 0.12, training: -0.15 },
+    drift: 0, unlock: null,
+    price: '修炼 −15%。',
+  },
+];
+const MANUAL_SCHOOL_MAP = Object.fromEntries(MANUAL_SCHOOLS.map((s) => [s.id, s]));
+
+/** 取流派定义；没有 school 字段的功法一律算玄门正宗。 */
+function schoolOf(manual) {
+  return MANUAL_SCHOOL_MAP[manual?.school] || MANUAL_SCHOOL_MAP.orthodox;
+}
+
+/** 没有 school 字段的旧功法按玄门正宗处理，不需要迁移。 */
+const DEFAULT_SCHOOL = 'orthodox';
+
+/* ── 人丹：血煞一脉的独有手段 ── */
+
+/**
+ * 炼一枚人丹的代价。
+ *
+ * ⚠️ 原料是**人**。凡人人口是家族银两的来源，道心是洞天里的保命符，
+ *    所以「用命换修为」在这里是字面意思 —— 这是全篇最重的代价。
+ */
+const HUMAN_PILL_MORTALS = 5;      // 献祭几名凡人
+const HUMAN_PILL_STONES = 2;       // 另耗灵石
+/** 服下后获得的修为 = 该修士当前一层所需修为 × 这个比例。 */
+const HUMAN_PILL_XP_RATIO = 0.35;
+
 /* ══════════ src/systems/manuals.js ══════════ */
 
 /* ────────────────────────────────────────────────────────────────
@@ -4346,10 +4578,12 @@ function caveSurvival(state, person, cave) {
   const rune = runePending(state, 'cave');
   // 金手指「气运加身」的常驻加成
   const meta = metaSurvivalBonus(state);
+  // 道心（低则天谴）与剑修流派（好斗，进洞天反而吃亏）
+  const moral = moralityCaveBonus(state) + schoolFx(state, 'caveBonus');
   // 层差按全局 realmIndex 算。炼气期的 index 与「层数」同值，所以既有的配平不变。
   const levelGap = Math.max(0, (cave?.realm || 1) - (person?.realmIndex || 1));
   const base = .82 * Math.exp(-.78 * levelGap) * (person?.talent || 1);
-  return Math.max(.015, Math.min(.98, base + mb.survive + art.survive + rune + meta));
+  return Math.max(.015, Math.min(.98, base + mb.survive + art.survive + rune + meta + moral));
 }
 
 /** 该道途当前是否已被某个位置占用（同途不可两立）。 */function manualDaoTaken(state, dao, exceptId) {
@@ -4404,6 +4638,248 @@ function attuneManual(state, id, rng) {
   c.attune[id] = cur + 1;
   return { ok:true, reason:`《${CULTIVATION_MANUAL_MAP[id].name}》参悟至 ${cur + 1} 层` };
 }
+/* ══════════ src/systems/morality.js ══════════ */
+
+/* ────────────────────────────────────────────────────────────────
+ * 区块：道心规则
+ * 职责：读写道心值、按档位给出三个后果（洞天/攻伐/赋税）、以及「施粥赈济」。
+ * 依赖：data/morality.js（表）、systems/schools.js（漂移方向来自主修流派）
+ * 调参：数值全在 data/morality.js，本文件不含魔法数字。
+ * 文档：docs/85-流派与道心.md
+ * ──────────────────────────────────────────────────────────────── */
+
+/** 取（并夹取）当前道心。旧存档没有这个字段，按中庸补上。 */
+function moralityOf(state) {
+  const v = Number(state?.morality);
+  if (!Number.isFinite(v)) {
+    state.morality = MORALITY_START;
+    return MORALITY_START;
+  }
+  const clamped = Math.max(MORALITY_MIN, Math.min(MORALITY_MAX, v));
+  if (clamped !== v) state.morality = clamped;
+  return clamped;
+}
+
+/** 当前档位。 */
+function moralityTierOf(state) { return moralityTier(moralityOf(state)); }
+
+/** 增减道心，自动夹取。返回实际变化量。 */
+function addMorality(state, delta) {
+  const before = moralityOf(state);
+  const after = Math.max(MORALITY_MIN, Math.min(MORALITY_MAX, before + (Number(delta) || 0)));
+  state.morality = after;
+  return after - before;
+}
+
+/* ── 三个后果：其它区块只调这三个 ── */
+
+/** 洞天生还率的百分点修正。 */
+function moralityCaveBonus(state) { return moralityTierOf(state).caveBonus; }
+/** 攻伐胜算的百分点修正。 */
+function moralityWarBonus(state) { return moralityTierOf(state).warBonus; }
+/** 领地赋税的倍率。 */
+function moralityTaxMult(state) { return moralityTierOf(state).taxMult; }
+
+/* ── 每步漂移 ── */
+
+/**
+ * 道心随时间漂移。
+ *
+ *   主修邪修功法 → 按 MORALITY_DRIFT_EVIL **持续下坠**，不设底
+ *   其余情况     → **回归中道**（离 50 越远回得越快），而不是无限爬升
+ *
+ * 「回归中道」是刻意的：如果不主动做善事就能一路爬到「道心通明」，
+ * 那正道档位就变成了白送的加成，魔道也就没有存在意义。
+ * 现在想守住正道必须**持续施粥**，而堕落只需要换一本功法。
+ */
+function advanceMorality(state, dt, now = Date.now()) {
+  if (!(dt > 0)) return;
+  const evil = schoolDrift(state);
+  let rate;
+  if (evil !== 0) {
+    rate = evil;
+  } else {
+    const toward = MORALITY_START - moralityOf(state);
+    if (toward === 0) return;
+    // 离中道越远，回得越快（上限就是 MORALITY_DRIFT_GOOD）
+    const scale = Math.min(1, Math.abs(toward) / 20);
+    rate = Math.sign(toward) * MORALITY_DRIFT_GOOD * scale;
+  }
+  const before = moralityOf(state);
+  addMorality(state, rate * dt);
+  // 跨档位时记一条 —— 这是玩家该被提醒的时刻
+  const t0 = moralityTier(before);
+  const t1 = moralityTierOf(state);
+  if (t0.id !== t1.id) {
+    pushLog(state, `道心${rate < 0 ? '下坠' : '回升'}至「${t1.name}」：${t1.desc}`, 'unlock', null, now);
+  }
+}
+
+/* ── 施粥赈济：花银两买道心 ── */
+
+/** 询价：能不能施粥。 */
+function goodDeedPlan(state) {
+  const have = Math.floor(state.silver || 0);
+  if (have < GOOD_DEED_SILVER) {
+    return { ok: false, reason: `需 ${fmt(GOOD_DEED_SILVER)} 两银（现有 ${fmt(have)}）` };
+  }
+  if (moralityOf(state) >= MORALITY_MAX) {
+    return { ok: false, reason: '道心已至圆满，无需再施' };
+  }
+  return {
+    ok: true, kind: 'good-deed',
+    silver: GOOD_DEED_SILVER, gain: GOOD_DEED_GAIN,
+    cost: GOOD_DEED_SILVER, currency: 'silver',
+    tier: moralityTierOf(state).name,
+  };
+}
+
+/** 兑现：施粥赈济。 */
+function commitGoodDeed(state, now = Date.now()) {
+  const plan = goodDeedPlan(state);
+  if (!plan.ok) return plan;
+  state.silver -= plan.silver;
+  const gained = addMorality(state, plan.gain);
+  const tier = moralityTierOf(state);
+  pushLog(state, `开仓施粥，散银 ${fmt(plan.silver)} 两，道心 +${gained.toFixed(1)}（${tier.name}）。`, 'unlock', null, now);
+  return { ok: true, gained, tier: tier.name, reason: `施粥赈济，道心 +${gained.toFixed(1)}，现为「${tier.name}」` };
+}
+
+/* ══════════ src/systems/schools.js ══════════ */
+
+/* ────────────────────────────────────────────────────────────────
+ * 区块：流派规则
+ * 职责：主修流派的生效与解锁。**只有主修位的流派会生效** ——
+ *       辅修只贡献数值，不给机制。所以「主修选哪本」就是「这一世走哪条路」。
+ * 依赖：data/schools.js（表）、data/manuals.js、data/realms.js
+ * 调参：数值全在 data/schools.js 与 data/morality.js，本文件不含魔法数字。
+ * 文档：docs/85-流派与道心.md
+ * ──────────────────────────────────────────────────────────────── */
+
+/** 主修位的功法对象（没有则 null）。 */
+function mainManualOf(state) {
+  const id = state.cultivation?.equippedManual;
+  return id ? CULTIVATION_MANUAL_MAP[id] : null;
+}
+
+/** 主修功法的流派定义。没有主修、或主修是没标 school 的旧功法，都算玄门正宗。 */
+function mainSchoolOf(state) { return schoolOf(mainManualOf(state)); }
+
+/** 倍率类效果的默认值；其余都按加法从 0 起。 */
+const SCHOOL_MULT_KEYS = ['birthMult', 'deathMult'];
+
+/**
+ * 取当前主修流派在某一项上的效果。
+ * @param {string} key fx 的键
+ * @param {number} scale 位置比例（目前恒为 1 —— 流派只认主修）
+ */
+function schoolFx(state, key, scale = 1) {
+  const s = mainSchoolOf(state);
+  const v = s?.fx?.[key];
+  const base = SCHOOL_MULT_KEYS.includes(key) ? 1 : 0;
+  if (v === undefined) return base;
+  // 倍率类的「缩放」是往 1 靠拢，加法类直接乘
+  return SCHOOL_MULT_KEYS.includes(key) ? 1 + (v - 1) * scale : v * scale;
+}
+
+/** 主修流派的道心漂移速率（玄门为正统，0）。 */
+function schoolDrift(state) { return mainSchoolOf(state)?.drift || 0; }
+
+/** 主修流派是否解锁了某个动作。 */
+function schoolUnlocks(state, actionId) {
+  return mainSchoolOf(state)?.unlock === actionId;
+}
+
+/** 凡人出生率倍率（合欢宗的主场）。 */
+function schoolBirthMult(state) { return schoolFx(state, 'birthMult'); }
+/** 凡人死亡率倍率（血煞的代价）。 */
+function schoolDeathMult(state) { return schoolFx(state, 'deathMult'); }
+
+/* ── 炼人丹 ── */
+
+/** 当前有多少枚人丹。 */
+function humanPillCount(state) {
+  return Math.max(0, Math.floor(Number(state.cultivation?.humanPills) || 0));
+}
+
+/**
+ * 询价：能不能炼一枚人丹。
+ *
+ * 人丹的原料是**人**。所以它同时消耗凡人人口与道心 ——
+ * 前者是家族的银两来源，后者是洞天里的保命符。
+ * 「用命换修为」在这里是字面意思。
+ */
+function humanPillPlan(state) {
+  if (!schoolUnlocks(state, 'humanPill')) {
+    return { ok: false, reason: '需主修「血煞魔功」一脉的功法' };
+  }
+  const pop = Math.floor(state.population || 0);
+  if (pop < HUMAN_PILL_MORTALS + 1) {
+    return { ok: false, reason: `需至少 ${HUMAN_PILL_MORTALS + 1} 名凡人（现有 ${pop}）` };
+  }
+  if ((state.spiritStones || 0) < HUMAN_PILL_STONES) {
+    return { ok: false, reason: `需 ${HUMAN_PILL_STONES} 灵石` };
+  }
+  return {
+    ok: true, kind: 'human-pill',
+    mortals: HUMAN_PILL_MORTALS, stones: HUMAN_PILL_STONES,
+    moralityCost: MORALITY_HUMAN_PILL_COST,
+    have: humanPillCount(state),
+    cost: HUMAN_PILL_STONES, currency: 'stones',
+  };
+}
+
+/** 兑现：炼一枚人丹。 */
+function commitHumanPill(state, now = Date.now()) {
+  const plan = humanPillPlan(state);
+  if (!plan.ok) return plan;
+  state.population = Math.max(0, (state.population || 0) - plan.mortals);
+  state.spiritStones -= plan.stones;
+  const c = state.cultivation;
+  c.humanPills = humanPillCount(state) + 1;
+  const dm = addMorality(state, plan.moralityCost);
+  const tier = moralityTierOf(state);
+  pushLog(state, `炉开人丹，献祭凡人 ${plan.mortals} 口。道心 ${dm.toFixed(1)}，现为「${tier.name}」。`,
+    'cultivate', null, now);
+  return {
+    ok: true, mortals: plan.mortals, total: c.humanPills,
+    morality: dm, tier: tier.name,
+    reason: `炼成人丹 ×1（献祭 ${plan.mortals} 名凡人，道心 ${dm.toFixed(1)} → 「${tier.name}」）`,
+  };
+}
+
+/** 询价：把一枚人丹给某位修士服下。 */
+function humanPillUsePlan(state, personId) {
+  const person = findCultivator(state, personId);
+  if (!person) return { ok: false, reason: '修士不存在' };
+  if (humanPillCount(state) < 1) return { ok: false, reason: '没有人丹可用' };
+  const need = realmXpNeeded(person.realmIndex);
+  if (!Number.isFinite(need)) return { ok: false, reason: '此人已至此界尽头' };
+  const headroom = Math.max(0, need - (person.xp || 0));
+  if (headroom <= 0) return { ok: false, reason: '此人修为已满，先让他晋阶' };
+  return {
+    ok: true, kind: 'use-human-pill', personId: person.id, name: person.name,
+    realm: realmName(person.realmIndex),
+    gain: Math.min(headroom, Math.floor(need * HUMAN_PILL_XP_RATIO)),
+    have: humanPillCount(state),
+  };
+}
+
+/** 兑现：服下人丹。 */
+function commitUseHumanPill(state, personId, now = Date.now()) {
+  const plan = humanPillUsePlan(state, personId);
+  if (!plan.ok) return plan;
+  const person = findCultivator(state, personId);
+  const c = state.cultivation;
+  c.humanPills = humanPillCount(state) - 1;
+  person.xp = Math.min(realmXpNeeded(person.realmIndex), (person.xp || 0) + plan.gain);
+  pushLog(state, `${person.name}服下人丹，修为暴涨 ${plan.gain} 点。`, 'cultivate', null, now);
+  return {
+    ok: true, name: person.name, gain: plan.gain, left: c.humanPills,
+    reason: `${person.name}服下人丹，修为 +${plan.gain}（余 ${c.humanPills} 枚）`,
+  };
+}
+
 /* ══════════ src/systems/roots.js ══════════ */
 
 /* ────────────────────────────────────────────────────────────────
@@ -4693,8 +5169,9 @@ function cultivationBonuses(state) {
   for(const p of people){
     // 每个人吃自己灵根能修的那一份；天灵根对本系功法还有专精
     const mb=manualBonusFor(state,p);
-    // 法器与功法加成相加（都是「百分比加成」，相加比相乘更好解释给玩家）
-    const powerMult=1+mb.power+art.power;
+    // 法器与功法加成相加（都是「百分比加成」，相加比相乘更好解释给玩家）；
+    // 主修流派的战力加成也加在这里 —— 剑修就是靠这一项吃饭的
+    const powerMult=1+mb.power+art.power+schoolFx(state,'power');
     // 劳作与探索按「层数」计，所以这里用大档内的层号而不是全局序号，
     // 否则筑基的 10 层会直接把 laborMult 顶到上限。
     const idx=Math.max(0,Math.min(cultivateLevelCap(p),p.realmIndex||0));
@@ -4744,8 +5221,10 @@ function progressCultivators(state,dt,now=Date.now(),rng=Math.random,births=0) {
     const runeMult = runeTrainingMult(state, now);
     // 金手指：掌天瓶的代价（分心）与天生道体的增益
     const metaMult = metaTrainMult(state);
+    // 主修流派的修炼加成/减益 —— 合欢快、剑修慢
+    const schoolMult = 1 + schoolFx(state, 'training');
     // 灵根是第四个乘数：天灵根 ×2.0，五灵根 ×0.7
-    person.xp += REALM_XP_RATE*dt*manualMult*runeMult*metaMult*rootSpeedMult(person)*(Number(person.talent)||1)*(person.job==='sect'?3.5:1);
+    person.xp += REALM_XP_RATE*dt*manualMult*runeMult*metaMult*schoolMult*rootSpeedMult(person)*(Number(person.talent)||1)*(person.job==='sect'?3.5:1);
 
     // 同一大档内自动晋升；带瓶颈的那一层停住（交给 systems/breakthrough.js）
     while(person.realmIndex<cap){
@@ -4761,6 +5240,8 @@ function progressCultivators(state,dt,now=Date.now(),rng=Math.random,births=0) {
   advanceImmortalEconomy(state,dt,now,rng);
   // 符箓的时间推进：清理过期存货、结束聚灵符
   advanceRunes(state,dt,now);
+  // 道心的时间推进：主修邪修功法则持续下坠，否则缓慢回升
+  advanceMorality(state,dt,now);
   const bonus=cultivationBonuses(state);
   if (bonus.explorePerSec>0 && state.secrets.length<SECRETS.length) {
     const chance=1-Math.exp(-bonus.explorePerSec*dt);
@@ -5636,6 +6117,24 @@ const CODEX_MECHANICS = [
 
 /* ── 章节 ── */
 
+/**
+ * 百科对「功法效果」的措辞 —— 与界面上的标签是两套文案：
+ * 界面要短（挤在卡片里），百科可以写全（独立成行）。
+ */
+const CODEX_EFFECT_LABEL = {
+  training: (v) => `闭关修为 +${Math.round(v * 100)}%`,
+  power:    (v) => `修士战力 +${Math.round(v * 100)}%`,
+  labor:    (v) => `劳作银两 +${Math.round(v * 100)}%`,
+  explore:  (v) => `秘闻发现 +${Math.round(v * 100)}%`,
+  survive:  (v) => `洞天生还 +${Math.round(v * 100)} 个百分点`,
+  stones:   (v) => `洞天灵石 +${Math.round(v * 100)}%`,
+};
+
+/** 去掉文案里的 **强调** 标记 —— 百科正文是纯文本，不解析 Markdown。 */
+function plainText(str) {
+  return String(str == null ? '' : str).replace(/\*\*/g, '');
+}
+
 const CODEX_CHAPTERS = [
   {
     id: 'realm', name: '境界', icon: '☯',
@@ -5784,24 +6283,127 @@ const CODEX_CHAPTERS = [
 
   {
     id: 'manual', name: '功法', icon: '📖',
-    intro: '五条道途，各修各的。宗门修的是宗门的法，传不进山门。',
-    entries: Object.entries(MANUAL_DAOS).map(([dao, def]) => ({
-      id: `manual-${dao}`,
-      title: def.name,
-      prose: def.desc,
+    intro: '五条道途、三个品阶、六个流派。每一本都单独成条 —— 收录了才看得到。',
+    // **每本功法各一条**，而不是按道途归并。
+    // 流派是「玩法身份」，玩家要能一眼看到「这本属于哪条路、代价是什么」。
+    entries: CULTIVATION_MANUALS.map((m) => {
+      const sc = schoolOf(m);
+      const el = MANUAL_DAO_ELEMENT[m.dao];
+      const fx = Object.entries(m.effect || {})
+        .map(([k, v]) => (CODEX_EFFECT_LABEL[k] ? CODEX_EFFECT_LABEL[k](v) : `${k} +${Math.round(v * 100)}%`))
+        .join(' · ');
+      return {
+        id: `manual-${m.id}`,
+        title: m.name,
+        prose: `${MANUAL_TIER_NAME[m.tier]}${MANUAL_DAOS[m.dao].name}法门。${MANUAL_DAOS[m.dao].desc}。`
+          + (sc.id === 'orthodox' ? '' : `　　（${sc.name}：${sc.tagline}）`),
+        lines: (s) => {
+          const owned = (s.cultivation?.manuals || []).includes(m.id);
+          return [
+            `${MANUAL_TIER_NAME[m.tier]} · 道途「${MANUAL_DAOS[m.dao].name}」· 流派「${sc.name}」`,
+            `本功效果：${fx}`,
+            `所需灵根：${el ? `${elementName(el)}系（天灵根不受限）` : '无属性，人人可修'}`,
+            sc.id === 'orthodox' ? '流派代价：无' : `流派机制：${sc.desc}`,
+            sc.id === 'orthodox' ? '' : `流派代价：${plainText(sc.price)}`,
+            owned ? '已收录' : '尚未收录',
+          ].filter(Boolean);
+        },
+        seen: (s) => (s.cultivation?.manuals || []).includes(m.id),
+        hint: '收录这本功法后可见',
+        tags: `${sc.name} ${MANUAL_DAOS[m.dao].name} ${MANUAL_TIER_NAME[m.tier]}`,
+      };
+    }),
+  },
+
+  {
+    id: 'school', name: '流派', icon: '⚔',
+    intro: '同一部功法，走出不同的路。**只有主修位的流派生效** —— 一个人只能走一条路。',
+    entries: MANUAL_SCHOOLS.map((sc) => ({
+      id: `school-${sc.id}`,
+      title: sc.name,
+      prose: sc.lore,
       lines: (s) => {
-        const el = MANUAL_DAO_ELEMENT[dao];
-        const owned = CULTIVATION_MANUALS.filter((m) => m.dao === dao && (s.cultivation?.manuals || []).includes(m.id));
+        const active = mainSchoolOf(s).id === sc.id;
+        const own = CULTIVATION_MANUALS.filter((m) => schoolOf(m).id === sc.id);
         return [
-          `所需灵根：${el ? `${elementName(el)}系（天灵根不受限）` : '无属性，人人可修'}`,
-          `本途共 ${CULTIVATION_MANUALS.filter((m) => m.dao === dao).length} 本 · 已收录 ${owned.length} 本`,
-          ...CULTIVATION_MANUALS.filter((m) => m.dao === dao).map((m) =>
-            `${MANUAL_TIER_NAME[m.tier]}《${m.name}》${(s.cultivation?.manuals || []).includes(m.id) ? '（已收录）' : ''}`),
-        ];
+          `一句话：${sc.tagline}`,
+          `独有机制：${sc.desc}`,
+          `代价：${plainText(sc.price)}`,
+          `本流派共 ${own.length} 本：${own.map((m) => MANUAL_TIER_NAME[m.tier] + m.name).join('、') || '（暂无）'}`,
+          active ? '**当前主修即此流派**' : '',
+        ].filter(Boolean);
       },
-      seen: (s) => (s.cultivation?.manuals || []).length > 0,
-      hint: '收录第一本功法后可见',
+      seen: (s) => (s.cultivation?.manuals || []).some((id) => schoolOf(CULTIVATION_MANUAL_MAP[id]).id === sc.id),
+      hint: '收录本流派的任意一本功法后可见',
+      tags: sc.name,
     })),
+  },
+
+  {
+    id: 'morality', name: '道心', icon: '☯',
+    intro: '不是善恶评分，而是你在这个世界里被当成什么人。',
+    entries: [
+      {
+        id: 'morality-what', title: '道心是什么',
+        prose: '族中老人管它叫「道心」，外人管它叫「名声」。'
+          + '它不评判你做过什么，只记录**你在这个地界上被当成什么人**。'
+          + '血债缠身的人凶名在外，镇得住人，也招得来天谴；'
+          + '问心无愧的人得天所佑，可下不去狠手。'
+          + '**道心不跨周目保留** —— 轮回是重新做人，前世的血债不该跟着走。',
+        lines: (s) => {
+          const t = moralityTierOf(s);
+          return [
+            `当前道心：${moralityOf(s).toFixed(1)} / ${MORALITY_MAX}（${t.name}）`,
+            `洞天生还修正 ${t.caveBonus >= 0 ? '+' : ''}${(t.caveBonus * 100).toFixed(0)} 个百分点`,
+            `攻伐胜算修正 ${t.warBonus >= 0 ? '+' : ''}${(t.warBonus * 100).toFixed(0)} 个百分点`,
+            `领地赋税 ×${t.taxMult.toFixed(2)}`,
+          ];
+        },
+        seen: () => true,
+        tags: '道德 心魔 天谴 民心',
+      },
+      {
+        id: 'morality-tiers', title: '道心的五个档位',
+        prose: '从魔道到道心通明，五个档位各有各的活法。'
+          + '**魔道能打但养不起地，正道养得起但打不动** —— 这三条后果是一组真正的取舍。',
+        lines: () => MORALITY_TIERS.map((t) =>
+          `${t.name}（${t.min}–${t.max}）：生还 ${t.caveBonus >= 0 ? '+' : ''}${(t.caveBonus * 100).toFixed(0)}pp`
+          + ` · 胜算 ${t.warBonus >= 0 ? '+' : ''}${(t.warBonus * 100).toFixed(0)}pp · 赋税 ×${t.taxMult.toFixed(2)}`),
+        seen: () => true,
+      },
+      {
+        id: 'morality-change', title: '道心怎么变',
+        prose: '主修血煞一脉的功法，道心会**持续下坠**，练得越久陷得越深。'
+          + '不走邪路时道心**回归中道**（离 50 越远回得越快）—— 所以想守住正道必须主动行善。',
+        lines: (s) => [
+          `主修流派：${mainSchoolOf(s).name}`,
+          `当前漂移：${schoolDrift(s) !== 0
+            ? `每秒 ${schoolDrift(s).toFixed(4)}（持续下坠）`
+            : '回归中道 50（每秒最多 +' + MORALITY_DRIFT_GOOD.toFixed(4) + '）'}`,
+          `施粥赈济：${fmt(GOOD_DEED_SILVER)} 两银 → 道心 +${GOOD_DEED_GAIN}`,
+          '炼一枚人丹：道心 ' + MORALITY_HUMAN_PILL_COST,
+        ],
+        seen: (s) => moralityOf(s) !== MORALITY_START || (s.cultivation?.manuals || []).length > 0,
+        hint: '收录任意一本功法后可见',
+      },
+      {
+        id: 'morality-human-pill', title: '人丹',
+        prose: '血煞一门的看家手段。把凡人炼成一枚丹，服下者修为暴涨。'
+          + '话说得漂亮——「与其老死田垄，不如把这点灵气还给修士」——'
+          + '做的事却难看：族中人口一年比一年少，而修为什么都不缺。'
+          + '**原料是人**，所以这是全篇最重的代价。',
+        lines: (s) => [
+          `解锁条件：主修「血煞魔功」一脉的功法`,
+          `炼一枚：献祭凡人 ${HUMAN_PILL_MORTALS} 口 + ${HUMAN_PILL_STONES} 灵石，道心 ${MORALITY_HUMAN_PILL_COST}`,
+          `服下：修为 +${Math.round(HUMAN_PILL_XP_RATIO * 100)}%（该修士当前一层所需）`,
+          `现有人丹 ${humanPillCount(s)} 枚`,
+        ],
+        seen: (s) => schoolUnlocks(s, 'humanPill') || humanPillCount(s) > 0
+          || (s.cultivation?.manuals || []).some((id) => schoolOf(CULTIVATION_MANUAL_MAP[id]).id === 'demonic'),
+        hint: '收录血煞一脉的功法后可见',
+        tags: '邪修 血煞 献祭',
+      },
+    ],
   },
 
   {
@@ -6115,10 +6717,11 @@ function mapIsPacified(state, nodeId) {
 /** 所有已占领节点的产出合计（灵石/秒）。镇守不足的不产出。 */
 function mapYieldPerSec(state) {
   const w = worldOf(state);
+  const tax = moralityTaxMult(state);
   let total = 0;
   for (const id of w.held) {
     if (!mapIsPacified(state, id)) continue;
-    total += mapNode(id)?.yield || 0;
+    total += (mapNode(id)?.yield || 0) * tax;
   }
   return total;
 }
@@ -6174,8 +6777,9 @@ function advanceTerritories(state, dt, now = Date.now()) {
     const node = mapNode(id);
     if (!node) continue;
     if (mapIsPacified(state, id)) {
-      // 金手指：掌天瓶翻材料、气运加身砍灵石
-      state.spiritStones = (state.spiritStones || 0) + (node.yield || 0) * dt * metaStoneMult(state);
+      // 金手指：掌天瓶翻材料、气运加身砍灵石；再乘一层道心的民心倍率
+      // —— 魔道能打，但治下的人不肯交粮
+      state.spiritStones = (state.spiritStones || 0) + (node.yield || 0) * dt * metaStoneMult(state) * moralityTaxMult(state);
       // 药材、矿料、符文跟赋税同规则：只有当有效镇守时才产出
       const matMult = metaMaterialMult(state);
       if (node.herb) addHerbs(state, node.herb, (node.herbYield || 0) * dt * matMult);
@@ -6237,9 +6841,11 @@ function mapPlan(state, nodeId) {
     return { ok: false, reason: '至少需要一名修士', status };
   }
   const power = derive(state).totalPower;
-  // 破阵符挂着的「下一次」加成（百分点，直接加在胜算上）
+  // 破阵符挂着的「下一次」加成（百分点，直接加在胜算上）；
+  // 道心的「凶名」（魔道守方先怯）与剑修的攻伐加成也加在这里
   const rune = runePending(state, 'attack');
-  const rate = Math.max(.05, Math.min(.95, power / (power + node.power) + rune));
+  const moral = moralityWarBonus(state) + schoolFx(state, 'warBonus');
+  const rate = Math.max(.05, Math.min(.95, power / (power + node.power) + rune + moral));
   return {
     ok: true, kind: 'foe', node, status,
     name: node.name, tier: node.tier,
@@ -6443,7 +7049,9 @@ function recipeRate(state, recipeId) {
   const rate = r.baseRate
     + furnaceAt(lv).rateBonus
     + proficiency(state, recipeId) * ALCHEMY_PROFICIENCY_STEP
-    + alchemyWoodBonus(state);
+    + alchemyWoodBonus(state)
+    // 丹修流派：专精这一行，代价是战力
+    + schoolFx(state, 'alchemyRate');
   return Math.max(ALCHEMY_RATE_MIN, Math.min(ALCHEMY_RATE_MAX, rate));
 }
 
@@ -6697,7 +7305,9 @@ function forgeRate(state, itemId) {
   const rate = item.baseRate
     + forgeAt(lv).rateBonus
     + forgeProficiency(state, itemId) * FORGE_PROFICIENCY_STEP
-    + forgeMetalBonus(state);
+    + forgeMetalBonus(state)
+    // 器修流派：专精这一行，代价是修炼分心
+    + schoolFx(state, 'forgeRate');
   return Math.max(FORGE_RATE_MIN, Math.min(FORGE_RATE_MAX, rate));
 }
 
@@ -7659,6 +8269,15 @@ function immortalAction(s,kind,param,rng=Math.random){
    // param 形如 "节点id" 或 "节点id:修士id"（后者表示指派，前者表示撤回）
    const [nodeId,pid]=String(param).split(':');
    const r=pid?mapAssignGarrison(s,nodeId,Number(pid)):mapClearGarrison(s,nodeId);
+   if(!r.ok)return fail(r.reason);msg=r.reason;
+ }else if(kind==='human-pill'){
+   const r=commitHumanPill(s,Date.now());
+   if(!r.ok)return fail(r.reason);msg=r.reason;
+ }else if(kind==='use-human-pill'){
+   const r=commitUseHumanPill(s,Number(param),Date.now());
+   if(!r.ok)return fail(r.reason);msg=r.reason;
+ }else if(kind==='good-deed'){
+   const r=commitGoodDeed(s,Date.now());
    if(!r.ok)return fail(r.reason);msg=r.reason;
  }else if(kind==='rune'){
    const r=commitRune(s,param,Date.now(),rng);
@@ -10988,7 +11607,8 @@ function hydrate(raw) {
       for(let i=1;i<=oldQi;i++) fresh.cultivation.cultivators.push({id:i,name:cultivateName(i),origin:'awakened',root:null,realmIndex:1,xp:0,breakFailures:0,job:'retreat',talent:1,parentage:'awakening'});
       fresh.cultivation.nextId=oldQi+1;
     }
-    for(const [k,v] of Object.entries({poolBlueprint:false,pool:0,compass:false,veins:[],mineLevel:0,mineWorkers:0,clues:0,caveRuns:0,conquests:[]})){fresh.cultivation[k]=raw.cultivation[k]===undefined?v:raw.cultivation[k];}
+    for(const [k,v] of Object.entries({poolBlueprint:false,pool:0,compass:false,veins:[],mineLevel:0,mineWorkers:0,clues:0,caveRuns:0,conquests:[],humanPills:0})){fresh.cultivation[k]=raw.cultivation[k]===undefined?v:raw.cultivation[k];}
+    fresh.cultivation.humanPills=Math.max(0,Math.floor(num(fresh.cultivation.humanPills,0)));
     fresh.cultivation.clues=Math.max(0,Math.floor(num(fresh.cultivation.clues,0)));
     fresh.cultivation.pool=Math.max(0,Math.min(10,Math.floor(num(fresh.cultivation.pool,0))));
     fresh.cultivation.mineWorkers=Math.max(0,Math.min(10000,Math.floor(num(fresh.cultivation.mineWorkers,0))));
@@ -11118,6 +11738,10 @@ function hydrate(raw) {
     fresh.cultivation.qi=fresh.cultivation.cultivators.length;
     fresh.cultivation.unlocked=fresh.cultivation.qi>=QI_CHAPTER_THRESHOLD;
   }
+
+  // 道心（道德值）。**不跨周目保留** —— 轮回是重新做人，前世的血债不该跟着走。
+  // 它没有被列进 REINCARNATION_KEEP，所以重开会回到中庸。
+  fresh.morality=Math.max(MORALITY_MIN,Math.min(MORALITY_MAX,num(raw.morality,MORALITY_START)));
 
   // 元进度：跨周目保留的那一份。
   // **漏掉这一段等于每次读档都把轮回进度清空** —— 这是这一区块最危险的迁移点。
@@ -13442,6 +14066,8 @@ window.__xiuxian = {
     runeMats: RUNE_MATERIALS, runes: RUNE_ITEMS, benchLevels: RUNE_BENCH_LEVELS,
     jobs: CULTIVATOR_JOBS, daos: MANUAL_DAOS, manuals: CULTIVATION_MANUALS,
     chapters: CODEX_CHAPTERS,
+    /** 流派与道心：R10 新增。测试要拿它们核对数量与档位边界。 */
+    schools: MANUAL_SCHOOLS, moralityTiers: MORALITY_TIERS,
   },
   /** 百科：条目书与统计。*/
   codex: {

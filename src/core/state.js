@@ -61,6 +61,13 @@ function createState(now = Date.now()) {
     /** 灵石。凡人换来的修行货币，兑率极低，所以是小数。 */
     spiritStones: 0,
 
+    /**
+     * 道心（道德值）0–100。
+     * 它不是「善恶评分」，而是**你在这个世界里被当成什么人**：
+     * 凶名在外能镇住人，也会招来天谴。三条后果见 data/morality.js。
+     */
+    morality: MORALITY_START,
+
     /** 已发现的秘闻在 SECRETS 里的下标。 */
     secrets: [],
 
@@ -75,6 +82,7 @@ function createState(now = Date.now()) {
       nextId: 1,
       poolBlueprint:false, pool:0, compass:false, veins:[], mineLevel:0, mineWorkers:0, clues:0, caveRuns:0, conquests:[],
       pills: 0,       // 已服下的祛障丹
+      humanPills: 0,  // 人丹存量（血煞一脉独有，见 systems/schools.js）
       unlocked: false, // 是否已踏入炼气篇
     },
 

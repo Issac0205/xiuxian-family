@@ -106,7 +106,9 @@ function forgeRate(state, itemId) {
   const rate = item.baseRate
     + forgeAt(lv).rateBonus
     + forgeProficiency(state, itemId) * FORGE_PROFICIENCY_STEP
-    + forgeMetalBonus(state);
+    + forgeMetalBonus(state)
+    // 器修流派：专精这一行，代价是修炼分心
+    + schoolFx(state, 'forgeRate');
   return Math.max(FORGE_RATE_MIN, Math.min(FORGE_RATE_MAX, rate));
 }
 

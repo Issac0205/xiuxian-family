@@ -550,10 +550,12 @@ section('灵根：宗门引荐礼');
 
 section('秘籍目录');
 const catalog = X.manual.catalog();
-check('目录共 15 本', catalog.length === 15, `${catalog.length} 本`);
-check('五条道途各 3 本', ['breath', 'ward', 'trade', 'seek', 'peril']
-  .every((d) => catalog.filter((x) => x.dao === d).length === 3));
-check('三个品阶各 5 本', [1, 2, 3].every((t) => catalog.filter((x) => x.tier === t).length === 5));
+check('目录功法数与数据表一致', catalog.length === X.data.manuals.length, `${catalog.length} 本`);
+check('五条道途各至少 3 本', ['breath', 'ward', 'trade', 'seek', 'peril']
+  .every((d) => catalog.filter((x) => x.dao === d).length >= 3),
+  ['breath', 'ward', 'trade', 'seek', 'peril'].map((d) => `${d}:${catalog.filter((x) => x.dao === d).length}`).join(' '));
+check('三个品阶各至少 5 本', [1, 2, 3].every((t) => catalog.filter((x) => x.tier === t).length >= 5),
+  [1, 2, 3].map((t) => `T${t}:${catalog.filter((x) => x.tier === t).length}`).join(' '));
 check('旧版三本 id 与数值原样保留', (() => {
   const get = (id) => catalog.find((x) => x.id === id)?.effect.training;
   return near(get('breath'), 0.40) && near(get('spring'), 1.10) && near(get('star'), 2.20);
@@ -763,16 +765,16 @@ state.cultivation.assistManual = 'xuanjia';
 state.spiritStones = 100; state.cultivation.clues = 100;
 X.step(0);
 check('空状态已隐藏', $('original-manual-info').hidden === true);
-check('芯片显示收录进度', $('manual-chip').textContent === '4 / 15 门', $('manual-chip').textContent);
+check('芯片显示收录进度', $('manual-chip').textContent === `4 / ${X.data.manuals.length} 门`, $('manual-chip').textContent);
 check('装备栏显示主修与辅修',
   $('manual-slots').textContent.includes('周天星河诀')
   && $('manual-slots').textContent.includes('玄甲护身诀'));
 check('装备栏标出参悟层数', $('manual-slots').textContent.includes('参悟 2/5'));
 check('汇总区列出了生效加成', $('manual-summary').textContent.includes('闭关修为'));
-check('15 本全部画出（含未收录）',
-  $('manual-grid').querySelectorAll('.manual-card').length === 15);
+check('全部功法都画出（含未收录）',
+  $('manual-grid').querySelectorAll('.manual-card').length === X.data.manuals.length);
 check('未收录的标为 locked',
-  $('manual-grid').querySelectorAll('.manual-card.is-locked').length === 11);
+  $('manual-grid').querySelectorAll('.manual-card.is-locked').length === X.data.manuals.length - 4);
 check('已收录的每本三个按钮',
   $('manual-grid').querySelectorAll('[data-manual-action]').length === 12);
 check('同道途的卡片按钮被禁用',
@@ -1549,7 +1551,7 @@ section('百科：结构与进度');
 {
   const book = X.codex.book();
   const stats = X.codex.stats();
-  check('百科有九章', book.length === 9, book.map((c) => c.name).join(' '));
+  check('百科章节数与数据表一致', book.length === X.data.chapters.length, book.map((c) => c.name).join(' '));
   check('章节 id 唯一', new Set(book.map((c) => c.id)).size === book.length);
   check('每条都有 id / 标题 / 正文',
     book.every((c) => c.entries.every((e) => e.id && e.title && typeof e.prose === 'string' && e.prose.length > 0)));
@@ -1691,8 +1693,11 @@ section('百科：界面');
   check('百科页存在', Boolean(document.querySelector('.page[data-page="codex"]')));
   check('条目列表渲染了', document.querySelectorAll('#codex-list .codex-entry').length > 0,
     `${document.querySelectorAll('#codex-list .codex-entry').length} 条`);
-  check('章节按钮渲染了', document.querySelectorAll('[data-codex-chapter]').length === 11,
-    `${document.querySelectorAll('[data-codex-chapter]').length} 个（含「全部」）`);
+  check('章节按钮渲染了', (() => {
+    // 断言「每一章都有按钮」，而不是断言个数 —— 个数会被「全部」和状态按钮带偏
+    const ids = [...document.querySelectorAll('[data-codex-chapter]')].map((b) => b.dataset.codexChapter);
+    return ['all', ...X.codex.book().map((c) => c.id)].every((id) => ids.includes(id));
+  })(), `${document.querySelectorAll('[data-codex-chapter]').length} 个（含「全部」）`);
   check('进度 chip 有数字', /\d+ \/ \d+ 条/.test($('codex-chip').textContent), $('codex-chip').textContent);
   // 未解锁的条目默认不显示 —— 一上来就摆出 63 条会让人觉得内容太多
   check('未解锁条目默认不显示', !$('codex-list').textContent.includes('？？？'));

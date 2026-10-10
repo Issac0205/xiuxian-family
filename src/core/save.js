@@ -171,7 +171,8 @@ function hydrate(raw) {
       for(let i=1;i<=oldQi;i++) fresh.cultivation.cultivators.push({id:i,name:cultivateName(i),origin:'awakened',root:null,realmIndex:1,xp:0,breakFailures:0,job:'retreat',talent:1,parentage:'awakening'});
       fresh.cultivation.nextId=oldQi+1;
     }
-    for(const [k,v] of Object.entries({poolBlueprint:false,pool:0,compass:false,veins:[],mineLevel:0,mineWorkers:0,clues:0,caveRuns:0,conquests:[]})){fresh.cultivation[k]=raw.cultivation[k]===undefined?v:raw.cultivation[k];}
+    for(const [k,v] of Object.entries({poolBlueprint:false,pool:0,compass:false,veins:[],mineLevel:0,mineWorkers:0,clues:0,caveRuns:0,conquests:[],humanPills:0})){fresh.cultivation[k]=raw.cultivation[k]===undefined?v:raw.cultivation[k];}
+    fresh.cultivation.humanPills=Math.max(0,Math.floor(num(fresh.cultivation.humanPills,0)));
     fresh.cultivation.clues=Math.max(0,Math.floor(num(fresh.cultivation.clues,0)));
     fresh.cultivation.pool=Math.max(0,Math.min(10,Math.floor(num(fresh.cultivation.pool,0))));
     fresh.cultivation.mineWorkers=Math.max(0,Math.min(10000,Math.floor(num(fresh.cultivation.mineWorkers,0))));
@@ -301,6 +302,10 @@ function hydrate(raw) {
     fresh.cultivation.qi=fresh.cultivation.cultivators.length;
     fresh.cultivation.unlocked=fresh.cultivation.qi>=QI_CHAPTER_THRESHOLD;
   }
+
+  // 道心（道德值）。**不跨周目保留** —— 轮回是重新做人，前世的血债不该跟着走。
+  // 它没有被列进 REINCARNATION_KEEP，所以重开会回到中庸。
+  fresh.morality=Math.max(MORALITY_MIN,Math.min(MORALITY_MAX,num(raw.morality,MORALITY_START)));
 
   // 元进度：跨周目保留的那一份。
   // **漏掉这一段等于每次读档都把轮回进度清空** —— 这是这一区块最危险的迁移点。

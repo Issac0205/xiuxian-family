@@ -548,6 +548,8 @@ window.__xiuxian = {
     runeMats: RUNE_MATERIALS, runes: RUNE_ITEMS, benchLevels: RUNE_BENCH_LEVELS,
     jobs: CULTIVATOR_JOBS, daos: MANUAL_DAOS, manuals: CULTIVATION_MANUALS,
     chapters: CODEX_CHAPTERS,
+    /** 流派与道心：R10 新增。测试要拿它们核对数量与档位边界。 */
+    schools: MANUAL_SCHOOLS, moralityTiers: MORALITY_TIERS,
   },
   /** 百科：条目书与统计。*/
   codex: {

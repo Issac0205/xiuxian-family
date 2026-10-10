@@ -217,6 +217,24 @@ const CODEX_MECHANICS = [
 
 /* ── 章节 ── */
 
+/**
+ * 百科对「功法效果」的措辞 —— 与界面上的标签是两套文案：
+ * 界面要短（挤在卡片里），百科可以写全（独立成行）。
+ */
+const CODEX_EFFECT_LABEL = {
+  training: (v) => `闭关修为 +${Math.round(v * 100)}%`,
+  power:    (v) => `修士战力 +${Math.round(v * 100)}%`,
+  labor:    (v) => `劳作银两 +${Math.round(v * 100)}%`,
+  explore:  (v) => `秘闻发现 +${Math.round(v * 100)}%`,
+  survive:  (v) => `洞天生还 +${Math.round(v * 100)} 个百分点`,
+  stones:   (v) => `洞天灵石 +${Math.round(v * 100)}%`,
+};
+
+/** 去掉文案里的 **强调** 标记 —— 百科正文是纯文本，不解析 Markdown。 */
+function plainText(str) {
+  return String(str == null ? '' : str).replace(/\*\*/g, '');
+}
+
 const CODEX_CHAPTERS = [
   {
     id: 'realm', name: '境界', icon: '☯',
@@ -365,24 +383,127 @@ const CODEX_CHAPTERS = [
 
   {
     id: 'manual', name: '功法', icon: '📖',
-    intro: '五条道途，各修各的。宗门修的是宗门的法，传不进山门。',
-    entries: Object.entries(MANUAL_DAOS).map(([dao, def]) => ({
-      id: `manual-${dao}`,
-      title: def.name,
-      prose: def.desc,
+    intro: '五条道途、三个品阶、六个流派。每一本都单独成条 —— 收录了才看得到。',
+    // **每本功法各一条**，而不是按道途归并。
+    // 流派是「玩法身份」，玩家要能一眼看到「这本属于哪条路、代价是什么」。
+    entries: CULTIVATION_MANUALS.map((m) => {
+      const sc = schoolOf(m);
+      const el = MANUAL_DAO_ELEMENT[m.dao];
+      const fx = Object.entries(m.effect || {})
+        .map(([k, v]) => (CODEX_EFFECT_LABEL[k] ? CODEX_EFFECT_LABEL[k](v) : `${k} +${Math.round(v * 100)}%`))
+        .join(' · ');
+      return {
+        id: `manual-${m.id}`,
+        title: m.name,
+        prose: `${MANUAL_TIER_NAME[m.tier]}${MANUAL_DAOS[m.dao].name}法门。${MANUAL_DAOS[m.dao].desc}。`
+          + (sc.id === 'orthodox' ? '' : `　　（${sc.name}：${sc.tagline}）`),
+        lines: (s) => {
+          const owned = (s.cultivation?.manuals || []).includes(m.id);
+          return [
+            `${MANUAL_TIER_NAME[m.tier]} · 道途「${MANUAL_DAOS[m.dao].name}」· 流派「${sc.name}」`,
+            `本功效果：${fx}`,
+            `所需灵根：${el ? `${elementName(el)}系（天灵根不受限）` : '无属性，人人可修'}`,
+            sc.id === 'orthodox' ? '流派代价：无' : `流派机制：${sc.desc}`,
+            sc.id === 'orthodox' ? '' : `流派代价：${plainText(sc.price)}`,
+            owned ? '已收录' : '尚未收录',
+          ].filter(Boolean);
+        },
+        seen: (s) => (s.cultivation?.manuals || []).includes(m.id),
+        hint: '收录这本功法后可见',
+        tags: `${sc.name} ${MANUAL_DAOS[m.dao].name} ${MANUAL_TIER_NAME[m.tier]}`,
+      };
+    }),
+  },
+
+  {
+    id: 'school', name: '流派', icon: '⚔',
+    intro: '同一部功法，走出不同的路。**只有主修位的流派生效** —— 一个人只能走一条路。',
+    entries: MANUAL_SCHOOLS.map((sc) => ({
+      id: `school-${sc.id}`,
+      title: sc.name,
+      prose: sc.lore,
       lines: (s) => {
-        const el = MANUAL_DAO_ELEMENT[dao];
-        const owned = CULTIVATION_MANUALS.filter((m) => m.dao === dao && (s.cultivation?.manuals || []).includes(m.id));
+        const active = mainSchoolOf(s).id === sc.id;
+        const own = CULTIVATION_MANUALS.filter((m) => schoolOf(m).id === sc.id);
         return [
-          `所需灵根：${el ? `${elementName(el)}系（天灵根不受限）` : '无属性，人人可修'}`,
-          `本途共 ${CULTIVATION_MANUALS.filter((m) => m.dao === dao).length} 本 · 已收录 ${owned.length} 本`,
-          ...CULTIVATION_MANUALS.filter((m) => m.dao === dao).map((m) =>
-            `${MANUAL_TIER_NAME[m.tier]}《${m.name}》${(s.cultivation?.manuals || []).includes(m.id) ? '（已收录）' : ''}`),
-        ];
+          `一句话：${sc.tagline}`,
+          `独有机制：${sc.desc}`,
+          `代价：${plainText(sc.price)}`,
+          `本流派共 ${own.length} 本：${own.map((m) => MANUAL_TIER_NAME[m.tier] + m.name).join('、') || '（暂无）'}`,
+          active ? '**当前主修即此流派**' : '',
+        ].filter(Boolean);
       },
-      seen: (s) => (s.cultivation?.manuals || []).length > 0,
-      hint: '收录第一本功法后可见',
+      seen: (s) => (s.cultivation?.manuals || []).some((id) => schoolOf(CULTIVATION_MANUAL_MAP[id]).id === sc.id),
+      hint: '收录本流派的任意一本功法后可见',
+      tags: sc.name,
     })),
+  },
+
+  {
+    id: 'morality', name: '道心', icon: '☯',
+    intro: '不是善恶评分，而是你在这个世界里被当成什么人。',
+    entries: [
+      {
+        id: 'morality-what', title: '道心是什么',
+        prose: '族中老人管它叫「道心」，外人管它叫「名声」。'
+          + '它不评判你做过什么，只记录**你在这个地界上被当成什么人**。'
+          + '血债缠身的人凶名在外，镇得住人，也招得来天谴；'
+          + '问心无愧的人得天所佑，可下不去狠手。'
+          + '**道心不跨周目保留** —— 轮回是重新做人，前世的血债不该跟着走。',
+        lines: (s) => {
+          const t = moralityTierOf(s);
+          return [
+            `当前道心：${moralityOf(s).toFixed(1)} / ${MORALITY_MAX}（${t.name}）`,
+            `洞天生还修正 ${t.caveBonus >= 0 ? '+' : ''}${(t.caveBonus * 100).toFixed(0)} 个百分点`,
+            `攻伐胜算修正 ${t.warBonus >= 0 ? '+' : ''}${(t.warBonus * 100).toFixed(0)} 个百分点`,
+            `领地赋税 ×${t.taxMult.toFixed(2)}`,
+          ];
+        },
+        seen: () => true,
+        tags: '道德 心魔 天谴 民心',
+      },
+      {
+        id: 'morality-tiers', title: '道心的五个档位',
+        prose: '从魔道到道心通明，五个档位各有各的活法。'
+          + '**魔道能打但养不起地，正道养得起但打不动** —— 这三条后果是一组真正的取舍。',
+        lines: () => MORALITY_TIERS.map((t) =>
+          `${t.name}（${t.min}–${t.max}）：生还 ${t.caveBonus >= 0 ? '+' : ''}${(t.caveBonus * 100).toFixed(0)}pp`
+          + ` · 胜算 ${t.warBonus >= 0 ? '+' : ''}${(t.warBonus * 100).toFixed(0)}pp · 赋税 ×${t.taxMult.toFixed(2)}`),
+        seen: () => true,
+      },
+      {
+        id: 'morality-change', title: '道心怎么变',
+        prose: '主修血煞一脉的功法，道心会**持续下坠**，练得越久陷得越深。'
+          + '不走邪路时道心**回归中道**（离 50 越远回得越快）—— 所以想守住正道必须主动行善。',
+        lines: (s) => [
+          `主修流派：${mainSchoolOf(s).name}`,
+          `当前漂移：${schoolDrift(s) !== 0
+            ? `每秒 ${schoolDrift(s).toFixed(4)}（持续下坠）`
+            : '回归中道 50（每秒最多 +' + MORALITY_DRIFT_GOOD.toFixed(4) + '）'}`,
+          `施粥赈济：${fmt(GOOD_DEED_SILVER)} 两银 → 道心 +${GOOD_DEED_GAIN}`,
+          '炼一枚人丹：道心 ' + MORALITY_HUMAN_PILL_COST,
+        ],
+        seen: (s) => moralityOf(s) !== MORALITY_START || (s.cultivation?.manuals || []).length > 0,
+        hint: '收录任意一本功法后可见',
+      },
+      {
+        id: 'morality-human-pill', title: '人丹',
+        prose: '血煞一门的看家手段。把凡人炼成一枚丹，服下者修为暴涨。'
+          + '话说得漂亮——「与其老死田垄，不如把这点灵气还给修士」——'
+          + '做的事却难看：族中人口一年比一年少，而修为什么都不缺。'
+          + '**原料是人**，所以这是全篇最重的代价。',
+        lines: (s) => [
+          `解锁条件：主修「血煞魔功」一脉的功法`,
+          `炼一枚：献祭凡人 ${HUMAN_PILL_MORTALS} 口 + ${HUMAN_PILL_STONES} 灵石，道心 ${MORALITY_HUMAN_PILL_COST}`,
+          `服下：修为 +${Math.round(HUMAN_PILL_XP_RATIO * 100)}%（该修士当前一层所需）`,
+          `现有人丹 ${humanPillCount(s)} 枚`,
+        ],
+        seen: (s) => schoolUnlocks(s, 'humanPill') || humanPillCount(s) > 0
+          || (s.cultivation?.manuals || []).some((id) => schoolOf(CULTIVATION_MANUAL_MAP[id]).id === 'demonic'),
+        hint: '收录血煞一脉的功法后可见',
+        tags: '邪修 血煞 献祭',
+      },
+    ],
   },
 
   {

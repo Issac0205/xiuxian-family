@@ -3,12 +3,15 @@
  * 区块：功法表：道途 / 品阶 / 十五本 / 参悟调参常量
  * 原属 src/data/cultivation.js 第 39–110 行
  * ──────────────────────────────────────────────────────────────── */
-/* ────────────── 秘籍：道途 × 品阶，主修 + 辅修 ──────────────
+/* ────────────── 秘籍：道途 × 品阶 × 流派，主修 + 辅修 ──────────────
  *
- * 设计要点（详见 docs/秘籍机制策划.md）：
+ * 设计要点（详见 docs/秘籍机制策划.md、docs/85-流派与道心.md）：
  *  - 五条「道途」各服务一种玩法，正好对应五种修士职责；
  *  - 三个「品阶」决定数值档位，也决定出处（洞天/攻伐的难度）；
+ *  - **流派**给功法一个玩法身份：主修位的流派会带来独有机制与代价。
+ *    前十五本（无 school 字段）一律按「玄门正宗」处理 —— 没有机制，也没有代价。
  *  - 主修吃满效果，辅修只吃 45%，且同一道途不可占两个位置 —— 这才是选择；
+ *  - **只有主修位的流派生效**，所以「主修选哪本」就是「这一世走哪条路」；
  *  - 重复获得转为「参悟」，也可以花灵石+线索主动参悟，重复掉落不再是废物。
  *
  * 前三个 id（breath/spring/star）沿用旧版的 id 与数值，所以旧存档
@@ -61,6 +64,26 @@ const CULTIVATION_MANUALS = [
   { id:'jianxing', name:'健行散',   dao:'peril', tier:1, effect:{ survive:0.08, stones:0.15 } },
   { id:'guixi',    name:'龟息功',   dao:'peril', tier:2, effect:{ survive:0.18, stones:0.35 } },
   { id:'dayan',    name:'大衍遁法', dao:'peril', tier:3, effect:{ survive:0.35, stones:0.70 } },
+
+  /* ── 以下九本带「流派」，独有机制与代价见 data/schools.js ──
+     数值普遍比同阶的玄门功法略高一点 —— 代价写在流派上，不写在这里。 */
+
+  // 血煞魔功：以血肉养功。主修任意一本都解锁「炼人丹」
+  { id:'xuesha', name:'血煞炼形诀', dao:'ward',  tier:1, school:'demonic', effect:{ power:0.45 } },
+  { id:'wanhun', name:'万魂幡',     dao:'ward',  tier:2, school:'demonic', effect:{ power:0.95 } },
+  { id:'rendan', name:'人丹要术',   dao:'breath', tier:3, school:'demonic', effect:{ training:1.85 } },
+
+  // 合欢双修：人丁兴旺，进境亦快，但不善斗
+  { id:'hehuan', name:'合欢采补术', dao:'breath', tier:1, school:'dual', effect:{ training:0.55 } },
+  { id:'huanxi', name:'欢喜禅功',   dao:'breath', tier:2, school:'dual', effect:{ training:1.35 } },
+
+  // 剑修：一剑破万法，但静不下心
+  { id:'qinglian', name:'青莲剑歌', dao:'ward', tier:2, school:'sword', effect:{ power:0.80 } },
+  { id:'zhanwang', name:'斩妄剑经', dao:'ward', tier:3, school:'sword', effect:{ power:1.55 } },
+
+  // 丹修 / 器修：各自抬高本行的成功率
+  { id:'danding',  name:'丹鼎真解', dao:'breath', tier:2, school:'alchemy', effect:{ training:0.85 } },
+  { id:'shengong', name:'神工录',   dao:'ward',   tier:2, school:'forge',   effect:{ power:0.55 } },
 ];
 const CULTIVATION_MANUAL_MAP = Object.fromEntries(CULTIVATION_MANUALS.map(m=>[m.id,m]));
 /** 兼容旧引用：UI 与存档校验都还叫这个名字。 */

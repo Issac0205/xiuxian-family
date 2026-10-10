@@ -48,8 +48,24 @@
     "marker": "/* ══════════ src/data/manuals.js ══════════ */"
   },
   {
+    "path": "src/data/morality.js",
+    "marker": "/* ══════════ src/data/morality.js ══════════ */"
+  },
+  {
+    "path": "src/data/schools.js",
+    "marker": "/* ══════════ src/data/schools.js ══════════ */"
+  },
+  {
     "path": "src/systems/manuals.js",
     "marker": "/* ══════════ src/systems/manuals.js ══════════ */"
+  },
+  {
+    "path": "src/systems/morality.js",
+    "marker": "/* ══════════ src/systems/morality.js ══════════ */"
+  },
+  {
+    "path": "src/systems/schools.js",
+    "marker": "/* ══════════ src/systems/schools.js ══════════ */"
   },
   {
     "path": "src/systems/roots.js",

@@ -64,6 +64,15 @@ function immortalAction(s,kind,param,rng=Math.random){
    const [nodeId,pid]=String(param).split(':');
    const r=pid?mapAssignGarrison(s,nodeId,Number(pid)):mapClearGarrison(s,nodeId);
    if(!r.ok)return fail(r.reason);msg=r.reason;
+ }else if(kind==='human-pill'){
+   const r=commitHumanPill(s,Date.now());
+   if(!r.ok)return fail(r.reason);msg=r.reason;
+ }else if(kind==='use-human-pill'){
+   const r=commitUseHumanPill(s,Number(param),Date.now());
+   if(!r.ok)return fail(r.reason);msg=r.reason;
+ }else if(kind==='good-deed'){
+   const r=commitGoodDeed(s,Date.now());
+   if(!r.ok)return fail(r.reason);msg=r.reason;
  }else if(kind==='rune'){
    const r=commitRune(s,param,Date.now(),rng);
    if(!r.ok)return fail(r.reason);msg=r.reason;

@@ -103,7 +103,9 @@ function recipeRate(state, recipeId) {
   const rate = r.baseRate
     + furnaceAt(lv).rateBonus
     + proficiency(state, recipeId) * ALCHEMY_PROFICIENCY_STEP
-    + alchemyWoodBonus(state);
+    + alchemyWoodBonus(state)
+    // 丹修流派：专精这一行，代价是战力
+    + schoolFx(state, 'alchemyRate');
   return Math.max(ALCHEMY_RATE_MIN, Math.min(ALCHEMY_RATE_MAX, rate));
 }
 

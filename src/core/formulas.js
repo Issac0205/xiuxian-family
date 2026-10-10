@@ -118,16 +118,19 @@ function derive(state) {
     (crowdRatio - CROWD.threshold) / (1 - CROWD.threshold),
   );
 
+  // 出生率最后乘一层「流派倍率」——合欢双修走的就是这一条
   const birthRate =
-    BASE.birthRate + fx.birthFlat + (b.field || 0) * FIELD_BIRTH * (1 + fx.fieldBonus);
+    (BASE.birthRate + fx.birthFlat + (b.field || 0) * FIELD_BIRTH * (1 + fx.fieldBonus))
+    * schoolBirthMult(state);
 
   /**
    * 死亡率 = 基础 + 拥挤 + 对外扩张的代价。
    * 演武台与商队驿站各按座数计——走出去的人回不来，人口基就薄一层。
+   * 最后再乘一层「流派倍率」——血煞魔功养功要拿人填。
    */
   const expandDeath = (b.arena || 0) * ARENA_DEATH + (b.caravan || 0) * CARAVAN_DEATH;
   const crowdDeath = CROWD.k * crowdOver * crowdOver;
-  const deathRate = BASE.deathRate + crowdDeath + expandDeath + fx.deathFlat;
+  const deathRate = (BASE.deathRate + crowdDeath + expandDeath + fx.deathFlat) * schoolDeathMult(state);
   const netRate = birthRate - deathRate;
 
   // ── 银两 ──────────────────────────────────────────────────

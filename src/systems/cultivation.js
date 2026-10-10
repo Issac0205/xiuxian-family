@@ -115,8 +115,9 @@ function cultivationBonuses(state) {
   for(const p of people){
     // 每个人吃自己灵根能修的那一份；天灵根对本系功法还有专精
     const mb=manualBonusFor(state,p);
-    // 法器与功法加成相加（都是「百分比加成」，相加比相乘更好解释给玩家）
-    const powerMult=1+mb.power+art.power;
+    // 法器与功法加成相加（都是「百分比加成」，相加比相乘更好解释给玩家）；
+    // 主修流派的战力加成也加在这里 —— 剑修就是靠这一项吃饭的
+    const powerMult=1+mb.power+art.power+schoolFx(state,'power');
     // 劳作与探索按「层数」计，所以这里用大档内的层号而不是全局序号，
     // 否则筑基的 10 层会直接把 laborMult 顶到上限。
     const idx=Math.max(0,Math.min(cultivateLevelCap(p),p.realmIndex||0));
@@ -166,8 +167,10 @@ function progressCultivators(state,dt,now=Date.now(),rng=Math.random,births=0) {
     const runeMult = runeTrainingMult(state, now);
     // 金手指：掌天瓶的代价（分心）与天生道体的增益
     const metaMult = metaTrainMult(state);
+    // 主修流派的修炼加成/减益 —— 合欢快、剑修慢
+    const schoolMult = 1 + schoolFx(state, 'training');
     // 灵根是第四个乘数：天灵根 ×2.0，五灵根 ×0.7
-    person.xp += REALM_XP_RATE*dt*manualMult*runeMult*metaMult*rootSpeedMult(person)*(Number(person.talent)||1)*(person.job==='sect'?3.5:1);
+    person.xp += REALM_XP_RATE*dt*manualMult*runeMult*metaMult*schoolMult*rootSpeedMult(person)*(Number(person.talent)||1)*(person.job==='sect'?3.5:1);
 
     // 同一大档内自动晋升；带瓶颈的那一层停住（交给 systems/breakthrough.js）
     while(person.realmIndex<cap){
@@ -183,6 +186,8 @@ function progressCultivators(state,dt,now=Date.now(),rng=Math.random,births=0) {
   advanceImmortalEconomy(state,dt,now,rng);
   // 符箓的时间推进：清理过期存货、结束聚灵符
   advanceRunes(state,dt,now);
+  // 道心的时间推进：主修邪修功法则持续下坠，否则缓慢回升
+  advanceMorality(state,dt,now);
   const bonus=cultivationBonuses(state);
   if (bonus.explorePerSec>0 && state.secrets.length<SECRETS.length) {
     const chance=1-Math.exp(-bonus.explorePerSec*dt);
