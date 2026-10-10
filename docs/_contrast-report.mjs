@@ -1,0 +1,47 @@
+// 交付后复核：修复前 / 修复后关键对比度
+const rgb = (h) => { const s = h.replace('#', ''); return [0, 2, 4].map(i => parseInt(s.slice(i, i + 2), 16)); };
+const lin = (c) => { const s = c / 255; return s <= 0.03928 ? s / 12.92 : Math.pow((s + 0.055) / 1.055, 2.4); };
+const lum = (h) => { const [r, g, b] = rgb(h); return 0.2126 * lin(r) + 0.7152 * lin(g) + 0.0722 * lin(b); };
+const cr = (a, b) => { let l1 = lum(a), l2 = lum(b); if (l1 < l2) [l1, l2] = [l2, l1]; return Math.round(((l1 + 0.05) / (l2 + 0.05)) * 100) / 100; };
+const blend = (fg, bg, a) => { const f = rgb(fg), b = rgb(bg); return '#' + f.map((v, i) => Math.round(v * a + b[i] * (1 - a)).toString(16).padStart(2, '0')).join(''); };
+const chk = (label, a, b, min) => {
+  const v = cr(a, b);
+  console.log(`${String(v).padStart(6)}:1  ${(v >= (min ?? 4.5) ? 'PASS' : 'FAIL').padEnd(6)} ${label}`);
+};
+
+console.log('── inkwash 普通按钮（可点）──');
+chk('【前】文字 --muted #686157 on #f0ebe2', '#686157', '#f0ebe2');
+chk('【前】按钮底 #f0ebe2 on 面板 #fcfaf6  ← 按钮消失', '#f0ebe2', '#fcfaf6', 3);
+chk('【后】文字 --text #25211d on 新底 #e8e2d6', '#25211d', '#e8e2d6');
+chk('【后】描边 rgba(60,54,48,.46) on 面板 #fcfaf6', blend('#3c3630', '#fcfaf6', 0.46), '#fcfaf6', 3);
+console.log('── inkwash 禁用按钮（用户原话的问题）──');
+const oldBg = blend('#e3ddd1', '#fcfaf6', 0.45);
+chk('【前】文字(.45 of #8a8277) on 底(.45 of #e3ddd1)', blend('#8a8277', '#e3ddd1', 0.45), oldBg);
+chk('【前】底 on 面板', oldBg, '#fcfaf6', 3);
+chk('【后】文字 --text #25211d on 新底 #f1ede5', '#25211d', '#f1ede5');
+chk('【后】虚线描边 rgba(60,54,48,.32) on 面板', blend('#3c3630', '#fcfaf6', 0.32), '#fcfaf6', 3);
+console.log('── inkwash 已解锁 / 未解锁建筑按钮 ──');
+chk('【前】未解锁紫字 #a58fd6 on #e3ddd1(locked op.86)', '#a58fd6', blend('#e3ddd1', '#fcfaf6', 0.86));
+chk('【后】未解锁紫字 #574a7a on #ece7dd', '#574a7a', '#ece7dd');
+console.log('── inkwash 点亮度（深底浅字，保持）──');
+chk('【后】CTA #fbf8f2 on 渐变起 #3a3630', '#fbf8f2', '#3a3630');
+chk('【后】CTA #fbf8f2 on 渐变终 #59544a', '#fbf8f2', '#59544a');
+console.log('\n── classic 按钮 ──');
+chk('【前】禁用文字(.45 of --text) on --ink-3', blend('#e9e3d5', '#263341', 0.45), '#263341');
+chk('【后】禁用文字 --text on 新底 --ink-2 #1a232e', '#e9e3d5', '#1a232e');
+chk('【前/后】可点文字 --text on --ink-3', '#e9e3d5', '#263341');
+chk('【前】未解锁紫字 #a58fd6 经 .bcard.locked op.86', blend('#a58fd6', blend('#263341', '#1a232e', 0.86), 0.86), blend('#263341', '#1a232e', 0.86));
+chk('【后】未解锁紫字 #c3b0ef 经 .bcard.locked op.86', blend('#c3b0ef', blend('#263341', '#1a232e', 0.86), 0.86), blend('#263341', '#1a232e', 0.86));
+chk('【前】锁定出售 op.22', blend('#b4bdc7', '#1a232e', 0.22), '#1a232e');
+chk('【后】锁定出售 --muted #b4bdc7 on --ink-2', '#b4bdc7', '#1a232e');
+console.log('\n── daotian（新主题）三组关键前景/背景 ──');
+chk('① 正文 --text #e7e1d2 on 卡片 --ink-2 #16202c', '#e7e1d2', '#16202c');
+chk('② 次要 --muted #a9b4c0 on 按钮 --ink-3 #1f2b39', '#a9b4c0', '#1f2b39');
+chk('③ 标题 --gold-soft #f2dfb0 on 页底 --ink-0 #0a0e14', '#f2dfb0', '#0a0e14');
+console.log('── daotian 状态分级 ──');
+chk('CTA #f5e8c4 on 渐变起 #a8863f', '#f5e8c4', '#a8863f');
+chk('CTA #f5e8c4 on 渐变终 #6f5a2b', '#f5e8c4', '#6f5a2b');
+chk('推荐外圈 #f0d9a0 on --ink-0', '#f0d9a0', '#0a0e14', 3);
+chk('禁用文字 --muted on 禁用底 --ink-2', '#a9b4c0', '#16202c');
+chk('数据正增长 --jade #6fd6b4 on --ink-1', '#6fd6b4', '#101823');
+chk('警示 --danger #ec7d76 on --ink-1', '#ec7d76', '#101823');

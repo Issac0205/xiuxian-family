@@ -140,4 +140,5 @@ const THEME_KEY = 'xiuxian-family/theme/v1';
 const THEMES = {
   classic: { name: '原风格' },
   inkwash: { name: '水墨风' },
+  daotian: { name: '丹霄' },
 };

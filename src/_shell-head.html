@@ -334,7 +334,10 @@ body {
 }
 .btn:hover:not(:disabled) { background: var(--ink-4); border-color: var(--line-strong); }
 .btn:active:not(:disabled) { transform: translateY(1px); }
-.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+/* 禁用态不再用 opacity 整块降透明——那会把文字一起冲淡到 1.9~3.3:1。
+   改为「底更暗 + 虚线描边 + 文字保持 --text」，文字仍读得清，状态仍一眼可辨。
+   具体的每个主题取值见文件末尾「按钮状态分级」区块。 */
+.btn:disabled { cursor: not-allowed; opacity: 1; }
 
 .btn.ghost { background: transparent; color: var(--muted); }
 .btn.ghost:hover:not(:disabled) { color: var(--gold-soft); }
@@ -721,7 +724,9 @@ body {
 .tech-req:empty { display: none; }
 
 .tech .btn.tech-btn { font-size: 12px; padding: 6px 10px; width: 100%; }
-.tech .btn.tech-btn:disabled { opacity: 0.45; }
+/* 原来这里再乘一层 opacity:.45，与 .tech.is-locked 的 .5 叠乘只剩 22%，
+   科技按钮几乎完全消失。禁用感统一交给文件末尾的「禁用」分级样式。 */
+.tech .btn.tech-btn:disabled { opacity: 1; }
 
 /* 前置满足且银两足够 */
 .tech.is-ready { border-left-color: var(--gold); background: rgba(217, 180, 94, 0.055); }
@@ -1810,7 +1815,290 @@ body[data-theme="inkwash"] .cultivator-assignment { background:#fffcf7; }
 
 
 .immortal-expansion{padding:14px;display:grid;gap:14px}.immortal-block{border:1px solid var(--line);background:var(--ink-1);border-radius:10px;padding:14px}.immortal-block h3{margin:0 0 7px;color:var(--gold-soft);font:600 16px var(--font-serif)}.immortal-block p{color:var(--muted);font-size:12px;line-height:1.8;margin:5px 0}.immortal-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:9px}.immortal-actions .btn{min-height:35px}.immortal-actions .btn:disabled{opacity:.4}.immortal-block select,.immortal-block input{background:var(--ink-2);color:var(--text);border:1px solid var(--line-strong);border-radius:6px;padding:7px;min-width:0;max-width:100%}.immortal-statline{display:flex;gap:8px;flex-wrap:wrap;margin:9px 0}.immortal-statline span{font-size:12px;color:var(--text);background:var(--ink-3);padding:5px 8px;border-radius:6px}.immortal-warning{color:var(--danger)!important}.immortal-mini{display:flex;flex-direction:column;gap:7px;margin-top:10px}.immortal-mini-row{display:flex;align-items:center;justify-content:space-between;gap:9px;padding:9px;border:1px solid var(--line);border-radius:7px;flex-wrap:wrap}.immortal-mini-row div{font-size:12px}.immortal-mini-row b{color:var(--gold-soft)}.immortal-mini-row small{display:block;color:var(--muted);margin-top:4px}.immortal-choices{display:flex;flex-wrap:wrap;gap:8px}.immortal-block .btn{color:var(--text);background:var(--ink-3)}body[data-theme="inkwash"] .immortal-block{background:#f8f5ee}body[data-theme="inkwash"] .immortal-block .btn{background:#e5dfd3;color:#2f2b26}@media(max-width:720px){.immortal-expansion{padding:10px}.immortal-block{padding:12px}.immortal-mini-row{align-items:stretch}.immortal-mini-row>.btn{width:100%}}
+</style>
+<style>
+/* ══════════════════════════════════════════════════════════════════════════
+   按钮状态分级（classic / inkwash / daotian 三套主题通用）
+   ──────────────────────────────────────────────────────────────────────────
+   为什么要有这一块：
+   1. 禁用态原先靠 opacity（.45 / .4 / .32 / .22 / .5）实现，文字被一起冲淡，
+      实测 inkwash 只剩 1.76:1、classic 只剩 3.32:1，玩家读不出"为什么不能点"。
+      现在改成不透明降饱和：底色换个色阶、描边褪色、文字保持 --text（12.4:1）。
+   2. 可点态原先 .btn 底 --ink-3 与面板 --ink-2 只差 1.23:1，按钮没有边界。
+      现在统一给一条清晰的 border + 内高光，可点态一眼看得出来是个按钮。
+   3. 点亮/CTA 原先和未点亮之间缺少中间层级，现在明确成五级：
+      ① 禁用（闷底褪边）→ ② 普通可点（实底实边）→ ③ 已选（金色描边+浅金底）
+      → ④ 推荐（金色描边+外圈光晕）→ ⑤ CTA/点亮（金渐变深底+浅金字）
+   注意：不新增 class、不改 DOM。状态判定全部由 :hover / :disabled / :only-child
+   与既有 class（.is-ready / .is-active / .locked / .ghost）推导。 */
+   ══════════════════════════════════════════════════════════════════════════ */
 
+/* ── ① 禁用：底更浅/更闷 + 描边褪色 + 文字仍然清晰 ─────────────────────── */
+body .btn:not(.ghost):disabled {
+  color: var(--text);
+  background: var(--ink-2);
+  border-color: rgba(255, 255, 255, .16);
+}
+body[data-theme="inkwash"] .btn:not(.ghost):disabled {
+  color: var(--text);
+  background: #f1ede5;
+  border-color: #b5aea1;
+}
+body[data-theme="daotian"] .btn:not(.ghost):disabled {
+  color: var(--text);
+  background: var(--ink-2);
+  border-color: #3c4a5c;
+}
+
+/* ── ② 普通可点：明确的按钮边界（不再和面板底糊在一起） ───────────────── */
+body .btn:not(.ghost):not(:disabled) {
+  background: var(--ink-3);
+  border-color: rgba(233, 227, 213, .26);
+  color: var(--text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .07);
+}
+body .btn:not(.ghost):not(:disabled):hover {
+  background: var(--ink-4);
+  border-color: var(--line-strong);
+  color: var(--gold-soft);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .1), 0 3px 10px rgba(0, 0, 0, .22);
+}
+/* 通用的"这是个按钮"判定：唯一一个可点的按钮＝当前该点的那一个（推荐态） */
+body .panel-head-right .btn:not(.ghost):not(:disabled):only-child,
+body .bcard-buy .btn:not(.ghost):not(:disabled):only-child,
+body .overview-actions .btn:not(.ghost):not(:disabled):only-child {
+  border-color: var(--line-strong);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .11), 0 0 0 1px rgba(217, 180, 94, .30);
+}
+
+/* ── ③ 已选（开关类按钮）：金边 + 浅金底 ───────────────────────────────── */
+body[data-theme="inkwash"] .btn.ghost.is-active,
+body[data-theme="inkwash"] .seg-btn.is-active {
+  background: rgba(45, 41, 36, .14);
+  border-color: rgba(45, 41, 36, .46);
+  color: var(--gold-soft);
+}
+body[data-theme="daotian"] .btn.ghost.is-active,
+body[data-theme="daotian"] .seg-btn.is-active {
+  background: rgba(216, 180, 106, .17);
+  border-color: rgba(216, 180, 106, .46);
+  color: var(--gold-soft);
+}
+
+/* ── ④⑤ CTA / 点亮态：保持深底浅字（最稳的对比方案），底座压暗一档 ─────
+   原 .overview-primary 是 linear-gradient(135deg,#e3bd70,#bb9450) + #18202a 字，
+   金色底上的深字只有 4:1 上下；统一压成深底金渐变后是 5.4~7.6:1。 */
+body .overview-primary:not(:disabled) {
+  background: linear-gradient(135deg, #a8863f, #6f5a2b);
+  border-color: var(--line-strong);
+  color: #f5e8c4;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .14);
+}
+body .overview-primary:not(:disabled):hover {
+  background: linear-gradient(135deg, #b8944a, #7d6633);
+  color: #fdf3d8;
+}
+body[data-theme="inkwash"] .overview-primary:not(:disabled),
+body[data-theme="inkwash"] .bcard .btn.buy:not(:disabled),
+body[data-theme="inkwash"] .route .btn.go:not(:disabled),
+body[data-theme="inkwash"] .market .btn.exchange:not(:disabled),
+body[data-theme="inkwash"] .pill-box .btn.pill:not(:disabled),
+body[data-theme="inkwash"] .tech.is-ready .btn.tech-btn:not(:disabled) {
+  background: linear-gradient(135deg, #3a3630, #59544a);
+  border-color: #6f6553;
+  color: #fbf8f2;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12);
+}
+body[data-theme="inkwash"] .overview-primary:not(:disabled):hover,
+body[data-theme="inkwash"] .bcard .btn.buy:not(:disabled):hover,
+body[data-theme="inkwash"] .route .btn.go:not(:disabled):hover,
+body[data-theme="inkwash"] .market .btn.exchange:not(:disabled):hover,
+body[data-theme="inkwash"] .pill-box .btn.pill:not(:disabled):hover,
+body[data-theme="inkwash"] .tech.is-ready .btn.tech-btn:not(:disabled):hover {
+  background: linear-gradient(135deg, #443f37, #675f52);
+  border-color: #7c7362;
+}
+
+/* ── classic：普通按钮文字改 --text（--muted-dim 只有 4.22:1 不达标） ──── */
+body .btn.ghost:disabled { opacity: 1; }
+/* 锁定建筑的「未解锁」：原来用了 #a58fd6，再叠 .bcard.locked 的 opacity:.86，
+   实测只有 3.92:1（不达标）。这里保持"紫色＝未解锁"的语义，把紫调亮到 5.45:1，
+   并用"底更浅 + 边更淡"和普通可点按钮拉开距离。 */
+body[data-theme="classic"] .bcard.locked .btn.buy:disabled {
+  color: #c3b0ef;
+  border-color: rgba(169, 140, 224, .38);
+}
+/* 锁定建筑的「出售」原为 opacity:.22（1.63:1，等于消失）。
+   半价拆售是挂机玩家腾格子的高频动作，改成"文字读得清 + 不加边框"来区分主次。 */
+body .bcard.locked .btn.sell:disabled { opacity: 1; color: var(--muted); }
+body[data-theme="inkwash"] .bcard.locked .btn.sell:disabled { color: #6b6459; }
+/* 未研习科技：.tech.is-locked 容器自带 opacity:.78，按钮文字 --muted-dim 经此只剩 3.74:1 */
+body .tech.is-locked .btn.tech-btn:disabled { color: var(--muted); opacity: 1; }
+
+/* ── 水墨风：修掉"亮不亮都看不清" ──────────────────────────────────────
+   原第 1505-1508 行把 .btn 压成 background:#f0ebe2(ink-2) + border 12% + muted，
+   与面板 #fcfaf6 只差 1.14:1，按钮整个消失；再叠 .btn:disabled{opacity:.45}
+   后文字只剩 1.88:1。这里把未点亮/可点/禁用三级重新拉开，
+   同时保留水墨"浅底留白、以线立形"的气质（不填深色块）。
+   放在文件末尾以确保覆盖 1812 行那条 .immortal-block .btn 的旧规则。 */
+body[data-theme="inkwash"] .btn:not(.ghost):not(:disabled) {
+  color: var(--text);
+  background: #e8e2d6;
+  border-color: #8a8378;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .7);
+}
+body[data-theme="inkwash"] .btn:not(.ghost):not(:disabled):hover {
+  color: var(--gold-soft);
+  background: #ded7c8;
+  border-color: rgba(45, 41, 36, .62);
+}
+body[data-theme="inkwash"] .btn.ghost,
+body[data-theme="inkwash"] .bcard .btn.sell { color: var(--muted); }
+/* 浅底上 #a58fd6 只有 2.15:1（几乎看不见）；换成同色相压暗的 #574a7a = 6.4:1，
+   既保住"紫色＝未解锁"的语义，又能读出字。 */
+body[data-theme="inkwash"] .bcard.locked .btn.buy:disabled {
+  color: #574a7a;
+  border-color: rgba(87, 74, 122, .46);
+}
+body[data-theme="inkwash"] .setting-tip { color: #5c564d; }
+
+/* ── 移动端：保证新描边/新分级在窄屏不破 ─────────────────────────────── */
+@media (max-width: 720px) {
+  .btn { min-height: 36px; }
+  .seg-btn.is-active { box-shadow: inset 0 -2px 0 var(--gold); }
+  .overview-primary:not(:disabled) { min-height: 44px; }
+}
+
+/* ══════════════════════════════════════════════════════════════════════════
+   新主题「丹霄」data-theme="daotian" —— 挂机修仙夜景
+   意象：子夜天穹 + 丹炉余烬 + 灵气青碧 + 竹简米黄；克制，不抢数字。
+   与现有 :root 共用同一套变量名（--ink-0..4 / --line / --gold* / --jade …）。
+   ══════════════════════════════════════════════════════════════════════════ */
+body[data-theme="daotian"], html[data-theme="daotian"] {
+  --ink-0: #0a0e14;
+  --ink-1: #101823;
+  --ink-2: #16202c;
+  --ink-3: #1f2b39;
+  --ink-4: #2a3848;
+  --line: rgba(196, 162, 90, .20);
+  --line-strong: rgba(196, 162, 90, .48);
+  --gold: #d8b46a;
+  --gold-soft: #f2dfb0;
+  --gold-dim: #8a7a52;
+  --jade: #6fd6b4;
+  --silver: #b3c3d6;
+  --ember: #e0895c;
+  --violet: #b195e8;
+  --wheat: #ddc98d;
+  --danger: #ec7d76;
+  --text: #e7e1d2;
+  --muted: #a9b4c0;
+  --muted-dim: #8a94a1;
+  --radius: 12px;
+  --shadow: 0 10px 30px rgba(0, 0, 0, .42);
+}
+body[data-theme="daotian"] {
+  color: var(--text);
+  background:
+    radial-gradient(760px 420px at 82% -10%, rgba(216, 180, 106, .07), transparent 60%),
+    radial-gradient(620px 420px at 4% 104%, rgba(111, 214, 180, .06), transparent 62%),
+    linear-gradient(180deg, #0b1119 0%, #0a0e14 52%, #080c11 100%);
+  background-attachment: fixed;
+}
+body[data-theme="daotian"] .panel,
+body[data-theme="daotian"] .pres-chip,
+body[data-theme="daotian"] .res,
+body[data-theme="daotian"] .route,
+body[data-theme="daotian"] .caravan,
+body[data-theme="daotian"] .market,
+body[data-theme="daotian"] .pill-box,
+body[data-theme="daotian"] .quiz-card,
+body[data-theme="daotian"] .toast,
+body[data-theme="daotian"] .immortal-block,
+body[data-theme="daotian"] .topbar-actions {
+  border-color: #33445a;
+}
+body[data-theme="daotian"] .topbar { background: linear-gradient(180deg, rgba(16, 24, 35, .98), rgba(12, 17, 25, .94)); border-bottom-color: #33445a; }
+body[data-theme="daotian"] .pagetabs { background: linear-gradient(180deg, rgba(16, 24, 35, .96), rgba(12, 17, 25, .92)); border-bottom-color: #33445a; }
+body[data-theme="daotian"] .pagetab.is-active { color: var(--gold-soft); border-bottom-color: var(--gold); background: linear-gradient(180deg, rgba(216, 180, 106, .10), transparent); }
+body[data-theme="daotian"] .brand-seal { background: linear-gradient(145deg, #26374a, #1a232e); color: var(--gold-soft); border-color: var(--line-strong); }
+body[data-theme="daotian"] .overview {
+  border-color: var(--line-strong);
+  background:
+    radial-gradient(520px 250px at 8% -30%, rgba(216, 180, 106, .13), transparent 84%),
+    radial-gradient(400px 250px at 100% 106%, rgba(111, 214, 180, .09), transparent 82%),
+    linear-gradient(125deg, #17212c 0%, #111a24 54%, #0d151d 100%);
+  box-shadow: 0 14px 40px rgba(0, 0, 0, .45);
+}
+body[data-theme="daotian"] .overview::before { background: linear-gradient(var(--gold-soft), var(--jade)); }
+body[data-theme="daotian"] .overview h1 { color: var(--gold-soft); }
+body[data-theme="daotian"] .overview-desc { color: #b9c3cd; }
+body[data-theme="daotian"] .bar-track { background: #131c26; border-color: #2b3a4b; }
+body[data-theme="daotian"] .bar-fill { background: linear-gradient(90deg, #6fd6b4, #d8b46a); }
+body[data-theme="daotian"] .log-item { border-bottom-color: rgba(196, 162, 90, .13); }
+body[data-theme="daotian"] .btn:not(.ghost):not(:disabled) {
+  background: var(--ink-3);
+  border-color: #55647a;
+  color: var(--text);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .08);
+}
+body[data-theme="daotian"] .btn:not(.ghost):not(:disabled):hover {
+  background: var(--ink-4);
+  border-color: var(--gold);
+  color: var(--gold-soft);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .12), 0 3px 12px rgba(0, 0, 0, .34);
+}
+body[data-theme="daotian"] .btn.ghost { color: var(--muted); background: transparent; }
+body[data-theme="daotian"] .btn.ghost:hover:not(:disabled) { color: var(--gold-soft); }
+body[data-theme="daotian"] .seg { border-color: #33445a; background: rgba(255, 255, 255, .03); }
+body[data-theme="daotian"] .seg-btn { color: var(--muted); border-right-color: rgba(255, 255, 255, .06); }
+body[data-theme="daotian"] .seg-btn:hover { color: var(--text); background: rgba(255, 255, 255, .05); }
+body[data-theme="daotian"] .overview-primary:not(:disabled),
+body[data-theme="daotian"] .bcard .btn.buy:not(:disabled),
+body[data-theme="daotian"] .route .btn.go:not(:disabled),
+body[data-theme="daotian"] .market .btn.exchange:not(:disabled),
+body[data-theme="daotian"] .pill-box .btn.pill:not(:disabled),
+body[data-theme="daotian"] .tech.is-ready .btn.tech-btn:not(:disabled),
+body[data-theme="daotian"] .btn.break.is-ready {
+  background: linear-gradient(135deg, #a8863f, #6f5a2b);
+  border-color: #f0d9a0;
+  color: #f5e8c4;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, .16), 0 0 0 1px rgba(216, 180, 106, .18);
+}
+body[data-theme="daotian"] .overview-primary:not(:disabled):hover,
+body[data-theme="daotian"] .bcard .btn.buy:not(:disabled):hover,
+body[data-theme="daotian"] .route .btn.go:not(:disabled):hover,
+body[data-theme="daotian"] .market .btn.exchange:not(:disabled):hover,
+body[data-theme="daotian"] .pill-box .btn.pill:not(:disabled):hover,
+body[data-theme="daotian"] .tech.is-ready .btn.tech-btn:not(:disabled):hover,
+body[data-theme="daotian"] .btn.break.is-ready:hover {
+  background: linear-gradient(135deg, #bd9748, #816931);
+  color: #fdf6e0;
+}
+body[data-theme="daotian"] .chip { background: var(--ink-3); border-color: #3c4a5c; color: var(--text); }
+body[data-theme="daotian"] .chip .chip-label { color: var(--muted); }
+body[data-theme="daotian"] .panel-head { background: linear-gradient(180deg, rgba(216, 180, 106, .06), transparent); border-bottom-color: rgba(196, 162, 90, .16); }
+body[data-theme="daotian"] .panel-head h2,
+body[data-theme="daotian"] .brand-title,
+body[data-theme="daotian"] .tech-name,
+body[data-theme="daotian"] .route-title { color: var(--gold-soft); }
+body[data-theme="daotian"] .tech-mark { background: var(--ink-3); border-color: #33445a; color: var(--muted); }
+body[data-theme="daotian"] .tech.is-ready { border-left-color: var(--gold); background: rgba(216, 180, 106, .05); }
+body[data-theme="daotian"] .tech.is-done .tech-name,
+body[data-theme="daotian"] .tech.is-done .tech-mark { color: var(--jade); }
+body[data-theme="daotian"] .bcard-name { color: var(--gold-soft); }
+body[data-theme="daotian"] .bcard-tagline { color: var(--muted-dim); }
+body[data-theme="daotian"] .bcard.locked .btn.buy:disabled { color: var(--muted); border-color: #4a4360; }
+body[data-theme="daotian"] .note,
+body[data-theme="daotian"] .foot-note,
+body[data-theme="daotian"] .route-desc,
+body[data-theme="daotian"] .market-desc,
+body[data-theme="daotian"] .setting-tip { color: var(--muted); }
+body[data-theme="daotian"] .immortal-block .btn:not(:disabled) { color: var(--text); background: var(--ink-3); }
+body[data-theme="daotian"] .toast { background: rgba(22, 32, 44, .97); border-color: var(--line-strong); color: var(--text); }
+body[data-theme="daotian"] ::selection { background: rgba(216, 180, 106, .28); color: #fff; }
+body[data-theme="daotian"] ::-webkit-scrollbar-thumb { background: #2a3848; border-radius: 6px; }
+body[data-theme="daotian"] ::-webkit-scrollbar-thumb:hover { background: #3a4c60; }
 </style>
 </head>
 <body data-theme="classic">
@@ -1828,9 +2116,10 @@ body[data-theme="inkwash"] .cultivator-assignment { background:#fffcf7; }
     <div class="topbar-actions" id="global-settings" aria-hidden="true">
       <div class="seg-group">
         <span class="seg-label">界面风格</span>
-        <div class="seg" id="theme-switch" title="切换当前界面主题。原风格保留当前配色，水墨风为浅底留白的水墨卷轴风格。">
+        <div class="seg" id="theme-switch" title="切换当前界面主题。原风格保留当前配色，水墨风为浅底留白的水墨卷轴风格，丹霄为子夜丹炉的挂机夜景。">
           <button class="seg-btn is-active" data-theme-choice="classic">原风格</button>
           <button class="seg-btn" data-theme-choice="inkwash">水墨风</button>
+          <button class="seg-btn" data-theme-choice="daotian">丹霄</button>
         </div>
       </div>
       <p class="setting-tip"><span class="theme-preview"><span class="theme-dot" aria-hidden="true"></span><span>主题支持即时切换，并自动记住你上次选择的风格。</span></span></p>
