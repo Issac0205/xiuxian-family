@@ -112,8 +112,19 @@ check('七个页面标签都在', document.querySelectorAll('.pagetab').length =
 check('纪事侧栏在页面之外',
   Boolean(document.querySelector('.shell-side [data-panel="log"]'))
   && !document.querySelector('.page [data-panel="log"]'));
-check('修士职业统计不再出现 undefined',
-  !$('cultivator-job-stats').textContent.includes('undefined'));
+check('修士职业统计不再出现 undefined', (() => {
+  // 这条以前是空过的：测试状态里没人担任新职责，所以显示不出 undefined。
+  // 现在先让每个职责都有人担任，再检查。
+  const jobs = Object.keys(X.data.jobs);
+  const before = state.cultivation.cultivators.slice();
+  state.cultivation.cultivators = jobs.map((job, i) => person({ id: 900 + i, name: `测试${i}`, job, realmIndex: 3 }));
+  ui.render();
+  const text = $('cultivator-job-stats').textContent;
+  const bad = text.includes('undefined') || text.includes('NaN');
+  state.cultivation.cultivators = before;
+  ui.render();
+  return !bad;
+})(), `共 ${Object.keys(X.data.jobs).length} 种职责`);
 check('页面切换可用（只在已露出的页签之间）', (() => {
   const pages = X.visible.pages();
   for (const p of pages) {
