@@ -116,6 +116,8 @@ function createState(now = Date.now()) {
       /** 百科：当前章节（'all' 或章节 id）与搜索词。 */
       codexChapter: 'all',
       codexQuery: '',
+      /** 百科：是否把未解锁条目的「？？？」占位也显示出来（默认不显示，免得一上来就显得内容很多）。 */
+      codexShowLocked: false,
       /** 格物页是否隐藏已研习的科技。 */
       hideDoneTechs: false,
       /** 各面板的折叠状态：panelId -> true 表示已折叠。 */

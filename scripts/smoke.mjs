@@ -1683,7 +1683,16 @@ section('百科：界面');
   check('章节按钮渲染了', document.querySelectorAll('[data-codex-chapter]').length === 11,
     `${document.querySelectorAll('[data-codex-chapter]').length} 个（含「全部」）`);
   check('进度 chip 有数字', /\d+ \/ \d+ 条/.test($('codex-chip').textContent), $('codex-chip').textContent);
-  check('未解锁条目显示为「？？？」', $('codex-list').textContent.includes('？？？'));
+  // 未解锁的条目默认不显示 —— 一上来就摆出 63 条会让人觉得内容太多
+  check('未解锁条目默认不显示', !$('codex-list').textContent.includes('？？？'));
+  check('但给了「显示未解锁」的按钮', Boolean(document.querySelector('[data-codex-locked]')),
+    document.querySelector('[data-codex-locked]')?.textContent);
+  state.ui.codexShowLocked = true;
+  X.codex.render(true);
+  check('打开后才显示「？？？」占位', $('codex-list').textContent.includes('？？？'));
+  state.ui.codexShowLocked = false;
+  X.codex.render(true);
+  check('关掉后占位又消失', !$('codex-list').textContent.includes('？？？'));
   check('数据引文渲染成了独立行', document.querySelectorAll('.codex-data span').length > 0);
 
   // 切章节（shim 没有 Element.click，用 dom.click 触发文档级监听）

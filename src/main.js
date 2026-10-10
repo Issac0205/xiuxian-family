@@ -664,57 +664,57 @@ function renderImmortalExpansion(){
  const activeMine=ready[0];
  const chosenCavePerson=document.getElementById('cave-person')?.value;
  const peopleSelect=ps.filter(p=>p.job!=='sect').map(p=>`<option value="${p.id}" ${String(p.id)===chosenCavePerson?'selected':''}>${p.name} · ${realmName(p.realmIndex)} · 天赋${Number(p.talent||1).toFixed(2)}</option>`).join('');
- const sectOptions=ps.filter(p=>p.job!=='sect'&&rootRank(p)>=SECT_MIN_ROOT_RANK).map(p=>`<option value="${p.id}">${p.name}。{rootText(p)}。</option>`).join('');
+ const sectOptions=ps.filter(p=>p.job!=='sect'&&rootRank(p)>=SECT_MIN_ROOT_RANK).map(p=>`<option value="${p.id}">${p.name}（${rootText(p)}）</option>`).join('');
  const mainManual=c.equippedManual?CULTIVATION_MANUAL_MAP[c.equippedManual]:null;
  const assistManual=c.assistManual?CULTIVATION_MANUAL_MAP[c.assistManual]:null;
 
  /* 仙途页的每个分块都是可折叠的。
-    折叠状态存。ui.collapsed[key]，与其它面板共用同一。syncCollapsed。
-    visible=false 时加 hidden —。用属性而不是不渲染，免得闭合标签对不上。*/
+    折叠状态存在 ui.collapsed[key]，与其它面板共用同一套 syncCollapsed。
+    visible=false 时加 hidden —— 用属性而不是不渲染，免得闭合标签对不上。 */
  const blk = (key, title, visible = true) => {
    const open = !state.ui.collapsed[key];
    return `<div class="immortal-block${open ? '' : ' is-collapsed'}" data-panel="${key}"${visible ? '' : ' hidden'}>`
      + `<div class="immortal-block-head"><h3>${title}</h3>`
-     + `<button class="panel-toggle" type="button" data-toggle="${key}" title="折叠 / 展开" aria-expanded="${open}">//button></div>`;
+     + `<button class="panel-toggle" type="button" data-toggle="${key}" title="折叠 / 展开" aria-expanded="${open}">▾</button></div>`;
  };
  el.innerHTML=`
- <div class="immortal-block"><h3>🌿 灵池 · 后天祛障</h3><p>秘闻≥2后可在坊市购得灵池蓝图。灵池每秒消耗灵石，使凡人有机会后天祛障，初始天赋为1。无灵石时自动停运。</p>
- <div class="immortal-statline"><span>灵池 ${c.pool}/10 座</span><span>灵石消耗${(c.pool*.00013).toFixed(5)}/秒</span><span>蓝图 ${c.poolBlueprint?'已得':'未得'}</span></div>
- <div class="immortal-actions"><button class="btn" data-immortal-action="pool-blueprint" ${c.poolBlueprint||state.secrets.length<12?'disabled':''}>坊市购蓝图· 2灵石</button><button class="btn" data-immortal-action="pool-build" ${!c.poolBlueprint?'disabled':''}>营造灵池· 3灵石+5万银两</button></div></div>
- <div class="immortal-block"><h3>⛏️ 寻龙探脉 · 灵石矿场</h3><p>秘闻≥5后研习寻龙尺，耗费灵石勘探不同品阶与储量的灵脉。矿场将持续产出灵石，并因危险作业额外损失凡人人口。</p>
- <div class="immortal-statline"><span>寻龙尺${c.compass?'已研习':'未研习'}</span><span>灵脉 ${ready.length} 处可采</span><span>矿场 ${c.mineLevel?'已建成':'未建成'}</span><span>矿工 ${c.mineWorkers} 人</span></div>
- <p>${activeMine?`当前矿脉（${activeMine.grade}阶） · 储量${activeMine.reserve.toFixed(2)}灵石`:'目前尚无可开采的灵脉。</span>'}</p>
- <div class="immortal-actions"><button class="btn" data-immortal-action="compass" ${c.compass||state.secrets.length<15?'disabled':''}>寻龙尺 · 3灵石</button><button class="btn" data-immortal-action="survey" ${!c.compass?'disabled':''}>探寻灵脉 · 1灵石</button><button class="btn" data-immortal-action="mine-build" ${!ready.length||c.mineLevel?'disabled':''}>开设矿场· 2灵石+8万银。</button></div>
- ${c.mineLevel?`<div class="immortal-actions"><label>矿工人数 <input id="mine-workers" type="number" min="0" max="1000" step="10" value="${c.mineWorkers}" style="width:95px"></label><button class="btn" data-immortal-action="mine-workers">调整派工</button></div>`:''}
- <p class="immortal-warning">矿场可能显著提高凡人死亡人数，灵脉储量耗尽后需重新勘探；修士不受凡人矿难死亡率影响路</p></div>
- <div class="immortal-block"><h3>🏯 宗门修行 · 上等资质的安全道。</h3><p>三灵根及以上的修士可入宗门修炼：安全稳定、不受洞天与攻伐折损，但不再提供驻守／劳作／探索加成，也不向家族传授宗门功法。入宗时宗门会按资质赠一份引荐礼（灵石）人</p>
- <div class="immortal-statline"><span>在宗 ${ps.filter(p=>p.job==='sect').length} 选</span><span>平均天赋 ${averageTalent(state).toFixed(2)}</span></div>
- <div class="immortal-actions"><select id="sect-person">${sectOptions||'<option value="">暂无合适人缘</option>'}</select><button class="btn" data-immortal-action="sect" ${!sectOptions?'disabled':''}>送入宗门</button></div></div>
- <div class="immortal-block"><h3>🌀 洞天秘境 · 赌命求机。</h3><p>探索消耗可用秘闻线索和灵石；任何非宗门修士都能挑战任何级别洞天，但修为不足会大幅降低生还概率，失败可能永久失去修士条</p>
- <div class="immortal-statline"><span>可用线索 ${c.clues} 耗</span><span>历练次数 ${c.caveRuns}</span></div>
- <div class="immortal-actions"><label>派遣修士 <select id="cave-person">${peopleSelect||'<option value="">尚无修士</option>'}</select></label></div>
- <div class="immortal-mini">${CAVES.map((v)=>{const p=ps.find(q=>q.id===Number(chosenCavePerson))||ps.find(q=>q.job!=='sect');const chance=p?caveSurvival(state,p,v):0;const st=mapNodeStatus(state,v.id);const ok=st!=='locked';return `<div class="immortal-mini-row${ok?'':' is-locked'}"><div><b>${v.name}</b><span class="map-tier">T${v.tier}</span><small>${ok?`建议 ${realmName(v.realm)} · 消耗 ${v.fee} 灵石 / ${v.clues} 线索 · 预估生还 ${(chance*100).toFixed(1)}%`:'与此地不相邻 · 需先打通沿途'}</small></div><button class="btn" data-immortal-action="cave" data-map-node="${v.id}" ${!peopleSelect||!ok?'disabled':''}>${ok?'冒险进入':'未打通'}</button></div>`}).join('')}</div></div>
- <div class="immortal-block"><h3>⚔️ 攻伐势力 · 占领领地</h3><p>家族综合战力影响胜率。攻下后获得灵石，可能缴获功法；战败可能有修士阵亡。已占领势力不可重复攻伐。</p>
- <div class="immortal-mini">${FOES.map(f=>{const chance=Math.max(.05,Math.min(.95,derive(state).totalPower/(derive(state).totalPower+f.power)));const st=mapNodeStatus(state,f.id);const held=st==='held';const ok=st!=='locked';const hold=mapHoldPower(f);const strength=held?mapHoldStrength(state,f.id):0;const pacified=held&&strength>=hold;const unrest=Math.round((worldOf(state).unrest[f.id]||0)*100);const opts=mapGarrisonCandidates(state).map(q=>`<option value="${q.id}" ${worldOf(state).garrison[f.id]===q.id?'selected':''}>${q.name}）{realmName(q.realmIndex)} · 战力 ${Math.round(cultivatorPower(state,q))}怨</option>`).join('');return `<div class="immortal-mini-row${ok?'':' is-locked'}"><div><b>${f.name}</b><span class="map-tier">T${f.tier}</span><small>${held?(pacified?`镇守 ${Math.round(strength)} / ${hold} · 赋税 ${(f.yield*3600).toFixed(1)} 灵石/时`:`<span class="map-warn">镇守不足 ${Math.round(strength)} / ${hold} · 民得${unrest}%（满则叛离）</span>`):ok?`敌方战力 ${f.power} · 胜算 ${(chance*100).toFixed(1)}% · 攻下途${f.stones} 灵石 · 占领后需镇守 ${hold}`:'与此地不相邻 · 需先打通沿通}</small></div>${held?`<span class="map-garrison"><select data-garrison-for="${f.id}">${opts||'<option value="">无人可派</option>'}</select><button class="btn" data-immortal-action="garrison" data-map-node="${f.id}" ${opts?'':'disabled'}>派往镇守</button></span>`:`<button class="btn" data-immortal-action="attack" data-map-node="${f.id}" ${ok?'':'disabled'}>${ok?'发起攻伐':'未打通'}</button>`}</div>`}).join('')}</div></div>
- <div class="immortal-block"><h3>⚗️ 丹房 · 炼药</h3><p>药材只从<b>已占领且有效镇守</b>的领地来——所以想炼丹就得先打通商路。每炼一料*失败会损失全部材。*，先把丹炉升上去、把熟练度刷起来才划算。丹道属木，灵根带木的丹师有额外成功率级</p>
- <div class="immortal-statline">${(()=>{const a=alchemyOf(state);const per=herbPerSec(state);const dm=alchemist(state);return `<span>丹炉 ${a.furnace} （· ${furnaceAt(a.furnace).name}）${(furnaceAt(a.furnace).rateBonus*100).toFixed(0)}%根</span><span>丹师 ${dm?`${dm.name}${alchemyWoodBonus(state)>0?` · 木灵派+${(alchemyWoodBonus(state)*100).toFixed(0)}%`:' · 无木灵根'}`:'<span class="map-warn">未指炉</span>'}</span><span>累计开次${a.crafts||0} 份</span>`})()}</div>
- <div class="immortal-mini">${ALCHEMY_HERBS.map(h=>{const have=herbCount(state,h.id);const per=herbPerSec(state)[h.id]||0;return `<div class="immortal-mini-row"><div><b>${h.name}</b><span class="map-tier">T${h.tier}</span><small>${have.toFixed(1)} —· 产地 ${mapNode(h.node)?.name||'/}${per>0?` · ${(per*3600).toFixed(1)} 。时`:' · <span class="map-warn">未产出（该地未占领或镇守不足（</span>'}</small></div><span class="herb-count">${Math.floor(have)}</span></div>`}).join('')}</div>
- <div class="immortal-mini">${ALCHEMY_RECIPES.map(r=>{const plan=recipePlan(state,r.id);const mat=Object.entries(r.materials).map(([k,v])=>`${ALCHEMY_HERB_MAP[k].name}×${v}`).join(' ');const need=ALCHEMY_FURNACE[r.furnace-1].name;return `<div class="immortal-mini-row${plan.ok?'':' is-locked'}"><div><b>${r.name}</b><span class="map-tier">${plan.prof?`）${plan.prof}/${ALCHEMY_PROFICIENCY_MAX}`:''}</span><small>${mat} · 成功根${(recipeRate(state,r.id)*100).toFixed(0)}% · 派${recipeYield(state,r.id)} 炉· 需 ${need}</small>${plan.ok?'':`<small class="map-warn">${plan.reason}</small>`}</div><button class="btn" data-immortal-action="craft" data-recipe="${r.id}" ${plan.ok?'':'disabled'}>开次</button></div>`}).join('')}</div>
- <div class="immortal-actions">${(()=>{const up=furnaceUpgradePlan(state);return up.ok?`<button class="btn" data-immortal-action="furnace">升炉 →${up.next.name} · ${up.stones} 灵石 + ${(up.silver/10000).toFixed(0)}万银两</button>`:`<span class="setting-tip">${up.reason}</span>`})()}</div></div>
- <div class="immortal-block"><h3>🔨 器坊 · 铸器</h3><p>矿料与药材同源（都来自已占领且有效镇守的领地），但材料各自独立，所以炼丹与炼器可以同时推。铸炉*失败会损失全部矿料*；法器有<b>耐久</b>，攻伐与洞天都会磨损，耐久越低效果越弱，耗尽则失效，需花矿料重祭。金主锋锐，灵根带金的器师有额外成功率。</p>
- <div class="immortal-statline">${(()=>{const f=forgeOf(state);const sm=smith(state);const art=artifactBonus(state);return `<span>锻造台 ${f.level} 级· ${forgeAt(f.level).name}（${(forgeAt(f.level).rateBonus*100).toFixed(0)}%）</span><span>器师 ${sm?`${sm.name}${forgeMetalBonus(state)>0?` · 金灵根+${(forgeMetalBonus(state)*100).toFixed(0)}%`:' · 无金灵根'}`:'<span class="map-warn">未指//span>'}</span><span>法器加成 <b>+${(art.power*100).toFixed(0)}%</b> 战力${art.survive>0?` · +${(art.survive*100).toFixed(0)}% 生还`:''}${art.broken.length?` · <span class="map-warn">${art.broken.join('、')}已失效</span>`:''}</span>`})()}</div>
- <div class="immortal-mini">${FORGE_ORES.map(o=>{const have=oreCount(state,o.id);const per=orePerSec(state)[o.id]||0;return `<div class="immortal-mini-row"><div><b>${o.name}</b><span class="map-tier">T${o.tier}</span><small>${have.toFixed(2)} 级· 产地 ${mapNode(o.node)?.name||'份}${per>0?` · ${(per*3600).toFixed(2)} —时`:' · <span class="map-warn">未产出（该地未占领或镇守不足//span>'}</small></div><span class="herb-count">${Math.floor(have)}</span></div>`}).join('')}</div>
- <div class="immortal-mini">${FORGE_ITEMS.map(it=>{const plan=forgePlan(state,it.id);const owned=forgeOf(state).owned.includes(it.id);const eq=forgeOf(state).equipped[it.slot]===it.id;const dur=durabilityOf(state,it.id);const mat=Object.entries(it.materials).map(([k,v])=>`${FORGE_ORE_MAP[k].name}×${v}`).join(' ');const rp=repairPlan(state,it.id);return `<div class="immortal-mini-row${plan.ok||owned?'':' is-locked'}"><div><b>${it.name}</b><span class="map-tier">${FORGE_SLOT_MAP[it.slot].name}</span>${owned?`<span class="map-tier">耐久 ${Math.round(dur)}%</span>`:''}<small>${mat} · 成功率 ${(forgeRate(state,it.id)*100).toFixed(0)}% · 战力 +${(it.power*100).toFixed(0)}%${it.survive?` · 生还 +${(it.survive*100).toFixed(0)}%`:''} · 需 ${FORGE_LEVELS[it.forge-1].name}</small>${plan.ok||owned?'':`<small class="map-warn">${plan.reason}</small>`}</div><span class="map-garrison">${owned
+${blk('pool','🌿 灵池 · 后天祛障')}<p>秘闻≥12后可在坊市购得灵池蓝图。灵池每秒消耗灵石，使凡人有机会后天祛障，初始天赋为1。无灵石时自动停运。</p>
+<div class="immortal-statline"><span>灵池 ${c.pool}/10 座</span><span>灵石消耗 ${(c.pool*.00013).toFixed(5)}/秒</span><span>蓝图 ${c.poolBlueprint?'已得':'未得'}</span></div>
+<div class="immortal-actions"><button class="btn" data-immortal-action="pool-blueprint" ${c.poolBlueprint||state.secrets.length<12?'disabled':''}>坊市购蓝图 · 2灵石</button><button class="btn" data-immortal-action="pool-build" ${!c.poolBlueprint?'disabled':''}>营造灵池 · 3灵石+5万银两</button></div></div>
+${blk('mine','⛏️ 寻龙探脉 · 灵石矿场')}<p>秘闻≥15后研习寻龙尺，耗费灵石勘探不同品阶与储量的灵脉。矿场将持续产出灵石，并因危险作业额外损失凡人人口。</p>
+<div class="immortal-statline"><span>寻龙尺 ${c.compass?'已研习':'未研习'}</span><span>灵脉 ${ready.length} 处可采</span><span>矿场 ${c.mineLevel?'已建成':'未建成'}</span><span>矿工 ${c.mineWorkers} 人</span></div>
+<p>${activeMine?`当前矿脉（${activeMine.grade}阶） · 储量 ${activeMine.reserve.toFixed(2)} 灵石`:'目前尚无可开采的灵脉。'}</p>
+<div class="immortal-actions"><button class="btn" data-immortal-action="compass" ${c.compass||state.secrets.length<15?'disabled':''}>寻龙尺 · 3灵石</button><button class="btn" data-immortal-action="survey" ${!c.compass?'disabled':''}>探寻灵脉 · 1灵石</button><button class="btn" data-immortal-action="mine-build" ${!ready.length||c.mineLevel?'disabled':''}>开设矿场 · 2灵石+8万银两</button></div>
+${c.mineLevel?`<div class="immortal-actions"><label>矿工人数 <input id="mine-workers" type="number" min="0" max="1000" step="10" value="${c.mineWorkers}" style="width:95px"></label><button class="btn" data-immortal-action="mine-workers">调整派工</button></div>`:''}
+<p class="immortal-warning">矿场可能显著提高凡人死亡人数，灵脉储量耗尽后需重新勘探；修士不受凡人矿难死亡率影响。</p></div>
+${blk('sect','🏯 宗门修行 · 上等资质的安全道路')}<p>三灵根及以上的修士可入宗门修炼：安全稳定、不受洞天与攻伐折损，但不再提供驻守／劳作／探索加成，也不向家族传授宗门功法。入宗时宗门会按资质赠一份引荐礼（灵石）。</p>
+<div class="immortal-statline"><span>在宗 ${ps.filter(p=>p.job==='sect').length} 人</span><span>平均天赋 ${averageTalent(state).toFixed(2)}</span></div>
+<div class="immortal-actions"><select id="sect-person">${sectOptions||'<option value="">暂无合适人选</option>'}</select><button class="btn" data-immortal-action="sect" ${!sectOptions?'disabled':''}>送入宗门</button></div></div>
+${blk('cave','🌀 洞天秘境 · 赌命求机缘')}<p>探索消耗可用秘闻线索和灵石；任何非宗门修士都能挑战任何级别洞天，但修为不足会大幅降低生还概率，失败可能永久失去修士。</p>
+<div class="immortal-statline"><span>可用线索 ${c.clues} 条</span><span>历练次数 ${c.caveRuns}</span></div>
+<div class="immortal-actions"><label>派遣修士 <select id="cave-person">${peopleSelect||'<option value="">尚无修士</option>'}</select></label></div>
+<div class="immortal-mini">${CAVES.map((v)=>{const p=ps.find(q=>q.id===Number(chosenCavePerson))||ps.find(q=>q.job!=='sect');const chance=p?caveSurvival(state,p,v):0;const st=mapNodeStatus(state,v.id);const ok=st!=='locked';return `<div class="immortal-mini-row${ok?'':' is-locked'}"><div><b>${v.name}</b><span class="map-tier">T${v.tier}</span><small>${ok?`建议 ${realmName(v.realm)} · 消耗 ${v.fee} 灵石 / ${v.clues} 线索 · 预估生还 ${(chance*100).toFixed(1)}%`:'与此地不相邻 · 需先打通沿途'}</small></div><button class="btn" data-immortal-action="cave" data-map-node="${v.id}" ${!peopleSelect||!ok?'disabled':''}>${ok?'冒险进入':'未打通'}</button></div>`}).join('')}</div></div>
+${blk('foe','⚔️ 攻伐势力 · 占领领地')}<p>家族综合战力影响胜率。攻下后获得灵石，可能缴获功法；战败可能有修士阵亡。已占领势力不可重复攻伐。</p>
+<div class="immortal-mini">${FOES.map(f=>{const chance=Math.max(.05,Math.min(.95,derive(state).totalPower/(derive(state).totalPower+f.power)));const st=mapNodeStatus(state,f.id);const held=st==='held';const ok=st!=='locked';const hold=mapHoldPower(f);const strength=held?mapHoldStrength(state,f.id):0;const pacified=held&&strength>=hold;const unrest=Math.round((worldOf(state).unrest[f.id]||0)*100);const opts=mapGarrisonCandidates(state).map(q=>`<option value="${q.id}" ${worldOf(state).garrison[f.id]===q.id?'selected':''}>${q.name}（${realmName(q.realmIndex)} · 战力 ${Math.round(cultivatorPower(state,q))}）</option>`).join('');return `<div class="immortal-mini-row${ok?'':' is-locked'}"><div><b>${f.name}</b><span class="map-tier">T${f.tier}</span><small>${held?(pacified?`镇守 ${Math.round(strength)} / ${hold} · 赋税 ${(f.yield*3600).toFixed(1)} 灵石/时`:`<span class="map-warn">镇守不足 ${Math.round(strength)} / ${hold} · 民怨 ${unrest}%（满则叛离）</span>`):ok?`敌方战力 ${f.power} · 胜算 ${(chance*100).toFixed(1)}% · 攻下得 ${f.stones} 灵石 · 占领后需镇守 ${hold}`:'与此地不相邻 · 需先打通沿途'}</small></div>${held?`<span class="map-garrison"><select data-garrison-for="${f.id}">${opts||'<option value="">无人可派</option>'}</select><button class="btn" data-immortal-action="garrison" data-map-node="${f.id}" ${opts?'':'disabled'}>派往镇守</button></span>`:`<button class="btn" data-immortal-action="attack" data-map-node="${f.id}" ${ok?'':'disabled'}>${ok?'发起攻伐':'未打通'}</button>`}</div>`}).join('')}</div></div>
+${blk('alchemy','⚗️ 丹房 · 炼药', immortalBlockVisible(state,'alchemy'))}<p>药材只从<b>已占领且有效镇守</b>的领地来——所以想炼丹就得先打通商路。每炼一炉<b>失败会损失全部材料</b>，先把丹炉升上去、把熟练度刷起来才划算。丹道属木，灵根带木的丹师有额外成功率。</p>
+<div class="immortal-statline">${(()=>{const a=alchemyOf(state);const dm=alchemist(state);return `<span>丹炉 ${a.furnace} 级 · ${furnaceAt(a.furnace).name}（+${(furnaceAt(a.furnace).rateBonus*100).toFixed(0)}%）</span><span>丹师 ${dm?`${dm.name}${alchemyWoodBonus(state)>0?` · 木灵根 +${(alchemyWoodBonus(state)*100).toFixed(0)}%`:' · 无木灵根'}`:'<span class="map-warn">未指派</span>'}</span><span>累计开炉 ${a.crafts||0} 次</span>`})()}</div>
+<div class="immortal-mini">${ALCHEMY_HERBS.map(h=>{const have=herbCount(state,h.id);const per=herbPerSec(state)[h.id]||0;return `<div class="immortal-mini-row"><div><b>${h.name}</b><span class="map-tier">T${h.tier}</span><small>${have.toFixed(1)} 份 · 产地 ${mapNode(h.node)?.name||'—'}${per>0?` · ${(per*3600).toFixed(1)} 份/时`:' · <span class="map-warn">未产出（该地未占领或镇守不足）</span>'}</small></div><span class="herb-count">${Math.floor(have)}</span></div>`}).join('')}</div>
+<div class="immortal-mini">${ALCHEMY_RECIPES.map(r=>{const plan=recipePlan(state,r.id);const mat=Object.entries(r.materials).map(([k,v])=>`${ALCHEMY_HERB_MAP[k].name}×${v}`).join(' ');const need=ALCHEMY_FURNACE[r.furnace-1].name;return `<div class="immortal-mini-row${plan.ok?'':' is-locked'}"><div><b>${r.name}</b><span class="map-tier">${plan.prof?`熟练 ${plan.prof}/${ALCHEMY_PROFICIENCY_MAX}`:''}</span><small>${mat} · 成功率 ${(recipeRate(state,r.id)*100).toFixed(0)}% · 出 ${recipeYield(state,r.id)} 枚 · 需 ${need}</small>${plan.ok?'':`<small class="map-warn">${plan.reason}</small>`}</div><button class="btn" data-immortal-action="craft" data-recipe="${r.id}" ${plan.ok?'':'disabled'}>开炉</button></div>`}).join('')}</div>
+<div class="immortal-actions">${(()=>{const up=furnaceUpgradePlan(state);return up.ok?`<button class="btn" data-immortal-action="furnace">升炉 → ${up.next.name} · ${up.stones} 灵石 + ${(up.silver/10000).toFixed(0)}万银两</button>`:`<span class="setting-tip">${up.reason}</span>`})()}</div></div>
+${blk('forge','🔨 器坊 · 铸器', immortalBlockVisible(state,'forge'))}<p>矿料与药材同源（都来自已占领且有效镇守的领地），但材料各自独立，所以炼丹与炼器可以同时推。铸器<b>失败会损失全部矿料</b>；法器有<b>耐久</b>，攻伐与洞天都会磨损，耐久越低效果越弱，耗尽则失效，需花矿料重祭。金主锋锐，灵根带金的器师有额外成功率。</p>
+<div class="immortal-statline">${(()=>{const f=forgeOf(state);const sm=smith(state);const art=artifactBonus(state);return `<span>锻造台 ${f.level} 级 · ${forgeAt(f.level).name}（+${(forgeAt(f.level).rateBonus*100).toFixed(0)}%）</span><span>器师 ${sm?`${sm.name}${forgeMetalBonus(state)>0?` · 金灵根 +${(forgeMetalBonus(state)*100).toFixed(0)}%`:' · 无金灵根'}`:'<span class="map-warn">未指派</span>'}</span><span>法器加成 <b>+${(art.power*100).toFixed(0)}%</b> 战力${art.survive>0?` · +${(art.survive*100).toFixed(0)}% 生还`:''}${art.broken.length?` · <span class="map-warn">${art.broken.join('、')}已失效</span>`:''}</span>`})()}</div>
+<div class="immortal-mini">${FORGE_ORES.map(o=>{const have=oreCount(state,o.id);const per=orePerSec(state)[o.id]||0;return `<div class="immortal-mini-row"><div><b>${o.name}</b><span class="map-tier">T${o.tier}</span><small>${have.toFixed(2)} 份 · 产地 ${mapNode(o.node)?.name||'—'}${per>0?` · ${(per*3600).toFixed(2)} 份/时`:' · <span class="map-warn">未产出（该地未占领或镇守不足）</span>'}</small></div><span class="herb-count">${Math.floor(have)}</span></div>`}).join('')}</div>
+<div class="immortal-mini">${FORGE_ITEMS.map(it=>{const plan=forgePlan(state,it.id);const owned=forgeOf(state).owned.includes(it.id);const eq=forgeOf(state).equipped[it.slot]===it.id;const dur=durabilityOf(state,it.id);const mat=Object.entries(it.materials).map(([k,v])=>`${FORGE_ORE_MAP[k].name}×${v}`).join(' ');const rp=repairPlan(state,it.id);return `<div class="immortal-mini-row${plan.ok||owned?'':' is-locked'}"><div><b>${it.name}</b><span class="map-tier">${FORGE_SLOT_MAP[it.slot].name}</span>${owned?`<span class="map-tier">耐久 ${Math.round(dur)}%</span>`:''}<small>${mat} · 成功率 ${(forgeRate(state,it.id)*100).toFixed(0)}% · 战力 +${(it.power*100).toFixed(0)}%${it.survive?` · 生还 +${(it.survive*100).toFixed(0)}%`:''} · 需 ${FORGE_LEVELS[it.forge-1].name}</small>${plan.ok||owned?'':`<small class="map-warn">${plan.reason}</small>`}</div><span class="map-garrison">${owned
    ?`${eq?'<span class="map-tier">已装备</span>':`<button class="btn" data-immortal-action="artifact-equip" data-artifact="${it.id}">装备</button>`}${rp.ok?`<button class="btn" data-immortal-action="artifact-repair" data-artifact="${it.id}">祭炼</button>`:''}`
    :`<button class="btn" data-immortal-action="forge" data-artifact="${it.id}" ${plan.ok?'':'disabled'}>开炉</button>`}</span></div>`}).join('')}</div>
- <div class="immortal-actions">${(()=>{const up=forgeUpgradePlan(state);return up.ok?`<button class="btn" data-immortal-action="forge-level">升级 →${up.next.name} · ${up.stones} 灵石 + ${(up.silver/10000).toFixed(0)}万银两</button>`:`<span class="setting-tip">${up.reason}</span>`})()}</div></div>
- <div class="immortal-block"><h3>📜 符房 · 画符</h3><p>符文与药材、矿料同源（都来自已占领且有效镇守的领地）。符箓是<b>一次。</b>的：画好之后 <b>${RUNE_SHELF_HOURS} 小时</b>内不用就会作废，所以宜<b>用多少画多少</b>。前三张符挂成「下一次」加成，等对应的行动来消费。火主炎上，灵根带火的符师有额外成功率成</p>
- <div class="immortal-statline">${(()=>{const r=runesOf(state);const ru=runist(state);const pend=r.pending;const train=runeTrainingMult(state);return `<span>符台 ${r.bench} 。· ${runeBenchAt(r.bench).name}。${(runeBenchAt(r.bench).rateBonus*100).toFixed(0)}%。</span><span>符师 ${ru?`${ru.name}${runeFireBonus(state)>0?` · 火灵。+${(runeFireBonus(state)*100).toFixed(0)}%`:' · 无火灵根'}`:'<span class="map-warn">未指级</span>'}</span><span>${train>1?`<b>聚灵符生效中 ×${train.toFixed(2)}</b>`:'无聚灵符'}${pend.cave?` · 护身（+${(pend.cave*100).toFixed(0)}%`:''}${pend.attack?` · 破阵）+${(pend.attack*100).toFixed(0)}%`:''}${pend.break?` · 冲关根+${(pend.break*100).toFixed(0)}%`:''}</span>`})()}</div>
- <div class="immortal-mini">${RUNE_MATERIALS.map(m=>{const have=runeMatCount(state,m.id);const per=runePerSec(state)[m.id]||0;return `<div class="immortal-mini-row"><div><b>${m.name}</b><span class="map-tier">T${m.tier}</span><small>${have.toFixed(2)} 派· 产地 ${mapNode(m.node)?.name||'份}${per>0?` · ${(per*3600).toFixed(2)} —时`:' · <span class="map-warn">未产出（该地未占领或镇守不足//span>'}</small></div><span class="herb-count">${Math.floor(have)}</span></div>`}).join('')}</div>
- <div class="immortal-mini">${RUNE_ITEMS.map(it=>{const plan=runePlan(state,it.id);const n=runeCount(state,it.id);const left=runeExpiresIn(state,it.id);const mat=Object.entries(it.materials).map(([k,v])=>`${RUNE_MATERIAL_MAP[k].name}×${v}`).join(' ');return `<div class="immortal-mini-row${plan.ok?'':' is-locked'}"><div><b>${it.name}</b><span class="map-tier">${it.text}</span>${n>0?`<span class="map-tier">。${n} · ${(left/3600).toFixed(1)}h</span>`:''}<small>${mat} · 成功/${(runeRate(state,it.id)*100).toFixed(0)}% · 需 ${RUNE_BENCH_LEVELS[it.bench-1].name}</small>${plan.ok?'':`<small class="map-warn">${plan.reason}</small>`}</div><span class="map-garrison">${n>0?`<button class="btn" data-immortal-action="rune-use" data-rune="${it.id}">${it.kind==='train'?'启用':'挂上'}</button>`:''}<button class="btn" data-immortal-action="rune" data-rune="${it.id}" ${plan.ok?'':'disabled'}>画符</button></span></div>`}).join('')}</div>
- <div class="immortal-actions">${(()=>{const up=benchUpgradePlan(state);return up.ok?`<button class="btn" data-immortal-action="rune-bench">升台 。${up.next.name} · ${up.stones} 灵石 + ${(up.silver/10000).toFixed(0)}万银→/button>`:`<span class="setting-tip">${up.reason}</span>`})()}</div></div>
- <div class="immortal-block"><h3>📜 家族功法</h3><p>宗门修的是宗门的法，<b>家族功法只对闭关修士生效</b>——宗门弟子享受不到。当前主修 ${mainManual?`《${mainManual.name}》`:'无'}${assistManual?` · 辅修。{assistManual.name}》`:''}，闭关修炼倍率 <b>${manualTrainingMultiplier(state).toFixed(2)}×</b>，已收录 ${c.manuals.length} / ${CULTIVATION_MANUALS.length} 门。</p>
- <div class="immortal-actions"><span class="setting-tip">装备、参悟与全部功法目录见上方「功法阁」面板</span></div></div>`;
+<div class="immortal-actions">${(()=>{const up=forgeUpgradePlan(state);return up.ok?`<button class="btn" data-immortal-action="forge-level">升级 → ${up.next.name} · ${up.stones} 灵石 + ${(up.silver/10000).toFixed(0)}万银两</button>`:`<span class="setting-tip">${up.reason}</span>`})()}</div></div>
+${blk('runes','📜 符房 · 画符', immortalBlockVisible(state,'runes'))}<p>符文与药材、矿料同源（都来自已占领且有效镇守的领地）。符箓是<b>一次性</b>的：画好之后 <b>${RUNE_SHELF_HOURS} 小时</b>内不用就会作废，所以宜<b>用多少画多少</b>。前三张符挂成「下一次」加成，等对应的行动来消费。火主炎上，灵根带火的符师有额外成功率。</p>
+<div class="immortal-statline">${(()=>{const r=runesOf(state);const ru=runist(state);const pend=r.pending;const train=runeTrainingMult(state);return `<span>符台 ${r.bench} 级 · ${runeBenchAt(r.bench).name}（+${(runeBenchAt(r.bench).rateBonus*100).toFixed(0)}%）</span><span>符师 ${ru?`${ru.name}${runeFireBonus(state)>0?` · 火灵根 +${(runeFireBonus(state)*100).toFixed(0)}%`:' · 无火灵根'}`:'<span class="map-warn">未指派</span>'}</span><span>${train>1?`<b>聚灵符生效中 ×${train.toFixed(2)}</b>`:'无聚灵符'}${pend.cave?` · 护身符 +${(pend.cave*100).toFixed(0)}%`:''}${pend.attack?` · 破阵符 +${(pend.attack*100).toFixed(0)}%`:''}${pend.break?` · 冲关符 +${(pend.break*100).toFixed(0)}%`:''}</span>`})()}</div>
+<div class="immortal-mini">${RUNE_MATERIALS.map(m=>{const have=runeMatCount(state,m.id);const per=runePerSec(state)[m.id]||0;return `<div class="immortal-mini-row"><div><b>${m.name}</b><span class="map-tier">T${m.tier}</span><small>${have.toFixed(2)} 份 · 产地 ${mapNode(m.node)?.name||'—'}${per>0?` · ${(per*3600).toFixed(2)} 份/时`:' · <span class="map-warn">未产出（该地未占领或镇守不足）</span>'}</small></div><span class="herb-count">${Math.floor(have)}</span></div>`}).join('')}</div>
+<div class="immortal-mini">${RUNE_ITEMS.map(it=>{const plan=runePlan(state,it.id);const n=runeCount(state,it.id);const left=runeExpiresIn(state,it.id);const mat=Object.entries(it.materials).map(([k,v])=>`${RUNE_MATERIAL_MAP[k].name}×${v}`).join(' ');return `<div class="immortal-mini-row${plan.ok?'':' is-locked'}"><div><b>${it.name}</b><span class="map-tier">${it.text}</span>${n>0?`<span class="map-tier">存 ${n} · ${(left/3600).toFixed(1)}h</span>`:''}<small>${mat} · 成功率 ${(runeRate(state,it.id)*100).toFixed(0)}% · 需 ${RUNE_BENCH_LEVELS[it.bench-1].name}</small>${plan.ok?'':`<small class="map-warn">${plan.reason}</small>`}</div><span class="map-garrison">${n>0?`<button class="btn" data-immortal-action="rune-use" data-rune="${it.id}">${it.kind==='train'?'启用':'挂上'}</button>`:''}<button class="btn" data-immortal-action="rune" data-rune="${it.id}" ${plan.ok?'':'disabled'}>画符</button></span></div>`}).join('')}</div>
+<div class="immortal-actions">${(()=>{const up=benchUpgradePlan(state);return up.ok?`<button class="btn" data-immortal-action="rune-bench">升台 → ${up.next.name} · ${up.stones} 灵石 + ${(up.silver/10000).toFixed(0)}万银两</button>`:`<span class="setting-tip">${up.reason}</span>`})()}</div></div>
+${blk('manual','📜 家族功法')}<p>宗门修的是宗门的法，<b>家族功法只对闭关修士生效</b>——宗门弟子享受不到。当前主修 ${mainManual?`《${mainManual.name}》`:'无'}${assistManual?` · 辅修《${assistManual.name}》`:''}，闭关修炼倍率 <b>${manualTrainingMultiplier(state).toFixed(2)}×</b>，已收录 ${c.manuals.length} / ${CULTIVATION_MANUALS.length} 门。</p>
+<div class="immortal-actions"><span class="setting-tip">装备、参悟与全部功法目录见上方「功法阁」面板</span></div></div>`;
 }
 /* ────────────── 百科 ────────────── */
 
@@ -733,8 +733,9 @@ function renderCodex(force = false) {
   const stats = codexStats(state);
   const query = state.ui.codexQuery || '';
   const chapter = state.ui.codexChapter || 'all';
+  const showLocked = Boolean(state.ui.codexShowLocked);
   const ids = book.map((c) => `${c.id}${c.seenCount}`).join(',');
-  const sig = `${ids}|${query}|${chapter}`;
+  const sig = `${ids}|${query}|${chapter}|${showLocked}`;
   if (!force && sig === lastCodexSignature) return;
   lastCodexSignature = sig;
 
@@ -746,14 +747,16 @@ function renderCodex(force = false) {
     const all = [{ id: 'all', name: '全部', icon: '☰', seenCount: stats.seen, total: stats.total }, ...book];
     chaptersHost.innerHTML = all.map((c) =>
       `<button class="codex-chip${c.id === chapter ? ' is-active' : ''}" data-codex-chapter="${c.id}">`
-      + `${c.icon} ${c.name}<em>${c.seenCount}/${c.total}</em></button>`).join('');
+      + `${c.icon} ${c.name}<em>${c.seenCount}/${c.total}</em></button>`).join('')
+      + `<button class="codex-chip${showLocked ? ' is-active' : ''}" data-codex-locked="1">`
+      + `${showLocked ? '隐藏未解锁' : `显示未解锁（${stats.total - stats.seen}）`}</button>`;
   }
 
   const results = codexSearch(state, query, chapter);
-  const locked = query ? [] : renderCodexLocked(
+  const locked = (query || !showLocked) ? [] : renderCodexLocked(
     chapter === 'all' ? book : book.filter((c) => c.id === chapter));
   if (!results.length && !locked.length) {
-    host.innerHTML = `<div class="codex-empty">${query ? '查无此条。 : '此处尚无可看之物，且去闯一闯。}</div>`;
+    host.innerHTML = `<div class="codex-empty">${query ? '查无此条。' : '此处尚无可看之物，且去闯一闯。'}</div>`;
     return;
   }
   const body = results.map((e) => {
@@ -767,18 +770,17 @@ function renderCodex(force = false) {
       ${dataLines ? `<div class="codex-data">${dataLines}</div>` : ''}
     </article>`;
   }).join('');
-  // 未解锁的排在后面，占个位 —/让玩家知道还有东西没见到，但不剧。
   host.innerHTML = body + locked.join('');
 }
 
-/** 未解锁的条目也占一个位，让玩家知道还有东西没见到。*/
+/** 未解锁的条目也占一个位，让玩家知道还有东西没见到 —— 默认不显示，可用按钮展开。 */
 function renderCodexLocked(book) {
   const out = [];
   for (const ch of book) {
     for (const e of ch.entries) {
       if (e.seen) continue;
       out.push(`<article class="codex-entry is-locked">
-        <div class="codex-entry-head"><h3>？？：</h3>
+        <div class="codex-entry-head"><h3>？？？</h3>
         <span class="codex-entry-chapter">${ch.icon} ${ch.name}</span></div>
         <div class="codex-hint">${e.hint || '尚未得见'}</div>
       </article>`);
@@ -787,15 +789,17 @@ function renderCodexLocked(book) {
   return out;
 }
 
-/* 百科的交互：切章节、搜索。与其它只读面板一致，不触发答题。*/
+/* 百科的交互：切章节、搜索、显示未解锁。与其它只读面板一致，不触发答题。 */
 document.addEventListener('click', ev => {
-  const btn = ev.target.closest('[data-codex-chapter]');
-  if (!btn) return;
-  state.ui.codexChapter = btn.dataset.codexChapter;
-  renderCodex(true);
+  const ch = ev.target.closest('[data-codex-chapter]');
+  if (ch) { state.ui.codexChapter = ch.dataset.codexChapter; renderCodex(true); return; }
+  if (ev.target.closest('[data-codex-locked]')) {
+    state.ui.codexShowLocked = !state.ui.codexShowLocked;
+    renderCodex(true);
+  }
 });
 document.addEventListener('input', ev => {
-  if (ev.target.id !== 'codex-search') return;
+  if (ev.target?.id !== 'codex-search') return;
   state.ui.codexQuery = ev.target.value;
   renderCodex(true);
 });
@@ -814,14 +818,14 @@ function renderCycle(force = false) {
   lastCycleSignature = sig;
 
   const chip = document.getElementById('cycle-chip');
-  if (chip) chip.textContent = `第${m.cycle} 世· ${m.points} 点轮回`;
+  if (chip) chip.textContent = `第 ${m.cycle} 世 · ${m.points} 点轮回`;
 
   const r = prog.reward;
   const rewardLines = [
     `基础 ${r.base} 点`,
-    `占领领地 ${r.held} 处→+${r.fromHold} 点`,
-    `收录功法 ${r.manuals} 本本+${r.fromManuals} 点`,
-    `最高境境${r.top ? realmName(r.top) : '凡人'} 点+${r.fromRealm} 点`,
+    `占领领地 ${r.held} 处 → +${r.fromHold} 点`,
+    `收录功法 ${r.manuals} 本 → +${r.fromManuals} 点`,
+    `最高境界 ${r.top ? realmName(r.top) : '凡人'} → +${r.fromRealm} 点`,
   ];
   const activeFx = [
     `修炼 ×${metaTrainMult(state).toFixed(2)}`,
@@ -852,22 +856,22 @@ function renderCycle(force = false) {
 
   host.innerHTML = `
     <article class="codex-entry">
-      <div class="codex-entry-head"><h3>本周目结。</h3>
-        <span class="codex-entry-chapter">第${m.cycle} 世</span></div>
+      <div class="codex-entry-head"><h3>本周目结算</h3>
+        <span class="codex-entry-chapter">第 ${m.cycle} 世</span></div>
       <p>${prog.canEnd
-        ? `族中已有人修至<b>${realmName(prog.top)}</b>，可以重入轮回。这一世可得<b>${r.total}</b> 点轮回。`
+        ? `族中已有人修至 <b>${realmName(prog.top)}</b>，可以重入轮回。这一世可得 <b>${r.total}</b> 点轮回。`
         : `尚不能轮回：${prog.reason}。`}</p>
       <div class="codex-data">${rewardLines.map((l) => `<span>${l}</span>`).join('')}</div>
       <div class="cultivator-break">
-        <button class="btn break ${prog.canEnd ? 'is-ready' : ''}" data-cycle-commit="1" ${prog.canEnd ? '' : 'disabled'}>重入轮回 · 得${r.total} 点</button>
-        <span class="break-cost">已携带：${m.active.length ? m.active.map((id) => GOLDEN_FINGER_MAP[id].name).join('、) : '无}（最件${GOLDEN_FINGER_SLOTS} 件）</span>
+        <button class="btn break ${prog.canEnd ? 'is-ready' : ''}" data-cycle-commit="1" ${prog.canEnd ? '' : 'disabled'}>重入轮回 · 得 ${r.total} 点</button>
+        <span class="break-cost">已携带：${m.active.length ? m.active.map((id) => GOLDEN_FINGER_MAP[id].name).join('、') : '无'}（最多 ${GOLDEN_FINGER_SLOTS} 件）</span>
       </div>
-      <div class="codex-data"><span>当前生效：{activeFx}</span></div>
+      <div class="codex-data"><span>当前生效：${activeFx}</span></div>
     </article>
     <article class="codex-entry">
-      <div class="codex-entry-head"><h3>金手手</h3>
+      <div class="codex-entry-head"><h3>金手指</h3>
         <span class="codex-entry-chapter">改变规则，而非数值</span></div>
-      <p>每一件都会改掉一条第一周目里不存在的规则，也都带着一个代价。最多同时携带${GOLDEN_FINGER_SLOTS} 件。</p>
+      <p>每一件都会改掉一条第一周目里不存在的规则，也都带着一个代价。最多同时携带 ${GOLDEN_FINGER_SLOTS} 件。</p>
     </article>
     ${cards}
     <article class="codex-entry">
@@ -879,6 +883,7 @@ function renderCycle(force = false) {
     </article>`;
 }
 
+/* 轮回的交互：解锁、携带、重入轮回。与其它只读面板一致，不触发答题。 */
 document.addEventListener('click', ev => {
   if (ui.quiz.isBusy()) return;
   const un = ev.target.closest('[data-cycle-unlock]');
@@ -902,8 +907,8 @@ document.addEventListener('click', ev => {
   if (cm && !cm.disabled) {
     const prog = reincarnationProgress(state);
     if (!prog.canEnd) { ui.toast(prog.reason, 'warn', 2600); return; }
-    if (!confirm(`确认重入轮回？家业、修士、境界、领地、丹房器坊符**全部归零**，`
-      + `只保留轮回点与金手指（答题记录也会保留）。本世可得${prog.reward.total} 点轮回。`)) return;
+    if (!confirm(`确认重入轮回？家业、修士、境界、领地、丹房器坊符房全部归零，`
+      + `只保留轮回点与金手指（答题记录也会保留）。本世可得 ${prog.reward.total} 点轮回。`)) return;
     const r = commitReincarnation(state, metaOf(state).active);
     if (!r.ok) { ui.toast(r.reason, 'warn', 2800); return; }
     writeSave(state);
@@ -970,7 +975,7 @@ function renderManualPavilion() {
     const eff = manualEffectAt(state, m.id, ratio);
     return `<div class="manual-slot"><div class="manual-slot-head"><span class="manual-slot-role">${role}</span>`
       + `<span class="manual-card-tier t${m.tier}">${MANUAL_TIER_NAME[m.tier]}</span></div>`
-      + `<div class="manual-slot-name">『{m.name}』</div>`
+      + `<div class="manual-slot-name">『${m.name}』</div>`
       + `<div class="manual-slot-meta">${MANUAL_DAOS[m.dao].name} · 参悟 ${manualAttune(state, m.id)}/${MANUAL_ATTUNE_MAX}</div>`
       + `<div class="manual-slot-effect">${manualEffectText(eff)}</div></div>`;
   };
@@ -999,27 +1004,27 @@ function renderManualPavilion() {
       const daoEl = MANUAL_DAO_ELEMENT[dao];
       const elTag = daoEl
         ? `<i class="el-${daoEl}">${elementName(daoEl)}</i>`
-        : '<i class="el-none">无属》</i>';
-      const head = `<div class="manual-card-head"><span class="manual-card-name">${have ? `／{m.name}》` : m.name}</span>`
+        : '<i class="el-none">无属性</i>';
+      const head = `<div class="manual-card-head"><span class="manual-card-name">${have ? `《${m.name}》` : m.name}</span>`
         + `<span class="manual-card-tier t${m.tier}">${MANUAL_TIER_NAME[m.tier]}</span></div>`
         + `<div class="manual-card-dao">${MANUAL_DAOS[dao].name} ${elTag} · ${MANUAL_DAOS[dao].desc}</div>`
         + `<div class="manual-card-effect">${manualEffectText(m.effect)}</div>`;
 
       if (!have) {
-        rows.push(`<div class="${cls}">${head}<div class="manual-card-locked">未收（· ${MANUAL_SOURCE_HINT[m.tier]} 可得</div></div>`);
+        rows.push(`<div class="${cls}">${head}<div class="manual-card-locked">未收录 · ${MANUAL_SOURCE_HINT[m.tier]} 可得</div></div>`);
         continue;
       }
 
       const placed = isMain || isAssist;
       const conflict = !placed && manualDaoTaken(state, dao, m.id);
-      const blockReason = placed ? `已列修{isMain ? '主修' : '辅修'}` : conflict ? `${MANUAL_DAOS[dao].name}一途已占另一个位置` : '';
-      const pips = '参.repeat(att) + '●.repeat(MANUAL_ATTUNE_MAX - att);
+      const blockReason = placed ? `已列入${isMain ? '主修' : '辅修'}` : conflict ? `${MANUAL_DAOS[dao].name}一途已占另一个位置` : '';
+      const pips = '●'.repeat(att) + '○'.repeat(MANUAL_ATTUNE_MAX - att);
       rows.push(`<div class="${cls}">${head}
         <div class="manual-card-foot">
           <span class="manual-card-attune">参悟 ${pips}</span>
           <button class="btn${isMain ? ' is-on' : ''}" data-manual-action="main" data-manual="${m.id}" ${placed || conflict ? 'disabled' : ''} title="${blockReason || '效果吃满 100%'}">主修</button>
           <button class="btn${isAssist ? ' is-on' : ''}" data-manual-action="assist" data-manual="${m.id}" ${placed || conflict ? 'disabled' : ''} title="${blockReason || '只吃 45%，须与主修不同道途'}">辅修</button>
-          <button class="btn" data-manual-action="attune" data-manual="${m.id}" ${att >= MANUAL_ATTUNE_MAX || !canAttune ? 'disabled' : ''} title="途${MANUAL_ATTUNE_STONE_COST} 灵石 + ${MANUAL_ATTUNE_CLUE_COST} 条秘闻线索；重复获得同一本也会自动参开>参悟</button>
+          <button class="btn" data-manual-action="attune" data-manual="${m.id}" ${att >= MANUAL_ATTUNE_MAX || !canAttune ? 'disabled' : ''} title="需 ${MANUAL_ATTUNE_STONE_COST} 灵石 + ${MANUAL_ATTUNE_CLUE_COST} 条秘闻线索；重复获得同一本也会自动参悟">参悟</button>
         </div></div>`);
     }
   }
@@ -1078,19 +1083,19 @@ document.addEventListener('click',ev=>{
   const nodeId=btn.dataset.mapNode;
   const p=findCultivator(state,id),c=mapNode(nodeId);
   if(!p||!c)return;
-  if(!mapAccessible(state,nodeId)){ui.toast('与此地不相邻，需先打通沿途,'warn',2600);return;}
+  if(!mapAccessible(state,nodeId)){ui.toast('与此地不相邻，需先打通沿途','warn',2600);return;}
   const survival=caveSurvival(state,p,c);
-  if(!confirm(`${p.name}将挑挑{c.name}，预估生还率${(survival*100).toFixed(1)}%，失败永久失去修士！确认消耗{c.fee}灵石线{c.clues}线索吗？`))return;
+  if(!confirm(`${p.name}将挑战${c.name}，预估生还率${(survival*100).toFixed(1)}%，失败永久失去修士！确认消耗 ${c.fee} 灵石、${c.clues} 线索吗？`))return;
   param=`${id}:${nodeId}`;
  }
  if(kind==='attack'){
   param=btn.dataset.mapNode;
   const f=mapNode(param);
   if(!f)return;
-  if(!mapAccessible(state,param)){ui.toast('与此地不相邻，需先打通沿途,'warn',2600);return;}
+  if(!mapAccessible(state,param)){ui.toast('与此地不相邻，需先打通沿途','warn',2600);return;}
   const plan=mapPlan(state,param);
   if(!plan.ok){ui.toast(plan.reason,'warn',2600);return;}
-  if(!confirm(`确认攻伐${f.name}？胜算${(plan.rate*100).toFixed(1)}%，战败可能折损修士。`))return;
+  if(!confirm(`确认攻伐${f.name}？胜算 ${(plan.rate*100).toFixed(1)}%，战败可能折损修士。`))return;
  }
  if(kind==='garrison'){
   const nodeId=btn.dataset.mapNode;
@@ -1102,24 +1107,24 @@ document.addEventListener('click',ev=>{
   param=btn.dataset.rune;
   const plan=runePlan(state,param);
   if(!plan.ok){ui.toast(plan.reason,'warn',2600);return;}
-  if(!confirm(`符{plan.name}？成功率 ${(plan.rate*100).toFixed(0)}%，失败会损失全部符文；成客${RUNE_SHELF_HOURS} 小时内不用即作废。`))return;
+  if(!confirm(`画${plan.name}？成功率 ${(plan.rate*100).toFixed(0)}%，失败会损失全部符文；成品 ${RUNE_SHELF_HOURS} 小时内不用即作废。`))return;
  }
  if(kind==='rune-bench'){
   const plan=benchUpgradePlan(state);
   if(!plan.ok){ui.toast(plan.reason,'warn',2600);return;}
-  if(!confirm(`升级符台台{plan.next.name}？消台${plan.stones} 灵石 + ${plan.next.silver} 两银。`))return;
+  if(!confirm(`升级符台到${plan.next.name}？消耗 ${plan.stones} 灵石 + ${plan.next.silver} 两银。`))return;
  }
  if(kind==='rune-use')param=btn.dataset.rune;
  if(kind==='forge'){
   param=btn.dataset.artifact;
   const plan=forgePlan(state,param);
   if(!plan.ok){ui.toast(plan.reason,'warn',2600);return;}
-  if(!confirm(`开炉铸${plan.name}炉{plan.slot}）？成功台${(plan.rate*100).toFixed(0)}%，失败会损失全部矿料。`))return;
+  if(!confirm(`开炉铸${plan.name}（${plan.slot}）？成功率 ${(plan.rate*100).toFixed(0)}%，失败会损失全部矿料。`))return;
  }
  if(kind==='forge-level'){
   const plan=forgeUpgradePlan(state);
   if(!plan.ok){ui.toast(plan.reason,'warn',2600);return;}
-  if(!confirm(`升级锻造台台{plan.next.name}？消炉${plan.stones} 灵石 + ${plan.next.silver} 两银。`))return;
+  if(!confirm(`升级锻造台到${plan.next.name}？消耗 ${plan.stones} 灵石 + ${plan.next.silver} 两银。`))return;
  }
  if(kind==='artifact-equip'||kind==='artifact-repair')param=btn.dataset.artifact;
  if(kind==='craft'){
@@ -1141,8 +1146,7 @@ document.addEventListener('click',ev=>{
  repaintExpansion(true);
 });
 document.addEventListener('change',ev=>{if(ev.target?.id==='cave-person')repaintExpansion(true)});
-// 百科与炼气篇无关，所以单独挂一个定时刷新（内部有脏检查，不变就不重画。
-setInterval(()=>renderCodex(),1300);
+// 百科与炼气篇无关，所以单独挂一个定时刷新（内部有脏检查，不变就不重画。）\nsetInterval(()=>renderCodex(),1300);
 setInterval(()=>renderCycle(),1500);
 setInterval(()=>repaintExpansion(),1100);
 repaintExpansion(true);
