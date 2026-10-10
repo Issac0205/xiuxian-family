@@ -1,0 +1,236 @@
+
+/* ────────────────────────────────────────────────────────────────
+ * 区块：境界表（凡人 → 化神）
+ * 职责：整个游戏的境界真相源。境界名、修为曲线、战力曲线、突破门槛都在这里。
+ *       systems/cultivation.js 只负责「按时涨修为」，涨多少由这张表决定。
+ * 依赖：无（纯数据 + 纯查表函数，不读 state）
+ * 调参：
+ *   REALM_XP_RATE —— 全局节奏总旋钮。改它等于把所有境界的时长等比缩放。
+ *   每个 tier 的 xpBase —— 该境界「一层」的修为基数，曲线是 xpBase × 层号²。
+ *   每个 tier 的 powerFrom / powerGrowth —— 该境界的战力锚点与境内增速。
+ *   REALM_GATES —— 大境界的突破门槛（材料 / 成功率 / 失败惩罚）。
+ * 文档：docs/10-境界与突破.md
+ * ──────────────────────────────────────────────────────────────── */
+
+/**
+ * 修为增长的基础速率（点/秒，天赋 1、无功法时）。
+ *
+ * 这是整个游戏节奏的总旋钮。当前取值 1.0 对应：
+ *   炼气一层 → 九层 约 2.5 小时（8 次自动晋升）
+ *   凡人 → 化神圆满 约 44 小时（含 4 次大境界突破）
+ * 想让整局快一倍就填 2.0，慢一倍就填 0.5。
+ */
+const REALM_XP_RATE = 1.0;
+
+/**
+ * 境界的五个大档。
+ *
+ * stages        小境界名（长度决定这一档占几个 realmIndex）
+ * xpBase        该档「第 1 层」的修为基数；第 n 层需要 xpBase × n²
+ * powerFrom     该档第 1 层的单人名基础战力
+ * powerGrowth   该档内每上一层的战力倍率
+ *
+ * ⚠️ 改 stages 的长度会自动改变后面所有境界的 realmIndex，
+ *    存档靠 realmIndex 定位，所以**不要在版本之间改动已有档的层数**。
+ *    要加新档就往数组末尾加（例如以后加「炼虚」「合体」）。
+ */
+const REALM_TIERS = [
+  {
+    id: 'qi', name: '炼气',
+    stages: ['一层', '二层', '三层', '四层', '五层', '六层', '七层', '八层', '九层'],
+    xpBase: 45, powerFrom: 10, powerGrowth: 1.65,
+    desc: '引气入体，祛凡俗之障。此境尚无瓶颈，修为到了自然晋阶。',
+  },
+  {
+    id: 'zhuji', name: '筑基',
+    stages: ['初期', '中期', '后期', '圆满'],
+    xpBase: 480, powerFrom: 1200, powerGrowth: 1.8,
+    desc: '筑道基，寿元渐长。自此每进一步都要冲关，冲不过去便原地打转。',
+  },
+  {
+    id: 'jindan', name: '金丹',
+    stages: ['初期', '中期', '后期', '圆满'],
+    xpBase: 840, powerFrom: 20000, powerGrowth: 1.9,
+    desc: '气凝成丹，可离体斗法。家族要开始为一位金丹修士供养大量凡人。',
+  },
+  {
+    id: 'yuanying', name: '元婴',
+    stages: ['初期', '中期', '后期', '圆满'],
+    xpBase: 1440, powerFrom: 500000, powerGrowth: 2.0,
+    desc: '元婴出窍，肉身可弃。此境的修士已不太把凡人放在眼里。',
+  },
+  {
+    id: 'huashen', name: '化神',
+    stages: ['初期', '中期', '后期', '圆满'],
+    // ⚠️ 化神是本版的最后一档，「圆满」就是终点，所以这一档只有 3 次晋升
+    //    （初期→中期→后期→圆满），比前面几档少一次。
+    //    xpBase 因此调得比等差数列更大，才能让这一档仍占设计里的 ~18 小时。
+    xpBase: 4630, powerFrom: 15000000, powerGrowth: 2.1,
+    desc: '神游太虚，一念千里。走到这一步，凡尘的账就该算总账了。',
+  },
+];
+
+/**
+ * 大境界的突破门槛。
+ *
+ * 键 = **突破前的 realmIndex**（该大档的最后一层）。
+ * 例：键 9 是「炼气九层」，突破后进入 index 10「筑基初期」。
+ *
+ * pill            必需的丹药 id（见 data/alchemy.js 的 ALCHEMY_RECIPES）
+ * stones / clues  每次尝试消耗（失败也扣）
+ * baseRate        基础成功率；天赋、灵根与失败累积会在此基础上加成
+ * failLoss        失败后修为回退的比例（相对本层所需）
+ *
+ * R5 回填：原来这四个门槛的灵石数是暂定值（20/80/300/800），
+ * 因为当时没有丹药。炼丹上线后改成「以丹药为主、灵石为辅」——
+ * 丹药来自地图上已占领的势力节点，所以**想突破就得先打通商路**。
+ */
+const REALM_GATES = {
+  9: { toTier: 'zhuji', stones: 8, clues: 2, pill: 'zhuji', baseRate: 0.55, failLoss: 0.35 },
+  13: { toTier: 'jindan', stones: 30, clues: 4, pill: 'jindan', baseRate: 0.42, failLoss: 0.40 },
+  17: { toTier: 'yuanying', stones: 120, clues: 8, pill: 'yuanying', baseRate: 0.30, failLoss: 0.45 },
+  21: { toTier: 'huashen', stones: 300, clues: 14, pill: 'huashen', baseRate: 0.20, failLoss: 0.50 },
+};
+
+/** 天赋对突破成功率的加成上限（天赋 1 + 这个数就到顶）。 */
+const REALM_TALENT_BONUS_MAX = 0.25;
+/** 每次失败给下一次累积的成功率补偿，避免连续倒运劝退。 */
+const REALM_FAIL_MERCY = 0.08;
+/** 成功率硬上限。 */
+const REALM_RATE_MAX = 0.95;
+/** 成功率硬下限 —— 再差的灵根也留一线，不至于永远冲不过去。 */
+const REALM_RATE_MIN = 0.02;
+
+/* ── 索引表：由上面的表自动展开，避免手写 realmIndex ── */
+
+/**
+ * realmIndex 的含义：
+ *   0      凡人
+ *   1..9   炼气一~九层
+ *   10..13 筑基初期~圆满
+ *   14..17 金丹初期~圆满
+ *   18..21 元婴初期~圆满
+ *   22..25 化神初期~圆满
+ *
+ * @type {Array<{index:number,tierId:string,tierName:string,stageName:string,fullName:string,tier:object|null,local:number}>}
+ */
+const REALM_AT = [];
+REALM_AT[0] = {
+  index: 0, tierId: 'mortal', tierName: '凡人', stageName: '',
+  fullName: '凡人', tier: null, local: 0,
+};
+let realmCursorEnd = 1;
+{
+  let cursor = 1;
+  for (const tier of REALM_TIERS) {
+    tier.startIndex = cursor;
+    tier.endIndex = cursor + tier.stages.length - 1;
+    tier.stages.forEach((stage, i) => {
+      REALM_AT[cursor] = {
+        index: cursor, tierId: tier.id, tierName: tier.name, stageName: stage,
+        fullName: `${tier.name}${stage}`, tier, local: i + 1,
+      };
+      cursor += 1;
+    });
+  }
+  realmCursorEnd = cursor - 1;
+}
+/** 当前版本能走到的最高境界。加新档时它会自动跟着变。 */
+const REALM_MAX_INDEX = realmCursorEnd;
+const REALM_TIER_MAP = Object.fromEntries(REALM_TIERS.map((t) => [t.id, t]));
+
+/* ── 查表函数 ── */
+
+/** 取某个 realmIndex 的完整信息；越界时夹到合法范围。 */
+function realmInfo(index) {
+  const i = Math.max(0, Math.min(REALM_MAX_INDEX, Math.floor(Number(index) || 0)));
+  return REALM_AT[i] || REALM_AT[0];
+}
+
+/** 「筑基中期」这样的完整称谓。 */
+function realmName(index) { return realmInfo(index).fullName; }
+
+/** 该境界属于哪一大档（凡人的 tier 为 null）。 */
+function realmTierOf(index) { return realmInfo(index).tier; }
+
+/** 一个大档内部是第几层（炼气一层 = 1；凡人 = 0）。 */
+function realmLocalOf(index) { return realmInfo(index).local; }
+
+/**
+ * 从 index 升到 index+1 需要多少修为。
+ * 已到顶（化神圆满）返回 Infinity。
+ */
+function realmXpNeeded(index) {
+  const info = realmInfo(index);
+  if (!info.tier) return Infinity;
+  if (info.index >= REALM_MAX_INDEX) return Infinity;
+  return info.tier.xpBase * info.local * info.local;
+}
+
+/** 该境界的单人基础战力（不含功法、不含驻守加成）。 */
+function realmPower(index) {
+  const info = realmInfo(index);
+  if (!info.tier) return 0;
+  return info.tier.powerFrom * Math.pow(info.tier.powerGrowth, info.local - 1);
+}
+
+/**
+ * 从 index 突破出去的门槛；没有门槛（同一大档内的小境界）返回 null。
+ * 炼气九层之前都不会有。
+ */
+function realmGate(index) {
+  const gate = REALM_GATES[index];
+  if (!gate) return null;
+  return { ...gate, fromIndex: index, fromName: realmName(index), toName: realmName(index + 1) };
+}
+
+/** 该境界是否已经顶到当前版本的尽头（化神圆满）。 */
+function isRealmMax(index) { return Math.floor(Number(index) || 0) >= REALM_MAX_INDEX; }
+
+/**
+ * 突破成功率。
+ * @param {number} index     当前境界
+ * @param {number} talent    修士天赋
+ * @param {number} failures  已连续失败次数（给补偿）
+ * @param {number} rootBonus 灵根修正（见 systems/roots.js 的 rootBreakBonus）
+ */
+function realmBreakRate(index, talent, failures = 0, rootBonus = 0) {
+  const gate = realmGate(index);
+  if (!gate) return 1;
+  const talentBonus = Math.min(REALM_TALENT_BONUS_MAX, Math.max(0, (Number(talent) || 1) - 1) * 0.25);
+  const mercy = Math.max(0, Math.floor(failures) || 0) * REALM_FAIL_MERCY;
+  const root = Number(rootBonus) || 0;
+  return Math.max(REALM_RATE_MIN, Math.min(REALM_RATE_MAX, gate.baseRate + talentBonus + mercy + root));
+}
+
+/* ── 供文档与测试用的节奏数据 ── */
+
+/**
+ * 逐大境界的耗时预览（秒），按当前 REALM_XP_RATE、天赋 1、无功法计算。
+ *
+ * 用来核对「一周目总时长」是否落在设计区间里：
+ *   node -e "…" 或在控制台 __xiuxian.realm.pacing()
+ *
+ * ⚠️ 这只是「足不出户闭关」的下限。实际会更快（功法倍率、宗门 3.5×），
+ *    也会更慢（大境界冲关失败要重补修为）。
+ */
+function realmPacing() {
+  const tiers = [];
+  let total = 0;
+  for (const tier of REALM_TIERS) {
+    let secs = 0;
+    for (let i = tier.startIndex; i <= tier.endIndex; i += 1) {
+      const need = realmXpNeeded(i);
+      if (!Number.isFinite(need)) continue;
+      secs += need / REALM_XP_RATE;
+    }
+    total += secs;
+    tiers.push({
+      id: tier.id, name: tier.name,
+      from: realmName(tier.startIndex), to: realmName(tier.endIndex),
+      secs, cumulative: total,
+      gate: realmGate(tier.endIndex),
+    });
+  }
+  return { tiers, total };
+}

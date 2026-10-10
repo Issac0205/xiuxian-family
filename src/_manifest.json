@@ -1,0 +1,158 @@
+[
+  {
+    "path": "src/core/config.js",
+    "marker": "/* ══════════ src/core/config.js ══════════ */"
+  },
+  {
+    "path": "src/core/format.js",
+    "marker": "/* ══════════ src/core/format.js ══════════ */"
+  },
+  {
+    "path": "src/data/buildings.js",
+    "marker": "/* ══════════ src/data/buildings.js ══════════ */"
+  },
+  {
+    "path": "src/core/state.js",
+    "marker": "/* ══════════ src/core/state.js ══════════ */"
+  },
+  {
+    "path": "src/data/techs.js",
+    "marker": "/* ══════════ src/data/techs.js ══════════ */"
+  },
+  {
+    "path": "src/data/trade.js",
+    "marker": "/* ══════════ src/data/trade.js ══════════ */"
+  },
+  {
+    "path": "src/core/formulas.js",
+    "marker": "/* ══════════ src/core/formulas.js ══════════ */"
+  },
+  {
+    "path": "src/data/pills.js",
+    "marker": "/* ══════════ src/data/pills.js ══════════ */"
+  },
+  {
+    "path": "src/data/cultivators.js",
+    "marker": "/* ══════════ src/data/cultivators.js ══════════ */"
+  },
+  {
+    "path": "src/data/realms.js",
+    "marker": "/* ══════════ src/data/realms.js ══════════ */"
+  },
+  {
+    "path": "src/data/roots.js",
+    "marker": "/* ══════════ src/data/roots.js ══════════ */"
+  },
+  {
+    "path": "src/data/manuals.js",
+    "marker": "/* ══════════ src/data/manuals.js ══════════ */"
+  },
+  {
+    "path": "src/systems/manuals.js",
+    "marker": "/* ══════════ src/systems/manuals.js ══════════ */"
+  },
+  {
+    "path": "src/systems/roots.js",
+    "marker": "/* ══════════ src/systems/roots.js ══════════ */"
+  },
+  {
+    "path": "src/systems/cultivation.js",
+    "marker": "/* ══════════ src/systems/cultivation.js ══════════ */"
+  },
+  {
+    "path": "src/systems/breakthrough.js",
+    "marker": "/* ══════════ src/systems/breakthrough.js ══════════ */"
+  },
+  {
+    "path": "src/data/map.js",
+    "marker": "/* ══════════ src/data/map.js ══════════ */"
+  },
+  {
+    "path": "src/data/alchemy.js",
+    "marker": "/* ══════════ src/data/alchemy.js ══════════ */"
+  },
+  {
+    "path": "src/data/forge.js",
+    "marker": "/* ══════════ src/data/forge.js ══════════ */"
+  },
+  {
+    "path": "src/data/runes.js",
+    "marker": "/* ══════════ src/data/runes.js ══════════ */"
+  },
+  {
+    "path": "src/data/codex.js",
+    "marker": "/* ══════════ src/data/codex.js ══════════ */"
+  },
+  {
+    "path": "src/data/reincarnation.js",
+    "marker": "/* ══════════ src/data/reincarnation.js ══════════ */"
+  },
+  {
+    "path": "src/systems/manual-drops.js",
+    "marker": "/* ══════════ src/systems/manual-drops.js ══════════ */"
+  },
+  {
+    "path": "src/systems/exploration.js",
+    "marker": "/* ══════════ src/systems/exploration.js ══════════ */"
+  },
+  {
+    "path": "src/systems/alchemy.js",
+    "marker": "/* ══════════ src/systems/alchemy.js ══════════ */"
+  },
+  {
+    "path": "src/systems/forge.js",
+    "marker": "/* ══════════ src/systems/forge.js ══════════ */"
+  },
+  {
+    "path": "src/systems/runes.js",
+    "marker": "/* ══════════ src/systems/runes.js ══════════ */"
+  },
+  {
+    "path": "src/systems/codex.js",
+    "marker": "/* ══════════ src/systems/codex.js ══════════ */"
+  },
+  {
+    "path": "src/systems/reincarnation.js",
+    "marker": "/* ══════════ src/systems/reincarnation.js ══════════ */"
+  },
+  {
+    "path": "src/systems/progression.js",
+    "marker": "/* ══════════ src/systems/progression.js ══════════ */"
+  },
+  {
+    "path": "src/systems/immortal-economy.js",
+    "marker": "/* ══════════ src/systems/immortal-economy.js ══════════ */"
+  },
+  {
+    "path": "src/systems/immortal-actions.js",
+    "marker": "/* ══════════ src/systems/immortal-actions.js ══════════ */"
+  },
+  {
+    "path": "src/core/engine.js",
+    "marker": "/* ══════════ src/core/engine.js ══════════ */"
+  },
+  {
+    "path": "src/data/words.js",
+    "marker": "/* ══════════ src/data/words.js ══════════ */"
+  },
+  {
+    "path": "src/core/quiz.js",
+    "marker": "/* ══════════ src/core/quiz.js ══════════ */"
+  },
+  {
+    "path": "src/core/save.js",
+    "marker": "/* ══════════ src/core/save.js ══════════ */"
+  },
+  {
+    "path": "src/ui/quiz-view.js",
+    "marker": "/* ══════════ src/ui/quiz-view.js ══════════ */"
+  },
+  {
+    "path": "src/ui/app.js",
+    "marker": "/* ══════════ src/ui/app.js ══════════ */"
+  },
+  {
+    "path": "src/main.js",
+    "marker": "/* ══════════ src/main.js ══════════ */"
+  }
+]

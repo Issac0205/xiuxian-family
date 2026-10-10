@@ -1,0 +1,2586 @@
+<!DOCTYPE html>
+<html lang="zh-CN" data-theme="classic"><head>
+<meta http-equiv="content-type" content="text/html; charset=UTF-8">
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<!-- UI优化试玩版：沿用原版状态与存档结构，只增加界面交互与视觉优化。 -->
+<title>修仙世家 · 自定义题库双主题版</title>
+<style>
+/* ══════════════════════════════════════════════════════════
+   修仙世家 · 凡尘篇  —  样式表
+   墨色底 + 鎏金描边，数字用等宽以免跳动
+   ══════════════════════════════════════════════════════════ */
+
+:root {
+  --ink-0: #0a0d12;
+  --ink-1: #10151c;
+  --ink-2: #161d26;
+  --ink-3: #1e2733;
+  --ink-4: #26313f;
+
+  --line: rgba(217, 180, 94, 0.16);
+  --line-strong: rgba(217, 180, 94, 0.34);
+
+  --gold: #d9b45e;
+  --gold-soft: #f0d79a;
+  --gold-dim: #8a7439;
+  --jade: #63c9a8;
+  --silver: #b7c6d6;
+  --ember: #e08a5a;
+  --violet: #a98ce0;
+  --wheat: #d8c07a;
+  --danger: #e2706c;
+
+  --text: #e9e3d5;
+  --muted: #8d929c;
+  --muted-dim: #666c76;
+
+  --radius: 10px;
+  --shadow: 0 6px 24px rgba(0, 0, 0, 0.45);
+
+  --font-serif: "Noto Serif SC", "Source Han Serif SC", "Songti SC", "STSong",
+    "SimSun", "Georgia", serif;
+  --font-sans: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB",
+    system-ui, -apple-system, sans-serif;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  min-height: 100%;
+}
+
+body {
+  background:
+    radial-gradient(1100px 700px at 12% -8%, rgba(217, 180, 94, 0.075), transparent 60%),
+    radial-gradient(900px 600px at 105% 5%, rgba(99, 201, 168, 0.06), transparent 55%),
+    var(--ink-0);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14px;
+  line-height: 1.55;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* 数值统一等宽，避免跳字 */
+.res-value, .m-value, .buy-cost, .chip, .bcard-count, .route-stat,
+.bar-label span:last-child {
+  font-variant-numeric: tabular-nums;
+  font-feature-settings: "tnum" 1;
+}
+
+#app { max-width: 1440px; margin: 0 auto; padding: 0 0 40px; }
+
+/* ───────────────────────── 顶栏 ───────────────────────── */
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 30;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  padding: 12px 16px;
+  background: linear-gradient(180deg, rgba(10, 13, 18, 0.97), rgba(10, 13, 18, 0.86));
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(10px);
+}
+
+.brand { display: flex; align-items: center; gap: 10px; flex-shrink: 0; }
+
+.brand-seal {
+  width: 38px; height: 38px;
+  display: grid; place-items: center;
+  border-radius: 8px;
+  background: linear-gradient(145deg, #2a2114, #43331a);
+  border: 1px solid var(--line-strong);
+  color: var(--gold-soft);
+  font-family: var(--font-serif);
+  font-size: 22px;
+  box-shadow: inset 0 0 12px rgba(217, 180, 94, 0.22);
+}
+
+.brand-text { display: flex; flex-direction: column; line-height: 1.15; }
+.brand-title { font-family: var(--font-serif); font-size: 18px; letter-spacing: 3px; color: var(--gold-soft); }
+.brand-sub { font-size: 11px; color: var(--muted); letter-spacing: 1px; }
+
+.resources {
+  display: flex;
+  flex: 1;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.res {
+  display: grid;
+  grid-template-columns: auto auto;
+  grid-template-rows: auto auto;
+  align-items: baseline;
+  column-gap: 6px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  background: var(--ink-1);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  min-width: 128px;
+}
+.res-label { grid-column: 1 / -1; font-size: 11px; color: var(--muted); letter-spacing: 1px; }
+.res-value { font-size: 17px; font-weight: 600; }
+.res-sub { font-size: 11px; color: var(--muted-dim); }
+
+.res-silver .res-value { color: var(--gold); }
+.res-pop .res-value { color: var(--jade); }
+.res-income .res-value { color: var(--silver); }
+.res-rep .res-value { color: var(--violet); }
+.res-stone .res-value { color: #8fd6ff; }
+.res-stone.is-full { border-color: rgba(143, 214, 255, 0.35); }
+.res[hidden] { display: none; }
+
+.res.is-full { border-color: rgba(226, 112, 108, 0.45); }
+
+.topbar-actions { display: flex; gap: 8px; flex-shrink: 0; align-items: center; flex-wrap: wrap; }
+
+.seg-group { display: flex; align-items: center; gap: 6px; }
+.seg-group.is-muted { opacity: 0.42; }
+.seg-label { font-size: 11px; color: var(--muted-dim); letter-spacing: 1px; }
+
+/* 加速时给个颜色提示，免得时间久了忘了自己开着倍速 */
+.seg-btn[data-speed].is-active:not([data-speed="1"]) {
+  background: rgba(99, 201, 168, 0.2);
+  color: #9fe6cd;
+}
+
+/* 免答模式下「难度」不起作用，灰掉它 */
+.seg-btn[data-quiz-mode="off"].is-active {
+  background: rgba(169, 140, 224, 0.2);
+  color: #cdbcf2;
+}
+
+/* ───────────────────────── 布局 ───────────────────────── */
+
+/* 页面标签栏，粘在顶栏下面 */
+.pagetabs {
+  position: sticky;
+  top: 63px;
+  z-index: 25;
+  display: flex;
+  gap: 4px;
+  padding: 0 16px;
+  background: linear-gradient(180deg, rgba(10, 13, 18, 0.97), rgba(10, 13, 18, 0.9));
+  border-bottom: 1px solid var(--line);
+  backdrop-filter: blur(10px);
+  overflow-x: auto;
+}
+
+.pagetab {
+  flex: 0 0 auto;
+  padding: 9px 18px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--muted);
+  font-family: var(--font-serif);
+  font-size: 13.5px;
+  letter-spacing: 3px;
+  cursor: pointer;
+  transition: color 0.14s, border-color 0.14s;
+}
+.pagetab:hover { color: var(--gold-soft); }
+.pagetab.is-active {
+  color: var(--gold);
+  border-bottom-color: var(--gold);
+}
+
+/* 主体：左边是页面内容，右边是常驻的族谱纪事 */
+.shell {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 16px;
+  padding: 0 16px 60px;
+  align-items: start;
+}
+
+.shell-main { display: flex; flex-direction: column; gap: 0; min-width: 0; }
+
+.shell-side { position: sticky; top: 118px; min-width: 0; }
+
+/* 一页 = 一个 .page；只有 is-active 的那页显示 */
+.page { display: none; flex-direction: column; gap: 14px; }
+.page.is-active { display: flex; }
+
+/* 每页自己的资源条 */
+.page-res {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 12px 0 14px;
+}
+.page-res:empty { display: none; }
+
+.pres-chip {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 7px;
+  padding: 5px 12px;
+  border-radius: 8px;
+  background: var(--ink-1);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+.pres-label { font-size: 11px; color: var(--muted); letter-spacing: 1px; }
+.pres-value {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--gold-soft);
+  font-variant-numeric: tabular-nums;
+}
+
+@media (max-width: 900px) {
+  .topbar { flex-wrap: wrap; }
+  .pagetabs { top: 0; position: static; }
+}
+
+@media (max-width: 1180px) {
+  .shell { grid-template-columns: 1fr; }
+  .shell-side { position: static; }
+}
+
+/* ───────────────────────── 面板 ───────────────────────── */
+
+.panel {
+  background: linear-gradient(180deg, var(--ink-1), var(--ink-2));
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  overflow: hidden;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 11px 14px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(217, 180, 94, 0.07), transparent);
+}
+
+.panel-head h2 {
+  margin: 0;
+  font-family: var(--font-serif);
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: 2px;
+  color: var(--gold-soft);
+}
+
+.panel-head-right { display: flex; align-items: center; gap: 8px; }
+
+/* ── 折叠 ── */
+
+.panel-toggle {
+  flex: 0 0 auto;
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border-radius: 6px;
+  background: transparent;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+  transition: transform 0.18s, color 0.14s, border-color 0.14s;
+}
+.panel-toggle:hover { color: var(--gold-soft); border-color: var(--line-strong); }
+
+.panel.is-collapsed > .panel-body { display: none; }
+.panel.is-collapsed > .panel-head { border-bottom: 0; }
+.panel.is-collapsed .panel-toggle { transform: rotate(-90deg); }
+
+.chip {
+  font-size: 11.5px;
+  padding: 3px 9px;
+  border-radius: 999px;
+  background: var(--ink-3);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  color: var(--muted);
+  white-space: nowrap;
+}
+.chip[data-mood="boom"]   { color: var(--jade);   border-color: rgba(99, 201, 168, 0.4); }
+.chip[data-mood="grow"]   { color: #8fd6bd;       border-color: rgba(99, 201, 168, 0.28); }
+.chip[data-mood="flat"]   { color: var(--muted); }
+.chip[data-mood="shrink"] { color: var(--wheat);  border-color: rgba(216, 192, 122, 0.35); }
+.chip[data-mood="crisis"] { color: var(--danger); border-color: rgba(226, 112, 108, 0.45); }
+.chip-locked              { color: var(--violet); border-color: rgba(169, 140, 224, 0.3); }
+.chip-open                { color: var(--jade);   border-color: rgba(99, 201, 168, 0.45); }
+.chip-full                { color: var(--wheat);  border-color: rgba(216, 192, 122, 0.35); }
+
+/* ───────────────────────── 按钮 ───────────────────────── */
+
+.btn {
+  font-family: var(--font-sans);
+  font-size: 13px;
+  color: var(--text);
+  background: var(--ink-3);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  border-radius: 7px;
+  padding: 7px 12px;
+  cursor: pointer;
+  transition: background 0.14s, border-color 0.14s, transform 0.06s, color 0.14s;
+}
+.btn:hover:not(:disabled) { background: var(--ink-4); border-color: var(--line-strong); }
+.btn:active:not(:disabled) { transform: translateY(1px); }
+.btn:disabled { opacity: 0.45; cursor: not-allowed; }
+
+.btn.ghost { background: transparent; color: var(--muted); }
+.btn.ghost:hover:not(:disabled) { color: var(--gold-soft); }
+.btn.ghost.danger:hover:not(:disabled) { color: var(--danger); border-color: rgba(226, 112, 108, 0.5); }
+.btn.ghost.tiny { padding: 3px 9px; font-size: 11.5px; border-radius: 7px; }
+.btn.ghost.is-active {
+  color: var(--gold);
+  border-color: var(--line-strong);
+  background: rgba(217, 180, 94, 0.12);
+}
+
+.seg { display: inline-flex; border-radius: 7px; overflow: hidden; border: 1px solid rgba(255, 255, 255, 0.09); }
+.seg-btn {
+  font-size: 12px;
+  padding: 5px 11px;
+  background: transparent;
+  color: var(--muted);
+  border: 0;
+  border-right: 1px solid rgba(255, 255, 255, 0.07);
+  cursor: pointer;
+}
+.seg-btn:last-child { border-right: 0; }
+.seg-btn:hover { color: var(--text); background: rgba(255, 255, 255, 0.04); }
+.seg-btn.is-active { background: rgba(217, 180, 94, 0.16); color: var(--gold-soft); }
+
+/* ───────────────────────── 建筑卡 ───────────────────────── */
+
+.building-list { display: flex; flex-direction: column; }
+
+.bcard {
+  display: grid;
+  grid-template-columns: 46px minmax(0, 1fr) 156px;
+  gap: 12px;
+  align-items: center;
+  padding: 12px 14px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.045);
+  border-left: 3px solid transparent;
+  transition: background 0.15s, border-left-color 0.15s;
+}
+.bcard:last-child { border-bottom: 0; }
+.bcard.affordable { border-left-color: var(--gold-dim); }
+.bcard.affordable:hover { background: rgba(217, 180, 94, 0.045); }
+.bcard.blocked { border-left-color: rgba(226, 112, 108, 0.45); }
+
+.bcard-icon {
+  width: 46px; height: 46px;
+  display: grid; place-items: center;
+  border-radius: 9px;
+  font-family: var(--font-serif);
+  font-size: 22px;
+  background: var(--ink-3);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  color: var(--muted);
+}
+.accent-gold   .bcard-icon { color: var(--gold);   border-color: rgba(217, 180, 94, 0.32); }
+.accent-jade   .bcard-icon { color: var(--jade);   border-color: rgba(99, 201, 168, 0.3); }
+.accent-wheat  .bcard-icon { color: var(--wheat);  border-color: rgba(216, 192, 122, 0.3); }
+.accent-silver .bcard-icon { color: var(--silver); border-color: rgba(183, 198, 214, 0.28); }
+.accent-ember  .bcard-icon { color: var(--ember);  border-color: rgba(224, 138, 90, 0.3); }
+.accent-violet .bcard-icon { color: var(--violet); border-color: rgba(169, 140, 224, 0.3); }
+
+.bcard-main { min-width: 0; }
+.bcard-title { display: flex; align-items: baseline; gap: 8px; }
+.bcard-name { font-family: var(--font-serif); font-size: 15.5px; letter-spacing: 2px; color: var(--gold-soft); }
+.bcard-count { font-size: 12.5px; color: var(--muted); }
+.bcard-tagline { font-size: 12px; color: var(--muted-dim); margin-top: 1px; }
+.bcard-effect { font-size: 12.5px; color: var(--jade); margin-top: 4px; }
+.bcard.blocked .bcard-effect { color: var(--muted); }
+
+.bcard-buy { display: flex; flex-direction: column; align-items: stretch; gap: 5px; }
+
+.bcard .btn.buy {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 6px 10px;
+  background: linear-gradient(180deg, rgba(217, 180, 94, 0.2), rgba(217, 180, 94, 0.09));
+  border-color: var(--line-strong);
+  color: var(--gold-soft);
+}
+.bcard .btn.buy:hover:not(:disabled) {
+  background: linear-gradient(180deg, rgba(217, 180, 94, 0.32), rgba(217, 180, 94, 0.16));
+}
+.bcard .btn.buy:disabled {
+  background: var(--ink-3);
+  border-color: rgba(255, 255, 255, 0.07);
+  color: var(--muted-dim);
+  opacity: 1;
+}
+.buy-label { font-size: 13px; letter-spacing: 1px; }
+
+/* 出售：半价拆售，卖价按「最近买的几座」算 */
+.bcard .btn.sell {
+  padding: 4px 8px;
+  font-size: 11.5px;
+  line-height: 1.4;
+  background: transparent;
+  border-color: rgba(255, 255, 255, 0.08);
+  color: var(--muted);
+}
+.bcard .btn.sell:hover:not(:disabled) {
+  background: rgba(216, 192, 122, 0.09);
+  border-color: rgba(216, 192, 122, 0.45);
+  color: var(--wheat);
+}
+.bcard .btn.sell:disabled { opacity: 0.32; }
+.bcard.locked .btn.sell { opacity: 0.22; }
+.buy-cost { font-size: 11.5px; opacity: 0.9; }
+.bcard-per { font-size: 11px; color: var(--muted-dim); text-align: center; }
+
+/* 未解锁：需先研习科技 */
+.bcard.locked { border-left-color: rgba(169, 140, 224, 0.42); }
+.bcard.locked .bcard-icon { opacity: 0.45; filter: grayscale(0.6); }
+.bcard.locked .bcard-name { color: var(--muted); }
+.bcard.locked .bcard-count { color: var(--muted-dim); }
+.bcard.locked .bcard-effect { color: var(--violet); }
+.bcard.locked .bcard-per { opacity: 0.5; }
+.bcard.locked .btn.buy:disabled {
+  background: var(--ink-3);
+  border-color: rgba(169, 140, 224, 0.3);
+  color: #a58fd6;
+}
+
+.foot-note {
+  margin: 0;
+  padding: 10px 14px 12px;
+  font-size: 11.5px;
+  color: var(--muted-dim);
+  border-top: 1px solid rgba(255, 255, 255, 0.045);
+}
+.foot-note b { color: var(--gold-dim); font-weight: 600; }
+
+/* ───────────────────────── 进度条 ───────────────────────── */
+
+.bar-block { padding: 12px 14px 4px; }
+.bar-label {
+  display: flex; justify-content: space-between;
+  font-size: 11.5px; color: var(--muted); margin-bottom: 5px;
+}
+.bar {
+  height: 9px;
+  border-radius: 999px;
+  background: var(--ink-0);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  overflow: hidden;
+}
+.bar-fill {
+  height: 100%;
+  width: 0;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #2f7f68, var(--jade));
+  transition: width 0.25s linear, background 0.2s;
+}
+.bar-fill.warn { background: linear-gradient(90deg, #97803a, var(--wheat)); }
+.bar-fill.danger { background: linear-gradient(90deg, #9c3f3c, var(--danger)); }
+
+/* ───────────────────────── 指标 ───────────────────────── */
+
+.metrics { padding: 8px 14px 0; display: flex; flex-direction: column; gap: 6px; }
+
+.metric {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 6px;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.05);
+}
+.metric:last-child { border-bottom: 0; padding-bottom: 0; }
+.m-label { font-size: 12px; color: var(--muted); }
+.m-value { font-size: 13px; font-weight: 600; }
+.m-value.pos { color: var(--jade); }
+.m-value.neg { color: var(--danger); }
+.m-value.flat { color: var(--muted); }
+
+.note {
+  margin: 10px 14px 12px;
+  padding: 8px 10px;
+  font-size: 11.5px;
+  line-height: 1.6;
+  color: var(--muted);
+  background: rgba(255, 255, 255, 0.026);
+  border-left: 2px solid var(--line-strong);
+  border-radius: 0 6px 6px 0;
+}
+.note b { color: var(--gold-soft); font-weight: 600; }
+
+/* ───────────────────────── 贸易 ───────────────────────── */
+
+.caravan-slots { padding: 10px 12px 4px; display: flex; flex-direction: column; gap: 6px; }
+
+.caravan {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  gap: 4px 10px;
+  padding: 7px 10px;
+  border-radius: 7px;
+  background: var(--ink-0);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  font-size: 12px;
+}
+.caravan.empty { color: var(--muted-dim); border-style: dashed; text-align: center; grid-template-columns: 1fr; }
+
+/* 空置位与「另有 N 支」的说明行：不画成进度行，免得把按钮顶下去 */
+.caravan-note {
+  padding: 3px 10px;
+  font-size: 11px;
+  color: var(--muted-dim);
+  text-align: center;
+  letter-spacing: 0.5px;
+}
+.caravan-name { color: var(--gold-soft); }
+.caravan-time { color: var(--muted); font-variant-numeric: tabular-nums; }
+.caravan .bar { grid-column: 1 / -1; height: 5px; }
+.caravan .bar-fill { background: linear-gradient(90deg, #4c5f9e, var(--violet)); }
+
+.route-list { padding: 6px 12px 12px; display: flex; flex-direction: column; gap: 7px; }
+
+.route {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  padding: 9px 10px;
+  border-radius: 8px;
+  background: var(--ink-1);
+  border: 1px solid rgba(255, 255, 255, 0.05);
+}
+.route.is-ready { border-color: rgba(169, 140, 224, 0.4); background: rgba(169, 140, 224, 0.05); }
+.route.is-locked { opacity: 0.5; }
+
+.route-main { display: grid; grid-template-columns: 30px minmax(0, 1fr); gap: 10px; align-items: center; }
+
+.route-icon { font-size: 18px; text-align: center; }
+.route-title { display: flex; align-items: baseline; gap: 7px; font-size: 13px; color: var(--text); }
+.route-title .rep { font-size: 10.5px; color: var(--violet); }
+.route-desc { font-size: 11px; color: var(--muted-dim); margin-top: 1px; }
+.route-stats { display: flex; gap: 10px; margin-top: 3px; font-size: 11px; color: var(--muted); flex-wrap: wrap; }
+.route-stats .profit { color: var(--jade); }
+.route-stats .secret { color: #9fd0f5; }
+
+/* 一排派遣按钮：单队 / 一半 / 全部 */
+.route-actions { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 6px; }
+
+.route .btn.go {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  padding: 6px 6px;
+  font-size: 12.5px;
+  line-height: 1.35;
+  background: linear-gradient(180deg, rgba(169, 140, 224, 0.22), rgba(169, 140, 224, 0.08));
+  border-color: rgba(169, 140, 224, 0.4);
+  color: #d3c2f5;
+}
+.route .btn.go:hover:not(:disabled) { background: rgba(169, 140, 224, 0.3); }
+.route .btn.go:disabled {
+  background: var(--ink-3);
+  border-color: rgba(255, 255, 255, 0.07);
+  color: var(--muted-dim);
+  opacity: 1;
+}
+.go-label { letter-spacing: 0.5px; }
+.go-sub { font-size: 10.5px; opacity: 0.85; font-variant-numeric: tabular-nums; }
+
+.trade-locked { padding: 10px 14px 14px; font-size: 12px; color: var(--muted-dim); }
+
+/* ───────────────────────── 仙途 ───────────────────────── */
+
+.req-list { list-style: none; margin: 0; padding: 0 14px 14px; display: flex; flex-direction: column; gap: 6px; }
+.req {
+  display: flex; align-items: center; gap: 8px;
+  font-size: 12px; color: var(--muted);
+}
+.req .mark { width: 16px; text-align: center; color: var(--muted-dim); }
+.req.done { color: var(--jade); }
+.req.done .mark { color: var(--jade); }
+.req .val { margin-left: auto; font-variant-numeric: tabular-nums; color: var(--muted-dim); }
+.req.done .val { color: var(--jade); }
+
+/* ───────────────────────── 纪事（常驻侧栏） ───────────────────────── */
+
+.log-panel { display: flex; flex-direction: column; }
+
+.log-list {
+  /* 侧栏里自成一块滚动区：页面的长度不影响它，它也不会把页面撑长 */
+  max-height: calc(100vh - 210px);
+  min-height: 220px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  padding: 8px 12px 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  font-size: 11.5px;
+}
+
+/* 侧栏比正文窄，所以每条改成上下两行：时间一行，正文一行 */
+.log-item {
+  color: var(--muted);
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  line-height: 1.5;
+  padding-bottom: 6px;
+  border-bottom: 1px solid rgba(255, 255, 255, 0.04);
+}
+.log-item:last-child { border-bottom: 0; padding-bottom: 0; }
+.log-item .t { color: var(--muted-dim); font-variant-numeric: tabular-nums; font-size: 10.5px; }
+.log-item .rep { color: var(--muted-dim); }
+
+.log-item.kind-build .txt  { color: #c9bd94; }
+.log-item.kind-trade .txt  { color: #c3b2ea; }
+.log-item.kind-unlock .txt { color: var(--gold-soft); }
+.log-item.kind-tech .txt { color: var(--gold-soft); }
+.log-item.kind-quiz .txt { color: #e0a7a4; }
+.log-item.kind-sell .txt { color: var(--wheat); }
+.log-item.kind-secret .txt { color: #9fd0f5; }
+.log-item.kind-spirit .txt { color: #8fd6ff; }
+.log-item.kind-cultivate .txt { color: #c9b6f5; }
+.log-item.kind-milestone .txt { color: var(--jade); }
+.log-item.kind-offline .txt { color: var(--silver); }
+
+@media (max-width: 1180px) {
+  .log-list { max-height: 300px; min-height: 0; }
+}
+
+/* ───────────────────────── 格物（科技） ───────────────────────── */
+
+.tech-list { padding: 4px 0 8px; }
+
+.tech-group { border-bottom: 1px solid rgba(255, 255, 255, 0.045); }
+.tech-group:last-child { border-bottom: 0; }
+
+.tech-tier {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 8px 14px 4px;
+  background: linear-gradient(90deg, rgba(217, 180, 94, 0.05), transparent);
+}
+.tier-name {
+  font-family: var(--font-serif);
+  font-size: 12.5px;
+  letter-spacing: 2px;
+  color: var(--gold-dim);
+}
+.tier-hint { font-size: 11px; color: var(--muted-dim); }
+
+.tech {
+  display: grid;
+  grid-template-columns: 38px minmax(0, 1fr) 86px;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 14px;
+  border-left: 3px solid transparent;
+  transition: background 0.15s, border-left-color 0.15s;
+}
+.tech:last-child { padding-bottom: 10px; }
+
+.tech-mark {
+  width: 38px; height: 38px;
+  display: grid; place-items: center;
+  border-radius: 8px;
+  background: var(--ink-3);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  font-family: var(--font-serif);
+  font-size: 17px;
+  color: var(--muted);
+}
+
+.tech-body { min-width: 0; }
+.tech-title { display: flex; align-items: baseline; gap: 8px; }
+.tech-name {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  letter-spacing: 1.5px;
+  color: var(--text);
+}
+.tech-cost { font-size: 11.5px; color: var(--muted); font-variant-numeric: tabular-nums; }
+.tech-gain { font-size: 11.5px; color: var(--jade); margin-top: 2px; }
+.tech-req { font-size: 11px; color: var(--muted-dim); margin-top: 2px; }
+.tech-req:empty { display: none; }
+
+.tech .btn.tech-btn { font-size: 12px; padding: 6px 10px; width: 100%; }
+.tech .btn.tech-btn:disabled { opacity: 0.45; }
+
+/* 前置满足且银两足够 */
+.tech.is-ready { border-left-color: var(--gold); background: rgba(217, 180, 94, 0.055); }
+.tech.is-ready .tech-mark { color: var(--gold-soft); border-color: var(--line-strong); }
+.tech.is-ready .tech-name { color: var(--gold-soft); }
+.tech.is-ready .btn.tech-btn {
+  background: linear-gradient(180deg, rgba(217, 180, 94, 0.24), rgba(217, 180, 94, 0.1));
+  border-color: var(--line-strong);
+  color: var(--gold-soft);
+  opacity: 1;
+}
+.tech.is-ready .btn.tech-btn:hover:not(:disabled) { background: rgba(217, 180, 94, 0.3); }
+
+/* 前置满足但银两不够 */
+.tech.is-open .tech-name { color: #cfc6b0; }
+
+/* 已研习 */
+.tech.is-done .tech-mark { color: var(--jade); border-color: rgba(99, 201, 168, 0.4); }
+.tech.is-done .tech-name { color: var(--jade); }
+.tech.is-done .tech-cost { color: var(--jade); }
+.tech.is-done .tech-gain { color: var(--muted-dim); }
+.tech.is-done .btn.tech-btn { color: #7fd4b8; border-color: rgba(99, 201, 168, 0.3); }
+
+/* 前置未满足 */
+.tech.is-locked { opacity: 0.5; }
+.tech.is-locked .btn.tech-btn { color: var(--muted-dim); }
+
+/* 「隐藏已研习」：收起已完成的科技，免得列表越拉越长 */
+.tech.is-hidden, .tech-group.is-hidden { display: none; }
+
+/* ───────────────────────── 书斋（背单词） ───────────────────────── */
+
+.seg-btn[data-difficulty="hell"].is-active {
+  background: rgba(226, 112, 108, 0.22);
+  color: #f0a9a6;
+}
+
+.wrong-book {
+  margin: 8px 14px 12px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+  padding-top: 8px;
+}
+.wb-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  font-size: 11.5px;
+  color: var(--muted);
+  margin-bottom: 6px;
+}
+.wb-count { color: var(--muted-dim); font-variant-numeric: tabular-nums; }
+
+/* 还没到时候出现的栏目：由 systems/progression.js 的 pageVisible 决定。
+   用 !important 压掉 .pagetab 的 display:inline-flex —— 否则 hidden 不生效。 */
+.pagetab[hidden], .page[hidden] { display: none !important; }
+
+.wb-list { display: flex; flex-direction: column; gap: 3px; max-height: 176px; overflow-y: auto; }
+
+.wb-item {
+  display: grid;
+  grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr) auto;
+  gap: 8px;
+  align-items: baseline;
+  padding: 5px 6px;
+  border: 0;
+  border-bottom: 1px dashed rgba(255, 255, 255, 0.05);
+  border-radius: 5px;
+  background: none;
+  font-size: 11.5px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  width: 100%;
+}
+.wb-item:last-child { border-bottom: 0; }
+.wb-item:hover { background: rgba(255, 255, 255, 0.035); }
+.wb-item.is-open { background: rgba(217, 180, 94, 0.10); }
+.wb-item:focus-visible { outline: 2px solid var(--gold-soft); outline-offset: 1px; }
+.wb-word { color: #e6b7b4; font-family: var(--font-sans); overflow: hidden; text-overflow: ellipsis; }
+.wb-mean { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wb-times { color: var(--muted-dim); font-size: 10.5px; font-variant-numeric: tabular-nums; }
+.wb-empty { font-size: 11.5px; color: var(--muted-dim); padding: 2px 0; }
+
+/* 错题详情：点开之后展开完整题干、选项与解析 */
+.wb-detail {
+  margin-top: 10px;
+  padding: 12px 14px;
+  border: 1px solid var(--line-strong);
+  border-radius: 10px;
+  background: var(--ink-1);
+  font-size: 12.5px;
+  line-height: 1.8;
+}
+.wb-detail-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 8px; }
+.wb-detail-head strong { font-family: var(--font-serif); letter-spacing: 1px; color: var(--gold-soft); }
+.wb-detail-head .btn { padding: 3px 10px; font-size: 11px; }
+.wb-detail-q { color: var(--text); font-size: 13.5px; font-family: var(--font-serif); word-break: break-word; }
+.wb-detail-src { color: var(--muted-dim); font-size: 11.5px; margin-top: 2px; }
+.wb-options { list-style: none; margin: 9px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.wb-options li { padding: 5px 9px; border-radius: 6px; border: 1px solid var(--line); color: var(--muted); font-size: 12px; word-break: break-word; }
+.wb-options li.is-correct { border-color: rgba(217, 180, 94, 0.55); background: rgba(217, 180, 94, 0.10); color: var(--text); }
+.wb-options li.is-correct b { color: var(--gold-soft); }
+.wb-detail-ans { margin-top: 9px; color: var(--text); }
+.wb-detail-ans b, .wb-detail-exp b { color: var(--gold-soft); }
+.wb-detail-exp { margin-top: 5px; color: var(--muted); word-break: break-word; }
+.wb-detail-stats { margin-top: 9px; padding-top: 8px; border-top: 1px dashed var(--line); color: var(--muted-dim); font-size: 11px; font-variant-numeric: tabular-nums; }
+
+/* ───────────────────────── 答题弹窗 ───────────────────────── */
+
+.quiz-host {
+  display: none;
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  place-items: center;
+  padding: 20px;
+}
+.quiz-host.is-open { display: grid; }
+
+.quiz-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(5, 7, 10, 0.82);
+  backdrop-filter: blur(3px);
+}
+
+.quiz-card {
+  position: relative;
+  width: min(560px, 100%);
+  max-height: 100%;
+  overflow-y: auto;
+  border-radius: 14px;
+  background: linear-gradient(180deg, var(--ink-2), var(--ink-1));
+  border: 1px solid var(--line-strong);
+  box-shadow: 0 24px 70px rgba(0, 0, 0, 0.7);
+  animation: quiz-in 0.2s ease-out;
+}
+
+@keyframes quiz-in {
+  from { opacity: 0; transform: translateY(10px) scale(0.985); }
+  to   { opacity: 1; transform: translateY(0) scale(1); }
+}
+
+.quiz-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line);
+  background: linear-gradient(180deg, rgba(217, 180, 94, 0.08), transparent);
+}
+.quiz-op { font-family: var(--font-serif); font-size: 14px; letter-spacing: 1.5px; color: var(--gold-soft); }
+.quiz-diff {
+  font-size: 11.5px;
+  padding: 3px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  color: var(--muted);
+}
+.quiz-diff.is-hell { color: #f0a9a6; border-color: rgba(226, 112, 108, 0.5); background: rgba(226, 112, 108, 0.12); }
+.quiz-diff.is-normal { color: #9fd9c5; border-color: rgba(99, 201, 168, 0.4); background: rgba(99, 201, 168, 0.1); }
+
+.quiz-prompt { padding: 26px 18px 18px; text-align: center; }
+.quiz-word {
+  font-family: var(--font-serif);
+  font-size: 40px;
+  line-height: 1.15;
+  letter-spacing: 1px;
+  color: var(--text);
+  word-break: break-word;
+}
+.quiz-phonetic { font-size: 14px; color: var(--muted); margin-top: 6px; min-height: 20px; }
+.quiz-ask { font-size: 11.5px; color: var(--muted-dim); margin-top: 12px; letter-spacing: 1px; }
+
+.quiz-options {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  padding: 0 18px 6px;
+}
+@media (max-width: 520px) {
+  .quiz-options { grid-template-columns: 1fr; }
+  .quiz-word { font-size: 32px; }
+}
+
+.quiz-option {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 11px 13px;
+  border-radius: 9px;
+  background: var(--ink-0);
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  color: var(--text);
+  font-family: var(--font-sans);
+  font-size: 14.5px;
+  text-align: left;
+  cursor: pointer;
+  transition: background 0.13s, border-color 0.13s, transform 0.06s;
+}
+.quiz-option:hover:not(:disabled) {
+  background: rgba(217, 180, 94, 0.1);
+  border-color: var(--line-strong);
+}
+.quiz-option:active:not(:disabled) { transform: translateY(1px); }
+.quiz-option:disabled { cursor: default; }
+
+.opt-key {
+  flex: 0 0 auto;
+  width: 20px; height: 20px;
+  display: grid; place-items: center;
+  border-radius: 5px;
+  background: var(--ink-3);
+  font-size: 11px;
+  color: var(--muted);
+}
+.opt-text { min-width: 0; }
+
+.quiz-option.is-correct {
+  background: rgba(99, 201, 168, 0.18);
+  border-color: rgba(99, 201, 168, 0.65);
+  color: #b6ecda;
+}
+.quiz-option.is-correct .opt-key { background: rgba(99, 201, 168, 0.3); color: #b6ecda; }
+.quiz-option.is-wrong {
+  background: rgba(226, 112, 108, 0.16);
+  border-color: rgba(226, 112, 108, 0.6);
+  color: #f3c3c1;
+}
+.quiz-option.is-wrong .opt-key { background: rgba(226, 112, 108, 0.3); color: #f3c3c1; }
+
+.quiz-foot {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 18px 14px;
+  border-top: 1px solid var(--line);
+  font-size: 12px;
+  color: var(--muted);
+}
+.quiz-cost { font-variant-numeric: tabular-nums; }
+.quiz-verdict { font-size: 12.5px; }
+.quiz-verdict.is-right { color: var(--jade); }
+.quiz-verdict.is-wrong { color: var(--danger); }
+
+/* ───────────────────────── 人口（宽栏横向布局） ───────────────────────── */
+
+.pop-grid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 6px 24px;
+  align-items: start;
+  padding: 12px 14px 12px;
+}
+.pop-left { min-width: 0; }
+.pop-grid .bar-block { padding: 0 0 2px; }
+.pop-grid .metrics { padding: 0; }
+.pop-grid .note { margin: 12px 0 0; }
+
+@media (max-width: 720px) {
+  .pop-grid { grid-template-columns: 1fr; }
+}
+
+/* ───────────────────────── 秘闻 ───────────────────────── */
+
+.secret-block {
+  margin: 4px 14px 14px;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: linear-gradient(180deg, rgba(143, 214, 255, 0.06), transparent);
+  border: 1px solid rgba(143, 214, 255, 0.16);
+}
+.sec-head {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  font-size: 12px;
+  color: #9fd0f5;
+  margin-bottom: 6px;
+}
+.sec-title { font-family: var(--font-serif); letter-spacing: 2px; }
+.sec-count { font-variant-numeric: tabular-nums; color: var(--muted); }
+.sec-bar { height: 6px; margin-bottom: 8px; }
+.sec-fill { background: linear-gradient(90deg, #3f6f9e, #8fd6ff); }
+.sec-latest {
+  font-size: 11.5px;
+  line-height: 1.65;
+  color: var(--muted);
+  font-style: italic;
+}
+
+/* ───────────────────────── 云深谷坊市 ───────────────────────── */
+
+.market {
+  margin: 0 14px 14px;
+  padding: 11px 12px;
+  border-radius: 9px;
+  background: var(--ink-1);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+}
+.market-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.market-name {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  letter-spacing: 2px;
+  color: #8fd6ff;
+}
+.market-desc { margin: 0 0 9px; font-size: 11.5px; line-height: 1.6; color: var(--muted); }
+
+.market .btn.exchange {
+  width: 100%;
+  padding: 7px 10px;
+  background: linear-gradient(180deg, rgba(143, 214, 255, 0.18), rgba(143, 214, 255, 0.07));
+  border-color: rgba(143, 214, 255, 0.4);
+  color: #bfe6ff;
+}
+.market .btn.exchange:hover:not(:disabled) { background: rgba(143, 214, 255, 0.26); }
+.market .btn.exchange:disabled {
+  background: var(--ink-3);
+  border-color: rgba(255, 255, 255, 0.07);
+  color: var(--muted-dim);
+}
+
+/* ───────────────────────── 祛障丹 ───────────────────────── */
+
+.pill-box {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin: 12px 14px 0;
+  padding: 10px 12px;
+  border-radius: 9px;
+  background: linear-gradient(180deg, rgba(169, 140, 224, 0.08), transparent);
+  border: 1px solid rgba(169, 140, 224, 0.22);
+}
+.pill-info { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.pill-name {
+  font-family: var(--font-serif);
+  font-size: 14px;
+  letter-spacing: 2px;
+  color: #cdbcf2;
+}
+.pill-cost { font-size: 11px; color: var(--muted); }
+
+.pill-box .btn.pill {
+  flex: 0 0 auto;
+  padding: 6px 14px;
+  font-size: 12.5px;
+  background: linear-gradient(180deg, rgba(169, 140, 224, 0.24), rgba(169, 140, 224, 0.1));
+  border-color: rgba(169, 140, 224, 0.42);
+  color: #d9cbf7;
+}
+.pill-box .btn.pill:hover:not(:disabled) { background: rgba(169, 140, 224, 0.32); }
+.pill-box .btn.pill:disabled {
+  background: var(--ink-3);
+  border-color: rgba(255, 255, 255, 0.07);
+  color: var(--muted-dim);
+}
+
+/* ───────────────────────── 提示条 ───────────────────────── */
+
+.toast-host {
+  position: fixed;
+  left: 50%;
+  bottom: 26px;
+  transform: translateX(-50%);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  align-items: center;
+  z-index: 90;
+  pointer-events: none;
+}
+
+.toast {
+  padding: 9px 18px;
+  border-radius: 999px;
+  font-size: 13px;
+  background: rgba(22, 29, 38, 0.97);
+  border: 1px solid var(--line-strong);
+  color: var(--text);
+  box-shadow: var(--shadow);
+  animation: toast-in 0.22s ease-out;
+}
+.toast.warn { border-color: rgba(226, 112, 108, 0.55); color: #f3c3c1; }
+.toast.ok   { border-color: rgba(99, 201, 168, 0.5);  color: #b6ecda; }
+.toast.offline {
+  border-radius: 10px;
+  text-align: center;
+  line-height: 1.7;
+  padding: 12px 20px;
+  max-width: 380px;
+}
+.toast.offline b { color: var(--gold-soft); }
+.toast.fade { opacity: 0; transition: opacity 0.4s; }
+
+@keyframes toast-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+/* 滚动条 */
+::-webkit-scrollbar { width: 9px; height: 9px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: rgba(217, 180, 94, 0.16); border-radius: 999px; }
+::-webkit-scrollbar-thumb:hover { background: rgba(217, 180, 94, 0.28); }
+
+
+/* ══════════ UI 优化试玩版：不触碰玩法计算、存档、答题题库 ══════════ */
+:root {
+  --ink-0: #0c1118;
+  --ink-1: #141b24;
+  --ink-2: #1a232e;
+  --ink-3: #263341;
+  --ink-4: #304051;
+  --line: rgba(217,180,94,.21);
+  --line-strong: rgba(217,180,94,.42);
+  --muted: #b4bdc7;
+  --muted-dim: #8995a3;
+  --gold: #e3bd70;
+  --gold-soft: #f3dca6;
+  --radius: 12px;
+  --shadow: 0 8px 28px rgba(0,0,0,.22);
+}
+body { font-size: 14px; letter-spacing: .06px; }
+#app { max-width: 1480px; }
+.topbar { min-height: 64px; padding: 10px 22px; gap: 20px; }
+.brand-seal { border-radius: 10px; width: 42px; height: 42px; }
+.brand-title { font-size: 19px; }
+.topbar-actions { margin-left: auto; }
+.pagetabs { top: 64px; padding-left: 22px; gap: 8px; }
+.pagetab { position: relative; padding: 12px 22px 10px; font-size: 14px; }
+.pagetab.is-active { background: linear-gradient(180deg,rgba(217,180,94,.085),transparent); }
+.pagetab[data-page="techs"][data-ready="true"]::after { content:""; position:absolute; top:7px; right:10px; width:5px; height:5px; border-radius:50%; background:var(--jade); box-shadow:0 0 8px rgba(99,201,168,.7); }
+.shell { padding: 0 22px 70px; gap: 20px; }
+.shell-side { top: 135px; }
+.page-res { padding: 14px 0; gap: 10px; }
+.pres-chip { border: 1px solid var(--line); background:rgba(20,27,36,.85); padding: 6px 14px; }
+.pres-label { color:var(--muted); font-size:12px; }
+.pres-value { color:var(--gold-soft); font-size:15px; }
+.panel { box-shadow:var(--shadow); }
+.panel-head { min-height:48px; padding: 11px 16px; }
+.panel-head h2 { font-size:16px; }
+.panel-toggle { min-width:30px; min-height:30px; font-size:14px; }
+.panel-toggle:focus-visible, .btn:focus-visible, .pagetab:focus-visible, .seg-btn:focus-visible,
+.overview-primary:focus-visible, .settings-toggle:focus-visible, .quiz-option:focus-visible {
+  outline: 2px solid var(--gold-soft); outline-offset: 2px;
+}
+.btn { min-height:34px; }
+.bcard { padding: 12px 16px; gap: 14px; }
+.bcard-title { align-items:center; flex-wrap:wrap; }
+.bcard-name { font-size:16px; }
+.bcard-tagline { color: #99a5b0; font-size:12px; }
+.bcard-effect { font-size:13px; }
+.bcard.locked { opacity:.86; }
+.bcard.locked .bcard-name { color: #a5abb4; }
+.bcard.locked .bcard-icon { opacity:.7; }
+.bcard .btn.buy { min-height:49px; }
+.tech-req { color:#b6a4d8; }
+.tech.is-locked { opacity:.78; }
+.tech .btn.tech-btn { min-height:38px; }
+.route { padding:13px; }
+.route-title { font-size:14px; }
+.log-list { font-size:12px; }
+.note, .foot-note, .route-desc, .market-desc { font-size:12px; }
+.settings-toggle { display:none; }
+
+/* 根据游戏进展变化的“下一步”模块，重点突出行动而不是数值堆砌 */
+.overview {
+  display:grid; grid-template-columns:minmax(0,1.45fr) minmax(252px,.75fr);
+  gap:24px; align-items:stretch; overflow:hidden; position:relative;
+  border:1px solid rgba(217,180,94,.33); border-radius:14px;
+  background:
+    radial-gradient(460px 220px at 10% -30%,rgba(226,183,100,.18),transparent 85%),
+    radial-gradient(350px 230px at 99% 100%,rgba(99,201,168,.10),transparent 80%),
+    linear-gradient(125deg,#24281f 0%,#18222a 53%,#111c23 100%);
+  box-shadow: 0 12px 34px rgba(0,0,0,.25);
+  padding:23px 25px;
+}
+.overview::before { content:""; position:absolute; inset:0 auto 0 0; width:3px; background:linear-gradient(var(--gold-soft),var(--jade)); }
+.overview-copy { min-width:0; position:relative; }
+.overview-kicker { display:flex; align-items:center; gap:8px; color:var(--gold-soft); font-size:12px; letter-spacing:2px; }
+.overview-pulse { display:inline-block; height:7px; width:7px; border-radius:50%; background:var(--jade); box-shadow:0 0 10px rgba(99,201,168,.75); }
+.overview-chapter { font-size:11px; letter-spacing:0; color:var(--muted); padding-left:4px; }
+.overview h1 { margin:12px 0 8px; color:#f5e1b4; font-family:var(--font-serif); font-size:26px; line-height:1.4; font-weight:600; letter-spacing:2px; }
+.overview-desc { margin:0; font-size:13px; color:#bec8ca; line-height:1.75; max-width:620px; }
+.overview-actions { display:flex; align-items:center; flex-wrap:wrap; gap:12px; margin-top:19px; }
+.overview-primary {
+  display:inline-flex; align-items:center; justify-content:center; gap:15px;
+  background:linear-gradient(135deg,#e3bd70,#bb9450); color:#18202a;
+  border:1px solid #f0d49b; font-family:var(--font-sans); font-weight:750;
+  border-radius:8px; font-size:13.5px; letter-spacing:.3px;
+  min-height:40px; padding:9px 18px; cursor:pointer;
+  transition:filter .15s,transform .15s;
+}
+.overview-primary:hover:not(:disabled) { filter:brightness(1.08); transform:translateY(-1px); }
+.overview-primary:disabled { opacity:.5; cursor:not-allowed; }
+.overview-hint { color:#b5c0c4; font-size:12px; font-variant-numeric:tabular-nums; }
+.overview-progress { min-width:0; padding:13px 15px 12px; background:rgba(7,17,21,.3); border:1px solid rgba(255,255,255,.1); border-radius:11px; }
+.overview-progress-head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; color:var(--muted); font-size:12px; }
+.overview-progress-head strong { color:var(--gold-soft); font-size:16px; font-variant-numeric:tabular-nums; }
+.overview-track { height:9px; margin-top:12px; background:rgba(3,8,11,.78); border-radius:9px; overflow:hidden; border:1px solid rgba(255,255,255,.1); }
+.overview-track>span { display:block; width:0; height:100%; background:linear-gradient(90deg,#b5883c,#e3bd70,#79cbb2); transition:width .4s; }
+.overview-milestones { display:flex; gap:3px; justify-content:space-between; margin-top:7px; color:#899ba2; font-size:11px; }
+.overview-status { margin-top:18px; padding-top:10px; border-top:1px solid rgba(255,255,255,.08); display:flex; justify-content:space-between; align-items:baseline; gap:8px; font-size:12px; color:var(--muted); }
+.overview-status b { font-size:14px; color:var(--jade); font-variant-numeric:tabular-nums; }
+.overview-status b.is-down { color:var(--danger); }
+
+/* 手机优先布局：解决原版 390px 屏幕却延伸至 590px 的横向溢出 */
+@media (max-width: 1180px) {
+  .shell-side { position:static; }
+  .log-list { max-height:230px; }
+}
+@media (max-width: 900px) {
+  .topbar { min-height:62px; }
+  .pagetabs { top:0; }
+  .overview { grid-template-columns: minmax(0,1fr); gap:16px; }
+}
+@media (max-width:720px) {
+  html, body { max-width:100%; overflow-x:clip; }
+  body { font-size:14px; }
+  #app { padding-bottom:calc(15px + env(safe-area-inset-bottom)); }
+  .topbar { position:relative; padding:10px 14px; min-height:64px; gap:8px; flex-wrap:wrap; }
+  .brand-seal { width:38px; height:38px; font-size:21px; }
+  .brand-title { font-size:18px; }
+  .brand-sub { font-size:11px; }
+  .settings-toggle { display:inline-flex; align-items:center; justify-content:center; margin-left:auto; padding:7px 12px; font-size:12px; border-color:var(--line-strong); color:var(--gold-soft); background:rgba(217,180,94,.09); }
+  .topbar-actions { display:none; width:100%; min-width:0; flex:0 0 100%; margin:4px 0 2px; padding:12px; border:1px solid var(--line); border-radius:10px; background:var(--ink-1); }
+  .topbar-actions.is-open { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px 8px; }
+  .topbar-actions .seg-group { grid-column:1/-1; display:flex; justify-content:space-between; align-items:center; gap:10px; min-width:0; }
+  .topbar-actions .seg { flex:0 0 auto; }
+  .topbar-actions .seg-btn { min-height:34px; padding:6px 13px; font-size:12px; }
+  .topbar-actions > .btn { min-height:38px; width:100%; }
+  .pagetabs { position:fixed; inset:auto 0 0; top:auto; z-index:50; height:calc(65px + env(safe-area-inset-bottom)); padding:0 5px env(safe-area-inset-bottom); display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); align-items:stretch; gap:0; border-top:1px solid var(--line-strong); border-bottom:0; overflow:visible; background:rgba(15,21,29,.975); box-shadow:0 -8px 24px rgba(0,0,0,.5); }
+  .pagetab { display:flex; flex-direction:column; align-items:center; justify-content:center; gap:1px; min-width:0; padding:4px 1px 5px; font-family:var(--font-sans); letter-spacing:0; font-size:12px; white-space:nowrap; border-bottom:0; border-top:2px solid transparent; }
+  .pagetab::before { display:block; font-size:20px; line-height:1.25; }
+  .pagetab[data-page="home"]::before { content:"⌂"; }
+  .pagetab[data-page="techs"]::before { content:"✧"; }
+  .pagetab[data-page="trade"]::before { content:"♧"; }
+  .pagetab[data-page="immortal"]::before { content:"☯"; }
+  .pagetab[data-page="study"]::before { content:"▤"; }
+.pagetab[data-page="codex"]::before { content:"▥"; }
+.pagetab[data-page="cycle"]::before { content:"↻"; }
+  .pagetab.is-active { color:var(--gold-soft); border-top-color:var(--gold); border-bottom-color:transparent; background:linear-gradient(180deg,rgba(217,180,94,.14),transparent); }
+  .pagetab[data-page="techs"][data-ready="true"]::after { top:6px; right:22%; }
+  .shell { display:block; padding:0 12px calc(90px + env(safe-area-inset-bottom)); }
+  .shell-main { min-width:0; }
+  .shell-side { margin-top:18px; min-width:0; }
+  .page-res { padding:12px 0; gap:7px; }
+  .pres-chip { min-width:0; padding:6px 10px; gap:6px; }
+  .pres-label { font-size:11px; }
+  .pres-value { font-size:13px; }
+  .page { gap:12px; }
+  .overview { padding:17px 16px; gap:13px; }
+  .overview h1 { font-size:21px; margin:9px 0 6px; letter-spacing:1px; }
+  .overview-desc { font-size:12.5px; }
+  .overview-actions { margin-top:13px; gap:8px; }
+  .overview-primary { width:100%; justify-content:space-between; min-height:42px; }
+  .overview-hint { line-height:1.55; }
+  .overview-progress { padding:11px 13px; }
+  .overview-status { margin-top:10px; }
+  .panel-head { padding:10px 11px; min-height:48px; gap:6px; }
+  .panel-head h2 { font-size:15px; letter-spacing:.6px; white-space:nowrap; }
+  .panel-head-right { flex-wrap:wrap; justify-content:flex-end; gap:5px; min-width:0; }
+  .chip { padding:3px 7px; font-size:10.5px; }
+  .panel-toggle { width:27px; height:29px; }
+  #buy-mode .seg-btn { font-size:11px; padding:6px 8px; }
+  .bcard { grid-template-columns:38px minmax(0,1fr) 118px; gap:8px; padding:11px 10px; align-items:center; }
+  .bcard-icon { width:38px; height:38px; font-size:19px; }
+  .bcard-title { gap:4px; }
+  .bcard-name { font-size:14px; letter-spacing:.3px; }
+  .bcard-count { font-size:11px; }
+  .bcard-tagline { display:none; }
+  .bcard-effect { font-size:11.5px; line-height:1.45; margin-top:5px; overflow-wrap:anywhere; }
+  .bcard-buy { gap:4px; }
+  .bcard .btn.buy { padding:7px 5px; min-height:44px; }
+  .buy-label { font-size:12px; letter-spacing:0; }
+  .buy-cost { font-size:11px; }
+  .bcard .btn.sell { font-size:10.5px; padding:6px 4px; white-space:normal; }
+  .bcard-per { display:none; }
+  .pop-grid { gap:12px; }
+  .metrics { padding-bottom:10px; }
+  .tech { grid-template-columns:32px minmax(0,1fr) 76px; padding:10px; gap:7px; }
+  .tech-mark { width:32px; height:32px; font-size:15px; }
+  .tech-name { font-size:13px; letter-spacing:0; }
+  .tech-title { flex-wrap:wrap; gap:1px 7px; }
+  .tech-cost,.tech-gain,.tech-req { font-size:11px; }
+  .tech .btn.tech-btn { padding:7px 2px; font-size:11px; }
+  .route-actions { gap:4px; }
+  .route .btn.go { padding:7px 3px; font-size:11.5px; }
+  .go-sub { font-size:10px; }
+  .quiz-host { padding:12px; padding-bottom:calc(12px + env(safe-area-inset-bottom)); }
+  .quiz-card { max-height:calc(100dvh - 24px - env(safe-area-inset-bottom)); }
+  .quiz-prompt { padding:20px 14px 13px; }
+  .quiz-word { font-size:32px; }
+  .quiz-option { min-height:46px; font-size:14px; }
+  .quiz-options { padding:0 14px 7px; }
+  .toast-host { left:12px; right:12px; bottom:calc(79px + env(safe-area-inset-bottom)); transform:none; }
+  .toast { max-width:100%; border-radius:10px; font-size:12px; text-align:center; }
+  .log-list { max-height:160px; }
+}
+@media (max-width: 360px) {
+  .shell { padding-left:8px; padding-right:8px; }
+  .panel-head h2 { font-size:14px; }
+  .panel-head { padding-left:8px; padding-right:8px; }
+  .bcard { grid-template-columns:32px minmax(0,1fr) 103px; gap:6px; padding:10px 6px; }
+  .bcard-icon { width:32px; height:32px; font-size:16px; }
+  .bcard-name { font-size:13px; }
+  .bcard .btn.sell { font-size:10px; }
+  .overview { padding:14px 12px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { scroll-behavior:auto !important; animation-duration:.01ms !important; transition-duration:.01ms !important; }
+}
+
+
+/* 页面内定位时，避免标题被顶部标签遮挡 */
+#building-list, #tech-list, #route-list, #market, #pill-box, #immortal-metrics { scroll-margin-top: 130px; }
+@media (max-width:720px) { #building-list, #tech-list, #route-list, #market, #pill-box, #immortal-metrics { scroll-margin-top: 12px; } }
+
+
+/* ══════════ 统一设置抽屉 + 双主题（保留原风格 / 新增水墨风） ══════════ */
+.settings-toggle {
+  display:inline-flex;
+  align-items:center;
+  justify-content:center;
+  margin-left:auto;
+  min-height:38px;
+  padding:8px 13px;
+  font-size:12.5px;
+  border-color:var(--line-strong);
+  color:var(--gold-soft);
+  background:rgba(217,180,94,.09);
+}
+.settings-toggle:hover:not(:disabled) { background:rgba(217,180,94,.14); }
+.topbar-actions {
+  display:none;
+  position:absolute;
+  top:calc(100% + 8px);
+  right:22px;
+  z-index:65;
+  width:min(430px, calc(100vw - 44px));
+  min-width:280px;
+  margin-left:0;
+  padding:14px;
+  border:1px solid var(--line-strong);
+  border-radius:12px;
+  background:rgba(16,21,28,.985);
+  box-shadow:0 20px 44px rgba(0,0,0,.42);
+  grid-template-columns:minmax(0,1fr);
+  gap:12px;
+}
+.topbar-actions.is-open { display:grid; }
+.topbar-actions .seg-group {
+  display:flex;
+  justify-content:space-between;
+  align-items:center;
+  gap:12px;
+  min-width:0;
+}
+.topbar-actions .seg-label { flex:0 0 auto; color:var(--muted); }
+.topbar-actions .seg { flex:0 0 auto; max-width:100%; }
+.topbar-actions .seg-btn { min-height:35px; }
+.topbar-actions > .btn { width:100%; min-height:38px; }
+.setting-tip {
+  margin:-4px 0 0;
+  font-size:11px;
+  color:var(--muted-dim);
+  line-height:1.55;
+}
+.theme-preview {
+  display:inline-flex;
+  align-items:center;
+  gap:8px;
+  font-size:11.5px;
+  color:var(--muted);
+}
+.theme-dot {
+  width:9px; height:9px; border-radius:50%;
+  background:linear-gradient(135deg, var(--gold-soft), var(--jade));
+  box-shadow:0 0 0 1px rgba(255,255,255,.08);
+}
+
+@media (max-width:720px) {
+  .settings-toggle { margin-left:auto; }
+  .topbar-actions {
+    position:relative;
+    top:auto;
+    right:auto;
+    width:100%;
+    min-width:0;
+    margin:4px 0 2px;
+    background:var(--ink-1);
+    box-shadow:0 10px 24px rgba(0,0,0,.2);
+  }
+  .topbar-actions.is-open { display:grid; grid-template-columns:minmax(0,1fr) minmax(0,1fr); gap:12px 8px; }
+  .topbar-actions .seg-group { grid-column:1/-1; }
+}
+
+body[data-theme="inkwash"], html[data-theme="inkwash"] {
+  --ink-0:#f6f3eb;
+  --ink-1:#fcfaf6;
+  --ink-2:#f0ebe2;
+  --ink-3:#e3ddd1;
+  --ink-4:#d6cfc1;
+  --line:rgba(60,54,48,.12);
+  --line-strong:rgba(60,54,48,.24);
+  --gold:#514c45;
+  --gold-soft:#2d2924;
+  --gold-dim:#7a746b;
+  --jade:#5f746d;
+  --silver:#6d747c;
+  --ember:#8a6b58;
+  --violet:#70687c;
+  --wheat:#8c8268;
+  --danger:#9b5d56;
+  --text:#25211d;
+  --muted:#686157;
+  --muted-dim:#8a8277;
+  --shadow:0 10px 28px rgba(26,22,18,.08);
+}
+body[data-theme="inkwash"] {
+  background:
+    radial-gradient(780px 360px at 8% -8%, rgba(39,35,31,.08), transparent 55%),
+    radial-gradient(520px 260px at 102% 6%, rgba(95,116,109,.08), transparent 56%),
+    linear-gradient(180deg, #f8f5ee 0%, #efebe2 100%);
+  color:var(--text);
+}
+body[data-theme="inkwash"] .topbar,
+body[data-theme="inkwash"] .pagetabs,
+body[data-theme="inkwash"] .panel,
+body[data-theme="inkwash"] .pres-chip,
+body[data-theme="inkwash"] .res,
+body[data-theme="inkwash"] .route,
+body[data-theme="inkwash"] .caravan,
+body[data-theme="inkwash"] .market,
+body[data-theme="inkwash"] .pill-box,
+body[data-theme="inkwash"] .quiz-card,
+body[data-theme="inkwash"] .toast,
+body[data-theme="inkwash"] .topbar-actions,
+body[data-theme="inkwash"] .overview-progress { background:rgba(252,250,246,.95); color:var(--text); }
+body[data-theme="inkwash"] .topbar { background:linear-gradient(180deg, rgba(248,245,238,.98), rgba(248,245,238,.92)); }
+body[data-theme="inkwash"] .pagetabs { background:linear-gradient(180deg, rgba(248,245,238,.97), rgba(244,240,232,.93)); box-shadow:none; }
+body[data-theme="inkwash"] .pagetab:hover { color:var(--gold-soft); background:rgba(45,41,36,.04); }
+body[data-theme="inkwash"] .pagetab.is-active { color:var(--gold-soft); border-bottom-color:var(--gold-soft); background:linear-gradient(180deg, rgba(45,41,36,.08), transparent); }
+body[data-theme="inkwash"] .brand-seal { background:linear-gradient(145deg, #f0ebe3, #ded7ca); color:#2d2924; border-color:rgba(60,54,48,.18); box-shadow:inset 0 0 12px rgba(70,61,51,.08); }
+body[data-theme="inkwash"] .brand-title,
+body[data-theme="inkwash"] .panel-head h2,
+body[data-theme="inkwash"] .bcard-name,
+body[data-theme="inkwash"] .market-name,
+body[data-theme="inkwash"] .pill-name,
+body[data-theme="inkwash"] .tier-name,
+body[data-theme="inkwash"] .tech-name,
+body[data-theme="inkwash"] .overview h1,
+body[data-theme="inkwash"] .overview-kicker,
+body[data-theme="inkwash"] .overview-progress-head strong,
+body[data-theme="inkwash"] .overview-status b,
+body[data-theme="inkwash"] .res-value,
+body[data-theme="inkwash"] .pres-value { color:var(--gold-soft); }
+body[data-theme="inkwash"] .panel,
+body[data-theme="inkwash"] .route,
+body[data-theme="inkwash"] .market,
+body[data-theme="inkwash"] .pill-box,
+body[data-theme="inkwash"] .caravan,
+body[data-theme="inkwash"] .quiz-card,
+body[data-theme="inkwash"] .topbar-actions,
+body[data-theme="inkwash"] .pres-chip,
+body[data-theme="inkwash"] .res,
+body[data-theme="inkwash"] .overview-progress { border-color:var(--line); box-shadow:var(--shadow); }
+body[data-theme="inkwash"] .panel-head,
+body[data-theme="inkwash"] .quiz-head { background:linear-gradient(180deg, rgba(45,41,36,.05), transparent); border-bottom-color:var(--line); }
+body[data-theme="inkwash"] .chip,
+body[data-theme="inkwash"] .btn,
+body[data-theme="inkwash"] .panel-toggle,
+body[data-theme="inkwash"] .opt-key { background:var(--ink-2); border-color:rgba(60,54,48,.12); color:var(--muted); }
+body[data-theme="inkwash"] .btn:hover:not(:disabled),
+body[data-theme="inkwash"] .panel-toggle:hover,
+body[data-theme="inkwash"] .quiz-option:hover:not(:disabled) { background:var(--ink-3); border-color:var(--line-strong); color:var(--text); }
+body[data-theme="inkwash"] .btn.ghost,
+body[data-theme="inkwash"] .bcard .btn.sell { background:transparent; }
+body[data-theme="inkwash"] .seg { border-color:rgba(60,54,48,.12); background:rgba(255,255,255,.45); }
+body[data-theme="inkwash"] .seg-btn { color:var(--muted); }
+body[data-theme="inkwash"] .seg-btn:hover { color:var(--text); background:rgba(45,41,36,.04); }
+body[data-theme="inkwash"] .seg-btn.is-active,
+body[data-theme="inkwash"] .btn.ghost.is-active { background:rgba(45,41,36,.10); color:var(--gold-soft); }
+body[data-theme="inkwash"] .seg-btn[data-speed].is-active:not([data-speed="1"]),
+body[data-theme="inkwash"] .seg-btn[data-quiz-mode="off"].is-active,
+body[data-theme="inkwash"] .seg-btn[data-difficulty="hell"].is-active { background:rgba(95,116,109,.18); color:#3f554d; }
+body[data-theme="inkwash"] .overview {
+  background:
+    radial-gradient(500px 210px at 12% -26%, rgba(45,41,36,.10), transparent 75%),
+    radial-gradient(300px 210px at 103% 100%, rgba(95,116,109,.11), transparent 78%),
+    linear-gradient(135deg, #f8f5ee 0%, #ede7dc 58%, #e4ddd1 100%);
+  border-color:rgba(60,54,48,.22);
+  box-shadow:0 14px 36px rgba(34,27,21,.08);
+}
+body[data-theme="inkwash"] .overview::before { background:linear-gradient(#2d2924, #78867d); }
+body[data-theme="inkwash"] .overview-desc,
+body[data-theme="inkwash"] .overview-hint,
+body[data-theme="inkwash"] .overview-chapter,
+body[data-theme="inkwash"] .route-desc,
+body[data-theme="inkwash"] .note,
+body[data-theme="inkwash"] .foot-note,
+body[data-theme="inkwash"] .market-desc,
+body[data-theme="inkwash"] .log-item,
+body[data-theme="inkwash"] .log-item .t,
+body[data-theme="inkwash"] .quiz-phonetic,
+body[data-theme="inkwash"] .quiz-ask,
+body[data-theme="inkwash"] .setting-tip { color:var(--muted); }
+body[data-theme="inkwash"] .overview-primary,
+body[data-theme="inkwash"] .bcard .btn.buy,
+body[data-theme="inkwash"] .route .btn.go,
+body[data-theme="inkwash"] .market .btn.exchange,
+body[data-theme="inkwash"] .pill-box .btn.pill,
+body[data-theme="inkwash"] .tech.is-ready .btn.tech-btn { background:linear-gradient(135deg, #3a3630, #696157); border-color:#7a7267; color:#f7f4ee; }
+body[data-theme="inkwash"] .overview-primary:hover:not(:disabled),
+body[data-theme="inkwash"] .bcard .btn.buy:hover:not(:disabled),
+body[data-theme="inkwash"] .route .btn.go:hover:not(:disabled),
+body[data-theme="inkwash"] .market .btn.exchange:hover:not(:disabled),
+body[data-theme="inkwash"] .pill-box .btn.pill:hover:not(:disabled),
+body[data-theme="inkwash"] .tech.is-ready .btn.tech-btn:hover:not(:disabled) { filter:none; background:linear-gradient(135deg, #2f2b26, #5d564d); }
+body[data-theme="inkwash"] .bar,
+body[data-theme="inkwash"] .overview-track { background:#ebe5da; border-color:rgba(60,54,48,.12); }
+body[data-theme="inkwash"] .bar-fill,
+body[data-theme="inkwash"] .overview-track > span,
+body[data-theme="inkwash"] .sec-fill { background:linear-gradient(90deg, #5b655d, #8e9180 50%, #43403b 100%); }
+body[data-theme="inkwash"] .quiz-backdrop { background:rgba(27,24,20,.35); backdrop-filter:blur(4px); }
+body[data-theme="inkwash"] .quiz-option { background:rgba(248,245,238,.8); border-color:rgba(60,54,48,.1); color:var(--text); }
+body[data-theme="inkwash"] .quiz-option.is-correct { background:rgba(95,116,109,.13); border-color:rgba(95,116,109,.4); color:#31433d; }
+body[data-theme="inkwash"] .quiz-option.is-wrong { background:rgba(155,93,86,.13); border-color:rgba(155,93,86,.35); color:#6a3c38; }
+body[data-theme="inkwash"] ::-webkit-scrollbar-thumb { background:rgba(45,41,36,.18); }
+body[data-theme="inkwash"] ::-webkit-scrollbar-thumb:hover { background:rgba(45,41,36,.28); }
+
+
+/* ══════════ 书斋·自定义题库 ══════════ */
+.quiz-foot { flex-wrap:wrap; }
+.quiz-continue[hidden] { display:none !important; }
+.quiz-continue { margin-left:auto; border-color:var(--line-strong); color:var(--gold-soft); }
+.quiz-explanation { max-height:28vh; overflow-y:auto; }
+
+.bank-manager { padding:14px 16px 16px; }
+.bank-intro { color:var(--muted); margin:3px 0 12px; font-size:12px; line-height:1.75; }
+.bank-list { display:grid; grid-template-columns:repeat(auto-fit,minmax(210px,1fr)); gap:9px; margin-bottom:12px; }
+.bank-card { min-width:0; background:var(--ink-1); border:1px solid var(--line); border-radius:10px; padding:12px; transition:border-color .18s,background .18s; }
+.bank-card.is-selected { border-color:var(--line-strong); background:var(--ink-2); box-shadow:inset 3px 0 0 var(--jade); }
+.bank-card-name { display:flex; align-items:center; justify-content:space-between; gap:6px; font-family:var(--font-serif); font-size:14px; color:var(--gold-soft); }
+.bank-card-tag { color:var(--jade); font:11px var(--font-sans); white-space:nowrap; }
+.bank-card-meta { margin:4px 0 9px; min-height:32px; font-size:11.5px; color:var(--muted); overflow-wrap:anywhere; }
+.bank-card-actions { display:flex; gap:6px; }
+.bank-card-actions .btn { flex:1; min-width:0; min-height:36px; }
+.bank-actions { display:flex; flex-wrap:wrap; gap:8px; }
+.bank-actions .btn { min-height:38px; }
+.bank-hint { margin:12px 0 0; font-size:11.5px; color:var(--muted); line-height:1.65; }
+.bank-file-input { display:none; }
+.bank-info { display:flex; align-items:center; flex-wrap:wrap; gap:7px; font-size:12px; color:var(--muted); }
+.bank-info strong { color:var(--gold-soft); }
+.quiz-ask { line-height:1.7; }
+.quiz-word.is-custom { font-size:clamp(19px,2.6vw,25px); letter-spacing:.2px; line-height:1.65; text-align:left; white-space:pre-wrap; overflow-wrap:anywhere; }
+.quiz-phonetic.is-source { text-align:left; }
+.quiz-explanation { display:none; margin:10px 18px 2px; padding:10px 12px; background:var(--ink-3); color:var(--text); border-left:3px solid var(--jade); border-radius:6px; font-size:12px; line-height:1.75; white-space:pre-wrap; overflow-wrap:anywhere; }
+.quiz-explanation.is-visible { display:block; }
+.quiz-option .opt-text { white-space:pre-wrap; overflow-wrap:anywhere; }
+body[data-theme="inkwash"] .bank-card { background:#fcfaf6; border-color:rgba(60,54,48,.16); }
+body[data-theme="inkwash"] .bank-card.is-selected { background:#ede7dc; border-color:rgba(60,54,48,.3); }
+body[data-theme="inkwash"] .quiz-explanation { background:#eee9de; color:#302b25; }
+@media (max-width:720px) {
+  .bank-manager { padding:12px; }
+  .bank-list { grid-template-columns:minmax(0,1fr); }
+  .bank-actions .btn { flex:1; }
+  .quiz-word.is-custom { font-size:19px; }
+  .quiz-explanation { margin:8px 14px 2px; }
+}
+
+
+/* ── AI 制题助手：两种主题共用变量，响应式展示 ── */
+.bank-ai { margin:16px 0 10px; padding:16px; background:var(--ink-2); border:1px solid var(--line-strong); border-radius:12px; }
+.bank-ai-head { display:flex; align-items:flex-start; justify-content:space-between; gap:10px; }
+.bank-ai-head h3 { margin:0; font:600 16px/1.45 var(--font-serif); letter-spacing:1px; color:var(--gold-soft); }
+.bank-ai-head p { margin:5px 0 0; color:var(--muted); font-size:12px; line-height:1.7; }
+.bank-ai-tag { flex:0 0 auto; padding:3px 8px; font-size:11px; white-space:nowrap; border:1px solid var(--line-strong); border-radius:99px; color:var(--jade); }
+.bank-ai-fields { display:grid; grid-template-columns:minmax(0,1.3fr) minmax(0,1fr) minmax(0,1fr); gap:10px; margin-top:14px; }
+.bank-ai-field { display:flex; flex-direction:column; gap:6px; min-width:0; font-size:12px; color:var(--muted); }
+.bank-ai-field input, .bank-ai-field select { width:100%; min-width:0; height:39px; padding:8px 10px; border-radius:7px; background:var(--ink-1); color:var(--text); border:1px solid var(--line-strong); font:13px var(--font-sans); }
+.bank-ai-field input::placeholder { color:var(--muted-dim); }
+.bank-ai-field input:focus-visible,.bank-ai-field select:focus-visible,.bank-ai-preview-wrap textarea:focus-visible { outline:2px solid var(--jade); outline-offset:1px; }
+.bank-ai-actions { display:flex; gap:9px; flex-wrap:wrap; margin-top:13px; }
+.bank-ai-actions .btn { min-height:42px; padding:9px 14px; }
+.bank-ai-copy { background:var(--gold-soft); color:var(--ink-0); border-color:var(--gold-soft); font-weight:700; }
+.bank-ai-copy:hover:not(:disabled) { background:var(--gold); color:var(--ink-0); border-color:var(--gold); }
+.bank-ai-preview-wrap { margin-top:12px; }
+.bank-ai-preview-wrap[hidden] { display:none; }
+.bank-ai-preview-wrap label { display:block; margin-bottom:7px; font-size:12px; color:var(--muted); }
+.bank-ai-preview-wrap textarea { display:block; width:100%; min-height:200px; max-height:460px; resize:vertical; padding:12px; border:1px solid var(--line); border-radius:8px; background:var(--ink-1); color:var(--text); font:12px/1.7 var(--font-sans); }
+.bank-ai-help { margin:12px 0 0; line-height:1.75; color:var(--muted); font-size:11.5px; }
+.bank-ai-help strong { color:var(--gold-soft); }
+body[data-theme="inkwash"] .bank-ai { background:#f3efe7; border-color:rgba(57,49,40,.22); }
+body[data-theme="inkwash"] .bank-ai-copy { background:#35332f; color:#faf6ee; border-color:#35332f; }
+body[data-theme="inkwash"] .bank-ai-copy:hover:not(:disabled) { background:#545046; color:#fff; border-color:#545046; }
+@media(max-width:820px) { .bank-ai-fields { grid-template-columns:repeat(2,minmax(0,1fr)); } .bank-ai-fields .bank-ai-field:first-child { grid-column:1/-1; } }
+@media(max-width:480px) { .bank-ai { padding:12px; } .bank-ai-fields { grid-template-columns:1fr; gap:10px; } .bank-ai-fields .bank-ai-field:first-child { grid-column:auto; } .bank-ai-head { gap:7px; } .bank-ai-head h3 { font-size:15px; } .bank-ai-head p { font-size:11.5px; } .bank-ai-actions { flex-direction:column; } .bank-ai-actions .btn { width:100%; } }
+
+
+/* 跨设备同款精细矢量导航：保留原导航逻辑和双主题 */
+.pagetab { display:inline-flex; align-items:center; justify-content:center; gap:9px; }
+.pagetab .nav-icon { display:block; flex:0 0 auto; width:19px; height:19px; color:currentColor; }
+.pagetab > span { display:block; }
+.pagetab:hover .nav-icon { transform:translateY(-1px); }
+.pagetab .nav-icon { transition:transform .15s ease; }
+@media(max-width:720px) {
+  .pagetab { flex-direction:column; gap:2px; }
+  .pagetab::before { display:none !important; content:none !important; }
+  .pagetab .nav-icon { width:22px; height:22px; }
+}
+@media(prefers-reduced-motion:reduce) { .pagetab .nav-icon { transition:none; } }
+
+
+/* ══════ 炼气篇 · 战力 / 功法 / 修士名册 ══════ */
+.cultivation-panel .panel-body { padding-bottom:10px; }
+.power-overview { display:grid; grid-template-columns:minmax(0,.9fr) minmax(0,1fr); gap:18px; padding:16px; align-items:stretch; }
+.power-leading { display:flex; flex-direction:column; justify-content:center; gap:4px; padding:14px 18px; border-radius:11px; border:1px solid var(--line-strong); background:linear-gradient(130deg,rgba(217,180,94,.1),rgba(99,201,168,.045)); }
+.power-caption { color:var(--muted); font-size:12px; letter-spacing:1px; }
+.power-value { font-size:clamp(28px,4vw,39px); color:var(--gold-soft); font-weight:700; font-variant-numeric:tabular-nums; line-height:1.32; }
+.power-leading small { font-size:11px; color:var(--muted); }
+.power-parts { display:flex; flex-direction:column; justify-content:center; }
+.power-parts > div { display:flex; justify-content:space-between; gap:10px; border-bottom:1px solid var(--line); padding:9px 3px; font-size:12px; color:var(--muted); }
+.power-parts > div:last-child { border:0; }
+.power-parts strong { color:var(--text); font-size:14px; font-variant-numeric:tabular-nums; }
+.manual-empty { display:flex; gap:15px; align-items:center; padding:20px 18px; }
+.manual-empty strong { font-family:var(--font-serif); font-size:15px; color:var(--gold-soft); }
+.manual-empty p { margin:7px 0 0; font-size:12px; line-height:1.7; color:var(--muted); }
+.manual-empty[hidden] { display:none; }
+
+/* ── 秘籍：装备栏 / 汇总 / 收录网格 ── */
+.manual-slots { display:grid; grid-template-columns:1fr 1fr; gap:10px; padding:12px 14px 0; }
+.manual-slot { border:1px solid var(--line); border-radius:6px; padding:9px 11px; background:var(--ink-2); min-height:74px; }
+.manual-slot.is-empty { border-style:dashed; color:var(--muted-dim); }
+.manual-slot.is-empty .manual-slot-body { font-size:11.5px; line-height:1.6; margin-top:6px; }
+.manual-slot-head { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+.manual-slot-role { font-size:10.5px; letter-spacing:2px; color:var(--muted-dim); }
+.manual-slot-name { font-family:var(--font-serif); font-size:14px; color:var(--gold-soft); }
+.manual-slot-meta { margin-top:3px; font-size:10.5px; color:var(--muted); }
+.manual-slot-effect { margin-top:5px; font-size:11.5px; color:var(--jade); }
+
+.manual-summary { display:flex; flex-wrap:wrap; gap:7px; padding:11px 14px 0; }
+.manual-summary-chip { font-size:11px; padding:3px 9px; border-radius:5px; background:var(--ink-3); border:1px solid var(--line); color:var(--muted); }
+.manual-summary-chip b { color:var(--jade); font-weight:600; }
+.manual-summary-chip.is-zero { opacity:.5; }
+
+.manual-grid { display:grid; grid-template-columns:repeat(auto-fill,minmax(268px,1fr)); gap:8px; padding:12px 14px 14px; }
+.manual-card { border:1px solid var(--line); border-radius:6px; padding:9px 11px; background:var(--ink-2); }
+.manual-card.is-locked { opacity:.42; }
+.manual-card.is-main { border-color:var(--gold-soft); box-shadow:inset 0 0 0 1px rgba(217,180,94,.18); }
+.manual-card.is-assist { border-color:var(--jade); }
+.manual-card-head { display:flex; align-items:baseline; justify-content:space-between; gap:8px; }
+.manual-card-name { font-family:var(--font-serif); font-size:13.5px; color:var(--text); }
+.manual-card-tier { font-size:10px; padding:1px 6px; border-radius:4px; border:1px solid var(--line); color:var(--muted); flex:0 0 auto; }
+.manual-card-tier.t1 { color:#b9c3cf; }
+.manual-card-tier.t2 { color:#8fb7d8; }
+.manual-card-tier.t3 { color:var(--gold-soft); border-color:var(--line-strong); }
+.manual-card-dao { margin-top:2px; font-size:10.5px; color:var(--muted-dim); letter-spacing:1px; }
+.manual-card-effect { margin-top:5px; font-size:11.5px; color:var(--jade); }
+.manual-card-locked { margin-top:5px; font-size:11px; color:var(--muted-dim); line-height:1.5; }
+.manual-card-foot { display:flex; align-items:center; gap:6px; margin-top:8px; flex-wrap:wrap; }
+.manual-card-attune { font-size:10.5px; color:var(--muted); margin-right:auto; }
+.manual-card .btn { padding:3px 9px; font-size:11px; }
+.manual-card .btn.is-on { border-color:var(--gold-soft); color:var(--gold-soft); }
+@media (max-width:720px){ .manual-slots{ grid-template-columns:1fr; } }
+.cultivator-job-stats { padding:14px 14px 0; display:grid; grid-template-columns:repeat(5,minmax(0,1fr)); gap:8px; }
+.job-stat { min-width:0; padding:10px 6px; text-align:center; background:var(--ink-3); border:1px solid var(--line); border-radius:8px; }
+.job-stat strong { display:block; color:var(--gold-soft); font-size:19px; font-variant-numeric:tabular-nums; }
+.job-stat span { display:block; color:var(--muted); font-size:11px; }
+.cultivator-hint { font-size:11.5px; line-height:1.75; margin:11px 14px; color:var(--muted); }
+.cultivator-hint b { color:var(--gold-soft); font-weight:600; }
+.cultivator-list { padding:0 14px 12px; display:grid; grid-template-columns:repeat(2,minmax(0,1fr)); gap:10px; }
+.cultivator-empty { grid-column:1/-1; padding:22px 14px; border:1px dashed var(--line-strong); border-radius:10px; color:var(--muted); font-size:12px; text-align:center; line-height:1.7; }
+.cultivator-card { min-width:0; border:1px solid var(--line); border-radius:11px; background:var(--ink-2); padding:13px; }
+.cultivator-card-top { display:flex; align-items:flex-start; justify-content:space-between; gap:8px; }
+.cultivator-name { color:var(--gold-soft); font:600 15px var(--font-serif); }
+.cultivator-origin { font-size:10px; color:var(--muted); border:1px solid var(--line); padding:2px 6px; border-radius:999px; white-space:nowrap; }
+.cultivator-origin.is-innate { color:var(--jade); border-color:rgba(99,201,168,.35); }
+.cultivator-realm { font-size:12px; color:var(--text); margin-top:9px; display:flex; justify-content:space-between; gap:5px; }
+.cultivator-realm em { color:var(--muted); font-style:normal; font-size:11px; }
+.cultivator-progress { height:6px; margin:8px 0; background:var(--ink-0); border-radius:6px; overflow:hidden; }
+.cultivator-progress > span { height:100%; display:block; background:var(--jade); border-radius:6px; }
+.cultivator-foot { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:11px; color:var(--muted); }
+.cultivator-assignment { background:var(--ink-1); color:var(--text); border:1px solid var(--line-strong); border-radius:7px; padding:6px 8px; min-height:36px; font-size:12px; font-family:var(--font-sans); cursor:pointer; max-width:110px; }
+.cultivator-assignment:focus-visible { outline:2px solid var(--gold-soft); outline-offset:2px; }
+
+/* ── 境界与突破 ── */
+/* 瓶颈期才出现的冲关行。平时不存在，所以玩家一看到它就知道「这里要我动手」。 */
+.cultivator-break { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:9px; padding-top:9px; border-top:1px dashed var(--line); }
+.btn.break { padding:6px 13px; font-size:12px; background:linear-gradient(180deg, rgba(217,180,94,.24), rgba(217,180,94,.09)); border-color:var(--line-strong); color:var(--gold-soft); }
+.btn.break.is-ready { box-shadow:0 0 0 1px rgba(217,180,94,.35); }
+.btn.break:hover:not(:disabled) { background:rgba(217,180,94,.30); }
+.btn.break:disabled { background:var(--ink-3); border-color:rgba(255,255,255,.07); color:var(--muted-dim); }
+.break-cost { font-size:10.5px; color:var(--muted-dim); }
+.break-cost.is-short { color:#e0a7a4; }
+.cultivator-foot b { color:var(--gold-soft); font-weight:600; }
+
+/* ── 灵根 ── */
+.cultivator-root { display:flex; align-items:center; gap:7px; flex-wrap:wrap; margin-top:7px; font-size:11px; }
+.root-grade { font-family:var(--font-serif); font-size:12px; letter-spacing:1px; padding:1px 7px; border-radius:5px; border:1px solid var(--line); color:var(--muted); }
+/* 越纯的灵根越亮 */
+.root-grade.grade-heaven { color:#f0dca8; border-color:rgba(240,220,168,.5); background:rgba(240,220,168,.10); }
+.root-grade.grade-dual   { color:#bcd7ea; border-color:rgba(188,215,234,.35); }
+.root-grade.grade-triple { color:#a8c3b0; }
+.root-grade.grade-quad   { color:var(--muted); }
+.root-grade.grade-pseudo { color:var(--muted-dim); }
+.root-elements { display:inline-flex; gap:3px; }
+.root-elements i { font-style:normal; font-size:10.5px; padding:0 4px; border-radius:3px; border:1px solid currentColor; opacity:.85; }
+.root-elements .el-metal { color:#d8d2c0; }
+.root-elements .el-wood  { color:#8fc79a; }
+.root-elements .el-water { color:#8fb7d8; }
+.root-elements .el-fire  { color:#e0a7a4; }
+.root-elements .el-earth { color:#c9bd94; }
+/* 功法卡上的属性标：说明这本功法要什么灵根 */
+.manual-card-dao i { font-style:normal; font-size:10px; padding:0 4px; border-radius:3px; border:1px solid currentColor; margin-left:2px; }
+.manual-card-dao .el-metal { color:#d8d2c0; }
+.manual-card-dao .el-wood  { color:#8fc79a; }
+.manual-card-dao .el-water { color:#8fb7d8; }
+.manual-card-dao .el-fire  { color:#e0a7a4; }
+.manual-card-dao .el-earth { color:#c9bd94; }
+.manual-card-dao .el-none  { color:var(--muted-dim); border-style:dashed; }
+.root-meta { color:var(--muted-dim); font-variant-numeric:tabular-nums; }
+
+.btn.reroll { padding:6px 11px; font-size:11.5px; color:var(--muted); }
+.btn.reroll:hover:not(:disabled) { color:var(--gold-soft); border-color:var(--line-strong); }
+.btn.reroll:disabled { color:var(--muted-dim); }
+
+/* ── 地图节点 ── */
+.map-tier { display:inline-block; margin-left:6px; font-size:10px; padding:0 5px; border-radius:3px; border:1px solid var(--line); color:var(--muted-dim); vertical-align:1px; }
+.immortal-mini-row.is-locked { opacity:.5; }
+.map-warn { color:#e0a7a4; }
+.map-garrison { display:inline-flex; align-items:center; gap:6px; flex-shrink:0; }
+.map-garrison select { background:var(--ink-1); color:var(--text); border:1px solid var(--line-strong); border-radius:6px; padding:4px 6px; font-size:11px; max-width:190px; }
+
+/* ── 百科 ── */
+.codex-toolbar { display:flex; flex-direction:column; gap:9px; margin:12px 0 14px; }
+.codex-search { width:100%; box-sizing:border-box; background:var(--ink-1); color:var(--text); border:1px solid var(--line-strong); border-radius:9px; padding:9px 12px; font-size:13px; font-family:var(--font-sans); }
+.codex-search:focus-visible { outline:2px solid var(--gold-soft); outline-offset:2px; }
+.codex-chapters { display:flex; flex-wrap:wrap; gap:6px; }
+.codex-chip { background:var(--ink-2); color:var(--muted); border:1px solid var(--line); border-radius:999px; padding:5px 12px; font-size:12px; cursor:pointer; font-family:var(--font-sans); }
+.codex-chip:hover { color:var(--gold-soft); }
+.codex-chip.is-active { color:var(--gold-soft); border-color:var(--line-strong); background:rgba(217,180,94,.10); }
+.codex-chip em { font-style:normal; color:var(--muted-dim); margin-left:5px; font-size:11px; }
+.codex-list { display:flex; flex-direction:column; gap:10px; }
+.codex-entry { border:1px solid var(--line); border-radius:11px; background:var(--ink-2); padding:14px 16px; }
+.codex-entry.is-locked { opacity:.5; }
+.codex-entry-head { display:flex; align-items:baseline; gap:9px; flex-wrap:wrap; }
+.codex-entry-head h3 { margin:0; font-family:var(--font-serif); font-size:16px; letter-spacing:1px; color:var(--text); }
+.codex-entry-chapter { font-size:11px; color:var(--muted-dim); border:1px solid var(--line); border-radius:4px; padding:1px 6px; }
+.codex-entry p { margin:9px 0 0; font-size:13px; line-height:1.85; color:var(--text); font-family:var(--font-serif); }
+.codex-data { margin-top:11px; padding-top:10px; border-top:1px dashed var(--line); display:flex; flex-direction:column; gap:4px; }
+.codex-data span { font-size:11.5px; color:var(--muted); font-variant-numeric:tabular-nums; }
+.codex-data span::before { content:"· "; color:var(--muted-dim); }
+.codex-hint { margin-top:8px; font-size:11.5px; color:var(--muted-dim); }
+.codex-empty { padding:26px 0; text-align:center; color:var(--muted-dim); font-size:13px; }
+/* 轮回页的代价行：与正面规则并排，一眼看出「换来了什么、付了什么」 */
+.cycle-price { color:#e0a7a4 !important; }
+/* 药材存量：右对齐等宽数字，方便一眼比较 */
+.herb-count { font-variant-numeric:tabular-nums; font-size:13px; color:var(--gold-soft); min-width:44px; text-align:right; }
+body[data-theme="inkwash"] .power-leading { background:linear-gradient(120deg, #f2ede5, #e9e6dc); }
+body[data-theme="inkwash"] .cultivator-card { background:#f7f4ed; }
+body[data-theme="inkwash"] .job-stat { background:#efeae1; }
+body[data-theme="inkwash"] .cultivator-progress { background:#e4ddd0; }
+body[data-theme="inkwash"] .cultivator-assignment { background:#fffcf7; }
+@media(max-width:720px) { .cultivator-list { grid-template-columns:1fr; } .power-overview { gap:9px; padding:12px; } .power-leading { padding:12px; } .power-parts>div { padding:8px 0; } }
+@media(max-width:380px) { .power-overview { grid-template-columns:1fr; } .cultivator-job-stats { gap:5px; } .job-stat { padding:8px 3px; } }
+
+
+.immortal-expansion{padding:14px;display:grid;gap:14px}.immortal-block{border:1px solid var(--line);background:var(--ink-1);border-radius:10px;padding:14px}.immortal-block h3{margin:0 0 7px;color:var(--gold-soft);font:600 16px var(--font-serif)}.immortal-block p{color:var(--muted);font-size:12px;line-height:1.8;margin:5px 0}.immortal-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:9px}.immortal-actions .btn{min-height:35px}.immortal-actions .btn:disabled{opacity:.4}.immortal-block select,.immortal-block input{background:var(--ink-2);color:var(--text);border:1px solid var(--line-strong);border-radius:6px;padding:7px;min-width:0;max-width:100%}.immortal-statline{display:flex;gap:8px;flex-wrap:wrap;margin:9px 0}.immortal-statline span{font-size:12px;color:var(--text);background:var(--ink-3);padding:5px 8px;border-radius:6px}.immortal-warning{color:var(--danger)!important}.immortal-mini{display:flex;flex-direction:column;gap:7px;margin-top:10px}.immortal-mini-row{display:flex;align-items:center;justify-content:space-between;gap:9px;padding:9px;border:1px solid var(--line);border-radius:7px;flex-wrap:wrap}.immortal-mini-row div{font-size:12px}.immortal-mini-row b{color:var(--gold-soft)}.immortal-mini-row small{display:block;color:var(--muted);margin-top:4px}.immortal-choices{display:flex;flex-wrap:wrap;gap:8px}.immortal-block .btn{color:var(--text);background:var(--ink-3)}body[data-theme="inkwash"] .immortal-block{background:#f8f5ee}body[data-theme="inkwash"] .immortal-block .btn{background:#e5dfd3;color:#2f2b26}@media(max-width:720px){.immortal-expansion{padding:10px}.immortal-block{padding:12px}.immortal-mini-row{align-items:stretch}.immortal-mini-row>.btn{width:100%}}
+
+</style>
+</head>
+<body data-theme="classic">
+<div id="app">
+
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-seal">仙</span>
+      <span class="brand-text">
+        <span class="brand-title">修仙世家</span>
+        <span class="brand-sub" id="brand-sub">凡尘篇 · 第1代</span>
+      </span>
+    </div>
+    <button class="btn settings-toggle" id="settings-toggle" type="button" aria-expanded="false" aria-controls="global-settings" aria-label="展开游戏设置">⚙ 设置</button>
+    <div class="topbar-actions" id="global-settings" aria-hidden="true">
+      <div class="seg-group">
+        <span class="seg-label">界面风格</span>
+        <div class="seg" id="theme-switch" title="切换当前界面主题。原风格保留当前配色，水墨风为浅底留白的水墨卷轴风格。">
+          <button class="seg-btn is-active" data-theme-choice="classic">原风格</button>
+          <button class="seg-btn" data-theme-choice="inkwash">水墨风</button>
+        </div>
+      </div>
+      <p class="setting-tip"><span class="theme-preview"><span class="theme-dot" aria-hidden="true"></span><span>主题支持即时切换，并自动记住你上次选择的风格。</span></span></p>
+
+      <div class="seg-group">
+        <span class="seg-label">倍速</span>
+        <div class="seg" id="speed" title="游戏推进速度。只作用于页面开着的时段；关掉页面后的离线收益一律按 1 倍速结算。">
+          <button class="seg-btn is-active" data-speed="1">1×</button>
+          <button class="seg-btn" data-speed="2">2×</button>
+          <button class="seg-btn" data-speed="5">5×</button>
+        </div>
+      </div>
+
+      <div class="seg-group">
+        <span class="seg-label">答题模式</span>
+        <div class="seg" id="quiz-mode" title="学习：每次操作都要答一道六级单词。轻松：一半概率触发。免答：完全不触发，当普通挂机游戏玩。">
+          <button class="seg-btn is-active" data-quiz-mode="always">学习</button>
+          <button class="seg-btn" data-quiz-mode="half">轻松</button>
+          <button class="seg-btn" data-quiz-mode="off">免答</button>
+        </div>
+      </div>
+
+      <div class="seg-group" id="difficulty-group">
+        <span class="seg-label">答题难度</span>
+        <div class="seg" id="difficulty" title="普通：答错只是操作失败，材料返还。地狱：答错则材料概不退还。仅在有出题时生效。">
+          <button class="seg-btn is-active" data-difficulty="normal">普通</button>
+          <button class="seg-btn" data-difficulty="hell">地狱</button>
+        </div>
+      </div>
+
+      <button class="btn ghost" data-action="save" title="立即写入本地存档">立即存档</button>
+      <button class="btn ghost danger" data-action="reset" title="清空存档，重新开始">清空重开</button>
+    </div>
+  </header>
+
+  <nav class="pagetabs" id="pagetabs">
+    <button class="pagetab is-active" data-page="home" aria-current="page"><svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m3 10 9-7 9 7"></path><path d="M5 9v11h14V9"></path><path d="M9 20v-7h6v7"></path></svg><span>家业</span></button>
+    <button class="pagetab" data-page="techs" data-ready="false"><svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="m12 3 1.8 5.2L19 10l-5.2 1.8L12 17l-1.8-5.2L5 10l5.2-1.8L12 3Z"></path><path d="m19 17 .6 1.4L21 19l-1.4.6L19 21l-.6-1.4L17 19l1.4-.6L19 17Z"></path><path d="M4 16v4m-2-2h4"></path></svg><span>格物</span></button>
+    <button class="pagetab" data-page="trade"><svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><rect x="3" y="7" width="18" height="13" rx="2"></rect><path d="M3 11h18M8 7V4h8v3M8 16h3M14 16h3"></path></svg><span>通商</span></button>
+    <button class="pagetab" data-page="immortal"><svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M2 19 9 8l4 6 2-3 7 8H2Z"></path><path d="m6.5 12 2.5 2 2-2M15 4l1-2 1 2M16 7v2M3 4c2 1 3 1 5 0"></path></svg><span>仙途</span></button>
+    <button class="pagetab" data-page="study"><svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M12 6c-3.4-2-7.1-2-10-1v14c3-1 6.6-1 10 1 3.4-2 7-2 10-1V5c-3-1-6.6-1-10 1Z"></path><path d="M12 6v14M5.5 9h3M15 9h3M5.5 12h3M15 12h3"></path></svg><span>治学</span></button>
+    <button class="pagetab" data-page="codex"><svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M4 4.5A1.5 1.5 0 0 1 5.5 3H19v18H5.5A1.5 1.5 0 0 1 4 19.5v-15Z"></path><path d="M8 3v18M11.5 8h4M11.5 12h4"></path></svg><span>百科</span></button>
+    <button class="pagetab" data-page="cycle"><svg class="nav-icon" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true" focusable="false"><path d="M20.5 12a8.5 8.5 0 1 1-2.6-6.1"></path><path d="M20.5 4v5h-5"></path></svg><span>轮回</span></button>
+  </nav>
+
+  <main class="shell">
+
+    <div class="shell-main">
+
+      <!-- 每一页顶上的资源条：维持原版数值结构 -->
+      <div class="page-res" id="page-res"><span class="pres-chip"><span class="pres-label">银两</span><span class="pres-value">113 / 3000</span></span><span class="pres-chip"><span class="pres-label">人口</span><span class="pres-value">10.1 / 20</span></span><span class="pres-chip"><span class="pres-label">岁入</span><span class="pres-value">1.22 两/秒</span></span><span class="pres-chip"><span class="pres-label">建筑容量</span><span class="pres-value">1 / 6</span></span><span class="pres-chip"><span class="pres-label">战力</span><span class="pres-value">1</span></span></div>
+
+    <!-- ══════════ 家业 ══════════ -->
+    <section class="page is-active" data-page="home">
+
+      <section class="overview" aria-labelledby="overview-title">
+        <div class="overview-copy">
+          <div class="overview-kicker"><span class="overview-pulse"></span> 家族发展指引 <span class="overview-chapter" id="overview-chapter">凡尘 · 立族</span></div>
+          <h1 id="overview-title">先有良田，方能养活族人</h1>
+          <p class="overview-desc" id="overview-desc">田地能提升出生率，人口增长后每秒银两也会增加。建议先添置第二块田地。</p>
+          <div class="overview-actions">
+            <button class="overview-primary" type="button" id="overview-go" data-action="overview-go" data-target-page="home" data-target-id="building-list">查看田地 ↗</button>
+            <span class="overview-hint" id="overview-hint">已备好 81 两，可前往操作</span>
+          </div>
+        </div>
+        <div class="overview-progress">
+          <div class="overview-progress-head"><span>凡尘修行进度</span><strong id="overview-progress-value">0 / 12</strong></div>
+          <div class="overview-track" role="progressbar" aria-label="家族成长进度" aria-valuemin="0" aria-valuemax="12" aria-valuenow="0" id="overview-track"><span id="overview-progress-fill" style="width: 0%;"></span></div>
+          <div class="overview-milestones" id="overview-milestones"><span>开荒</span><span>置业</span><span>商旅</span><span>探秘</span><span>问仙</span></div>
+          <div class="overview-status"><span>实时人口增长</span><b id="overview-trend">+0.012 人/秒</b></div>
+        </div>
+      </section>
+
+      <section class="panel" data-panel="population">
+        <div class="panel-head">
+          <h2>族中人口</h2>
+          <div class="panel-head-right">
+            <span class="chip" id="pop-chip" data-mood="grow">缓慢滋生</span>
+            <button class="panel-toggle" data-toggle="population" title="折叠 / 展开" aria-expanded="true">▾</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="pop-grid">
+            <div class="pop-left">
+              <div class="bar-block">
+                <div class="bar-label"><span>凡人家族容纳量</span><span id="housing-text">10.1 / 20</span></div>
+                <div class="bar bar-housing"><div class="bar-fill" id="housing-bar" style="width: 50.66%;"></div></div>
+              </div>
+              <p class="note" id="pop-note">屋舍尚有余裕（占 <b>50.7%</b>），生育不受所限。增开<b>田地</b>可推高出生率。</p>
+            </div>
+            <div class="metrics" id="pop-metrics"><div class="metric" title="每秒新增人口比例"><span class="m-label">出生率</span><span class="m-value flat" data-role="v">1.12%/秒</span></div><div class="metric" title="基础死亡 + 屋舍拥挤"><span class="m-label">死亡率</span><span class="m-value flat" data-role="v">1%/秒</span></div><div class="metric" title="每秒人口变化"><span class="m-label">净增长</span><span class="m-value pos" data-role="v">+0.012 人/秒</span></div><div class="metric" title="开局至今"><span class="m-label">累计生 / 卒</span><span class="m-value flat" data-role="v">1 / 1</span></div></div>
+          </div>
+        </div>
+      </section>
+
+      <section class="panel" data-panel="buildings">
+        <div class="panel-head">
+          <h2>家业营造</h2>
+          <div class="panel-head-right">
+            <span class="chip" id="slot-chip">建筑容量 1 / 6</span>
+            <div class="seg" id="buy-mode">
+              <button class="seg-btn is-active" data-buy-mode="1">×1</button>
+              <button class="seg-btn" data-buy-mode="10">×10</button>
+              <button class="seg-btn" data-buy-mode="max">最大</button>
+            </div>
+            <button class="panel-toggle" data-toggle="buildings" title="折叠 / 展开" aria-expanded="true">▾</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="building-list" id="building-list"><article class="bcard accent-wheat affordable" data-id="field" title="田地
+田地养人。这是世家立身的第一件事，也是唯一不需要门道的营生。
+每座：出生率 +0.12%/秒">
+        <div class="bcard-icon">禾</div>
+        <div class="bcard-main">
+          <div class="bcard-title">
+            <span class="bcard-name">田地</span>
+            <span class="bcard-count" data-role="count">×1</span>
+          </div>
+          <div class="bcard-tagline">垦荒开垄，仓廪足而人丁旺</div>
+          <div class="bcard-effect" data-role="effect">出生率 +0.12%/秒</div>
+        </div>
+        <div class="bcard-buy">
+          <button class="btn buy" data-action="buy" data-id="field">
+            <span class="buy-label" data-role="buylabel">购置</span>
+            <span class="buy-cost" data-role="buycost">81 两</span>
+          </button>
+          <button class="btn sell" data-action="sell" data-id="field" title="拆售一座，返还半价。建筑容量有限时用它腾地方。不会触发单词题。">
+            <span data-role="selltext">出售 +34 两</span>
+          </button>
+          <div class="bcard-per">出生率 +0.12%/秒</div>
+        </div></article><article class="bcard accent-gold locked" data-id="estate" title="地产
+置下地产，方可营造屋舍、开辟田垄。地产愈广，能容纳的建筑愈多。
+每座：建筑容量 +6">
+        <div class="bcard-icon">⛰</div>
+        <div class="bcard-main">
+          <div class="bcard-title">
+            <span class="bcard-name">地产</span>
+            <span class="bcard-count" data-role="count">×0</span>
+          </div>
+          <div class="bcard-tagline">田庄宅地，家族立身之本</div>
+          <div class="bcard-effect" data-role="effect">须研习「房地产」</div>
+        </div>
+        <div class="bcard-buy">
+          <button class="btn buy" data-action="buy" data-id="estate" disabled="disabled">
+            <span class="buy-label" data-role="buylabel">未解锁</span>
+            <span class="buy-cost" data-role="buycost">—</span>
+          </button>
+          <button class="btn sell" data-action="sell" data-id="estate" title="拆售一座，返还半价。建筑容量有限时用它腾地方。不会触发单词题。" disabled="disabled">
+            <span data-role="selltext">出售</span>
+          </button>
+          <div class="bcard-per">建筑容量 +6</div>
+        </div></article><article class="bcard accent-jade locked" data-id="house" title="房产
+房产愈多，凡人家族容纳量愈高；但地价随之而起，此后一切营造皆会变贵。
+每座：容纳量 +40，全局造价 +2%">
+        <div class="bcard-icon">⌂</div>
+        <div class="bcard-main">
+          <div class="bcard-title">
+            <span class="bcard-name">房产</span>
+            <span class="bcard-count" data-role="count">×0</span>
+          </div>
+          <div class="bcard-tagline">广厦千间，安置族中老小</div>
+          <div class="bcard-effect" data-role="effect">须研习「建筑学」</div>
+        </div>
+        <div class="bcard-buy">
+          <button class="btn buy" data-action="buy" data-id="house" disabled="disabled">
+            <span class="buy-label" data-role="buylabel">未解锁</span>
+            <span class="buy-cost" data-role="buycost">—</span>
+          </button>
+          <button class="btn sell" data-action="sell" data-id="house" title="拆售一座，返还半价。建筑容量有限时用它腾地方。不会触发单词题。" disabled="disabled">
+            <span data-role="selltext">出售</span>
+          </button>
+          <div class="bcard-per">容纳量 +40，全局造价 +2%</div>
+        </div></article><article class="bcard accent-silver locked" data-id="bank" title="钱庄
+钱庄扩大家中银库，抬高银两的囤积上限，免得岁入白白流失。
+每座：银两上限 +8000">
+        <div class="bcard-icon">铢</div>
+        <div class="bcard-main">
+          <div class="bcard-title">
+            <span class="bcard-name">钱庄</span>
+            <span class="bcard-count" data-role="count">×0</span>
+          </div>
+          <div class="bcard-tagline">汇通银钱，库中有余粮</div>
+          <div class="bcard-effect" data-role="effect">须研习「金融」</div>
+        </div>
+        <div class="bcard-buy">
+          <button class="btn buy" data-action="buy" data-id="bank" disabled="disabled">
+            <span class="buy-label" data-role="buylabel">未解锁</span>
+            <span class="buy-cost" data-role="buycost">—</span>
+          </button>
+          <button class="btn sell" data-action="sell" data-id="bank" title="拆售一座，返还半价。建筑容量有限时用它腾地方。不会触发单词题。" disabled="disabled">
+            <span data-role="selltext">出售</span>
+          </button>
+          <div class="bcard-per">银两上限 +8000</div>
+        </div></article><article class="bcard accent-ember locked" data-id="arena" title="演武台
+演武台前立威名，乡里不敢抬价。但走出去争地的子弟，回不来的人也多了。折扣是递减的——第一座最划算，越往后越难再压价。
+每座：地产折扣递减（趋近 −60%），死亡率 +0.06%/秒">
+        <div class="bcard-icon">戟</div>
+        <div class="bcard-main">
+          <div class="bcard-title">
+            <span class="bcard-name">演武台</span>
+            <span class="bcard-count" data-role="count">×0</span>
+          </div>
+          <div class="bcard-tagline">族中子弟习武之所</div>
+          <div class="bcard-effect" data-role="effect">须研习「对外扩张」</div>
+        </div>
+        <div class="bcard-buy">
+          <button class="btn buy" data-action="buy" data-id="arena" disabled="disabled">
+            <span class="buy-label" data-role="buylabel">未解锁</span>
+            <span class="buy-cost" data-role="buycost">—</span>
+          </button>
+          <button class="btn sell" data-action="sell" data-id="arena" title="拆售一座，返还半价。建筑容量有限时用它腾地方。不会触发单词题。" disabled="disabled">
+            <span data-role="selltext">出售</span>
+          </button>
+          <div class="bcard-per">地产折扣递减（趋近 −60%），死亡率 +0.06%/秒</div>
+        </div></article><article class="bcard accent-violet locked" data-id="caravan" title="商队驿站
+立起驿站，便可派出商队行商。只是商路凶险，走的人未必都回得来。
+每座：商队位 +1，死亡率 +0.08%/秒">
+        <div class="bcard-icon">驮</div>
+        <div class="bcard-main">
+          <div class="bcard-title">
+            <span class="bcard-name">商队驿站</span>
+            <span class="bcard-count" data-role="count">×0</span>
+          </div>
+          <div class="bcard-tagline">驼铃西去，货通四方</div>
+          <div class="bcard-effect" data-role="effect">须研习「商路」</div>
+        </div>
+        <div class="bcard-buy">
+          <button class="btn buy" data-action="buy" data-id="caravan" disabled="disabled">
+            <span class="buy-label" data-role="buylabel">未解锁</span>
+            <span class="buy-cost" data-role="buycost">—</span>
+          </button>
+          <button class="btn sell" data-action="sell" data-id="caravan" title="拆售一座，返还半价。建筑容量有限时用它腾地方。不会触发单词题。" disabled="disabled">
+            <span data-role="selltext">出售</span>
+          </button>
+          <div class="bcard-per">商队位 +1，死亡率 +0.08%/秒</div>
+        </div></article></div>
+          <p class="foot-note">
+            开局只会<b>种地</b>。其余门类都要先在「格物」里研习对应科技，才能营造。
+            建筑容量有限，建错了可以用<b>出售</b>半价拆回来。
+          </p>
+        </div>
+      </section>
+
+    </section>
+
+    <!-- ══════════ 格物 ══════════ -->
+    <section class="page" data-page="techs">
+      <section class="panel" data-panel="techs">
+        <div class="panel-head">
+          <h2>格物</h2>
+          <div class="panel-head-right">
+            <span class="chip" id="tech-chip">已研习 0 / 12</span>
+            <button class="btn ghost tiny" id="hide-done-btn" data-action="toggle-hide-done" title="把已经研习过的科技收起来，剩下的才看得清。">隐藏已研习</button>
+            <button class="panel-toggle" data-toggle="techs" title="折叠 / 展开" aria-expanded="true">▾</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="tech-list" id="tech-list"><div class="tech-group"><div class="tech-tier"><span class="tier-name">一 · 立族</span><span class="tier-hint">从一姓一户，到有地有业</span></div><div class="tech is-open" data-tech="realestate" title="摸清了地契、税契与里正的门道，世家终于能在本乡置办田庄宅地。">
+          <div class="tech-mark">宅</div>
+          <div class="tech-body">
+            <div class="tech-title">
+              <span class="tech-name">房地产</span>
+              <span class="tech-cost" data-role="cost">250 两</span>
+            </div>
+            <div class="tech-gain">解锁营造「地产」</div>
+            <div class="tech-req" data-role="req"></div>
+          </div>
+          <button class="btn tech-btn" data-action="research" data-tech="realestate" disabled="disabled" title="还缺 137 两">银两不足</button></div></div><div class="tech-group"><div class="tech-tier"><span class="tier-name">二 · 兴家</span><span class="tier-hint">起广厦，通银钱</span></div><div class="tech is-locked" data-tech="architecture" title="夯土、榫卯、院落布局——族人不必再挤在一处，可起广厦安置老小。">
+          <div class="tech-mark">匠</div>
+          <div class="tech-body">
+            <div class="tech-title">
+              <span class="tech-name">建筑学</span>
+              <span class="tech-cost" data-role="cost">320 两</span>
+            </div>
+            <div class="tech-gain">解锁营造「房产」</div>
+            <div class="tech-req" data-role="req">须先研习 「房地产」</div>
+          </div>
+          <button class="btn tech-btn" data-action="research" data-tech="architecture" disabled="disabled" title="夯土、榫卯、院落布局——族人不必再挤在一处，可起广厦安置老小。">需前置</button></div><div class="tech is-locked" data-tech="finance" title="懂得了折色、兑付与存息，银钱可以存下来，不必再堆在自家地窖里。">
+          <div class="tech-mark">铢</div>
+          <div class="tech-body">
+            <div class="tech-title">
+              <span class="tech-name">金融</span>
+              <span class="tech-cost" data-role="cost">700 两</span>
+            </div>
+            <div class="tech-gain">解锁营造「钱庄」</div>
+            <div class="tech-req" data-role="req">须先研习 「房地产」</div>
+          </div>
+          <button class="btn tech-btn" data-action="research" data-tech="finance" disabled="disabled" title="懂得了折色、兑付与存息，银钱可以存下来，不必再堆在自家地窖里。">需前置</button></div></div><div class="tech-group"><div class="tech-tier"><span class="tier-name">三 · 拓土</span><span class="tier-hint">向外伸手，方有腾挪之地</span></div><div class="tech is-locked" data-tech="expansion" title="族中子弟走出本乡，与外姓争地争水。立起演武台，方有立威之所。">
+          <div class="tech-mark">旗</div>
+          <div class="tech-body">
+            <div class="tech-title">
+              <span class="tech-name">对外扩张</span>
+              <span class="tech-cost" data-role="cost">1200 两</span>
+            </div>
+            <div class="tech-gain">解锁营造「演武台」</div>
+            <div class="tech-req" data-role="req">须先研习 「建筑学」</div>
+          </div>
+          <button class="btn tech-btn" data-action="research" data-tech="expansion" disabled="disabled" title="族中子弟走出本乡，与外姓争地争水。立起演武台，方有立威之所。">需前置</button></div><div class="tech is-locked" data-tech="surveying" title="会看地形、会算工时，同样的银两能置下更多地产。">
+          <div class="tech-mark">矩</div>
+          <div class="tech-body">
+            <div class="tech-title">
+              <span class="tech-name">营造术</span>
+              <span class="tech-cost" data-role="cost">900 两</span>
+            </div>
+            <div class="tech-gain">地产价格 −15%</div>
+            <div class="tech-req" data-role="req">须先研习 「房地产」</div>
+          </div>
+          <button class="btn tech-btn" data-action="research" data-tech="surveying" disabled="disabled" title="会看地形、会算工时，同样的银两能置下更多地产。">需前置</button></div></div><div class="tech-group"><div class="tech-tier"><span class="tier-name">四 · 通商</span><span class="tier-hint">货通四方，人丁自聚</span></div><div class="tech is-locked" data-tech="household" title="编户齐民，生子入册。族中生育从此有了章程，人丁滋生更稳。">
+          <div class="tech-mark">册</div>
+          <div class="tech-body">
+            <div class="tech-title">
+              <span class="tech-name">户籍</span>
+              <span class="tech-cost" data-role="cost">1600 两</span>
+            </div>
+            <div class="tech-gain">基础出生率 +0.10%/秒</div>
+            <div class="tech-req" data-role="req">须先研习 「建筑学」</div>
+          </div>
+          <button class="btn tech-btn" data-action="research" data-tech="household" disabled="disabled" title="编户齐民，生子入册。族中生育从此有了章程，人丁滋生更稳。">需前置</button></div><div class="tech is-locked" data-tech="trade" title="摸清了各州关隘与抽分，可设驿站、养商队，让银钱自己跑起来。">
+          <div class="tech-mark">驼</div>
+          <div class="tech-body">
+            <div class="tech-title">
+              <span class="tech-name">商路</span>
+              <span class="tech-cost" data-role="cost">2600 两</span>
+            </div>
+            <div class="tech-gain">解锁营造「商队驿站」</div>
+            <div class="tech-req" data-role="req">须先研习 「金融」、「对外扩张」</div>
+          </div>
+          <button class="btn tech-btn" data-action="research" data-tech="trade" disabled="disabled" title="摸清了各州关隘与抽分，可设驿站、养商队，让银钱自己跑起来。">需前置</button></div><div class="tech is-locked" data-tech="tuntian" title="设屯田、修水利，同一块田地能养活更多人。">
+          <div class="tech-mark">耒</div>
+          <div class="tech-body">
+            <div class="tech-title">
+              <span class="tech-name">屯田</span>
+              <span class="tech-cost" data-role="cost">2200 两</span>
+            </div>
+            <div class="tech-gain">田地效果 +25%</div>
+            <div class="tech-req" data-role="req">须先研习 「对外扩张」</div>
+          </div>
+          <button class="btn tech-btn" data-action="research" data-tech="tuntian" disabled="disabled" title="设屯田、修水利，同一块田地能养活更多人。">需前置</button></div><div class="tech is-locked" data-tech="seeker" title="养一批专管打听的人。他们不走货，只走门路——商队赚得少了，人也折得多，但山野间的风声听得见了。">
+          <div class="tech-mark">探</div>
+          <div class="tech-body">
+            <div class="tech-title">
+              <span class="tech-name">探秘者</span>
+              <span class="tech-cost" data-role="cost">1800 两</span>
+            </div>
+            <div class="tech-gain">商路银两收益 −30% · 死亡率 +0.40%/秒 · 秘闻概率 +5%</div>
+            <div class="tech-req" data-role="req">须先研习 「商路」</div>
+          </div>
+          <button class="btn tech-btn" data-action="research" data-tech="seeker" disabled="disabled" title="养一批专管打听的人。他们不走货，只走门路——商队赚得少了，人也折得多，但山野间的风声听得见了。">需前置</button></div></div><div class="tech-group"><div class="tech-tier"><span class="tier-name">五 · 致远</span><span class="tier-hint">以术驭势，家业可久</span></div><div class="tech is-locked" data-tech="arithmetic" title="会记帐、会盘库，族中产出不再白白流失。">
+          <div class="tech-mark">筹</div>
+          <div class="tech-body">
+            <div class="tech-title">
+              <span class="tech-name">算学</span>
+              <span class="tech-cost" data-role="cost">3500 两</span>
+            </div>
+            <div class="tech-gain">银两产出 +10%</div>
+            <div class="tech-req" data-role="req">须先研习 「金融」、「户籍」</div>
+          </div>
+          <button class="btn tech-btn" data-action="research" data-tech="arithmetic" disabled="disabled" title="会记帐、会盘库，族中产出不再白白流失。">需前置</button></div><div class="tech is-locked" data-tech="courier" title="沿官道设驿、换马不换人，商队往返比别家快上一截。">
+          <div class="tech-mark">驿</div>
+          <div class="tech-body">
+            <div class="tech-title">
+              <span class="tech-name">驿道</span>
+              <span class="tech-cost" data-role="cost">6000 两</span>
+            </div>
+            <div class="tech-gain">商队耗时 −15%</div>
+            <div class="tech-req" data-role="req">须先研习 「商路」</div>
+          </div>
+          <button class="btn tech-btn" data-action="research" data-tech="courier" disabled="disabled" title="沿官道设驿、换马不换人，商队往返比别家快上一截。">需前置</button></div></div><div class="tech-group"><div class="tech-tier"><span class="tier-name">六 · 祛障</span><span class="tier-hint">破凡俗之障，方见天光</span></div><div class="tech is-locked" data-tech="quzhang" title="凡人篇的最后一道门。障一破，方见天光——但破障要拿命去试。">
+          <div class="tech-mark">障</div>
+          <div class="tech-body">
+            <div class="tech-title">
+              <span class="tech-name">祛障</span>
+              <span class="tech-cost" data-role="cost">5000 两</span>
+            </div>
+            <div class="tech-gain">解锁「祛障丹」</div>
+            <div class="tech-req" data-role="req">须先研习 「商路」 · 须集齐 10 条秘闻（0/10）</div>
+          </div>
+          <button class="btn tech-btn" data-action="research" data-tech="quzhang" disabled="disabled" title="凡人篇的最后一道门。障一破，方见天光——但破障要拿命去试。">需前置</button></div></div></div>
+          <p class="foot-note">
+            研习科技可解锁新的营造门类，或直接精进家业数值。带<b>金色边框</b>的是当前买得起的。
+          </p>
+        </div>
+      </section>
+    </section>
+
+    <!-- ══════════ 通商 ══════════ -->
+    <section class="page" data-page="trade">
+      <section class="panel" data-panel="trade">
+        <div class="panel-head">
+          <h2>通商</h2>
+          <div class="panel-head-right">
+            <span class="chip" id="trade-chip">未解锁</span>
+            <button class="panel-toggle" data-toggle="trade" title="折叠 / 展开" aria-expanded="true">▾</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <!-- 派遣按钮排在前面：它是天天要点的，进度只是给你看的 -->
+          <div class="route-list" id="route-list"><div class="route is-locked" data-route="mortal" title="走州过县，贩运盐铁布帛。偶有江湖客在酒桌上说些不该说的话。">
+        <div class="route-main">
+          <div class="route-icon">驮</div>
+          <div class="route-body">
+            <div class="route-title"><span>凡人商路</span></div>
+            <div class="route-desc">走州过县，贩运盐铁布帛。偶有江湖客在酒桌上说些不该说的话。</div>
+            <div class="route-stats">
+              <span>本钱 100</span>
+              <span>25秒</span>
+              <span class="profit" data-role="profit">净赚 +60</span>
+              <span class="secret" data-role="chance">秘闻 1%</span>
+            </div>
+          </div>
+        </div>
+        <div class="route-actions">
+          <button class="btn go" data-action="trade" data-route="mortal" title="派出一支商队，答一道题。" disabled="disabled">
+            <span class="go-label">派遣 1 队</span>
+            <span class="go-sub" data-role="onesub">未解锁</span>
+          </button>
+          <button class="btn go" data-action="trade-fleet" data-route="mortal" data-fleet="half" title="派出可派队数的一半（向上取整），整批只答一道题。" disabled="disabled">
+            <span class="go-label">派遣一半</span>
+            <span class="go-sub" data-role="halfsub">未解锁</span>
+          </button>
+          <button class="btn go" data-action="trade-fleet" data-route="mortal" data-fleet="all" title="把空商队位一次派满（受银两限制），整批只答一道题。" disabled="disabled">
+            <span class="go-label">全部派遣</span>
+            <span class="go-sub" data-role="allsub">未解锁</span>
+          </button>
+        </div></div></div>
+          <div class="caravan-slots" id="caravan-slots"><div class="caravan empty">须研习「商路」并建起驿站</div></div>
+
+          <div class="secret-block">
+            <div class="sec-head">
+              <span class="sec-title">秘闻</span>
+              <span class="sec-count" id="secret-count">0 / 10</span>
+            </div>
+            <div class="bar sec-bar"><div class="bar-fill sec-fill" id="secret-bar" style="width: 0%;"></div></div>
+            <div class="sec-latest" id="secret-latest">尚无所获。跑商路，总有人会多嘴。</div>
+          </div>
+
+          <div class="market" id="market">
+            <div class="market-head">
+              <span class="market-name">云深谷坊市</span>
+              <span class="chip chip-locked" id="market-chip">需 10 秘闻</span>
+            </div>
+            <p class="market-desc" id="market-desc">集齐 10 条秘闻，才能摸到这条路（现有 0 条）。</p>
+            <button class="btn exchange" data-action="exchange" id="exchange-btn" disabled="disabled">
+              <span data-role="exchangetext">未通</span>
+            </button>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <!-- ══════════ 仙途 ══════════ -->
+    <section class="page" data-page="immortal">
+      <section class="panel" data-panel="immortal">
+        <div class="panel-head">
+          <h2>仙途</h2>
+          <div class="panel-head-right">
+            <span class="chip chip-locked" id="immortal-chip">未启</span>
+            <button class="panel-toggle" data-toggle="immortal" title="折叠 / 展开" aria-expanded="true">▾</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="metrics" id="immortal-metrics"><div class="metric" title="集齐足量秘闻，才能摸到云深谷坊市"><span class="m-label">秘闻</span><span class="m-value flat" data-role="v">0 / 10</span></div><div class="metric" title="凡人换来的修行货币"><span class="m-label">灵石</span><span class="m-value flat" data-role="v">0 枚</span></div><div class="metric" title="祛障或天生灵根诞生，每位修士独立管理"><span class="m-label">炼气人口</span><span class="m-value flat" data-role="v">0</span></div><div class="metric" title="上限可达炼气九层"><span class="m-label">天生修士</span><span class="m-value flat" data-role="v">0</span></div><div class="metric" title="服下多少枚"><span class="m-label">已服祛障丹</span><span class="m-value flat" data-role="v">0</span></div></div>
+
+          <div class="pill-box" id="pill-box">
+            <div class="pill-info">
+              <span class="pill-name">祛障丹</span>
+              <span class="pill-cost" id="pill-cost">1 灵石 · 成算 25%</span>
+            </div>
+            <button class="btn pill" data-action="pill" data-pill="quzhangdan" id="pill-btn" disabled="disabled">未解锁</button>
+          </div>
+
+          <p class="note" id="immortal-note">集齐 <b>10</b> 条秘闻，才能摸到云深谷坊市；那是凡人换到灵石唯一的路。</p>
+        </div>
+      </section>
+
+      <section class="panel cultivation-panel" data-panel="cultivation-power">
+        <div class="panel-head">
+          <h2>家族实力</h2>
+          <div class="panel-head-right"><span class="chip" id="power-chip">凡人立族</span><button class="panel-toggle" data-toggle="cultivation-power" title="折叠 / 展开" aria-expanded="true">▾</button></div>
+        </div>
+        <div class="panel-body">
+          <div class="power-overview">
+            <div class="power-leading"><span class="power-caption">综合战力</span><span id="power-value" class="power-value">1.0</span><small>凡人 ×0.1 · 修士随修为增强</small></div>
+            <div class="power-parts">
+              <div><span>凡人战力</span><strong id="power-mortal">1.0</strong></div>
+              <div><span>修士战力</span><strong id="power-cultivator">0.0</strong></div>
+              <div><span>驻守加成</span><strong id="power-guard">+0.0</strong></div>
+            </div>
+          </div>
+          <p class="foot-note">战力暂用于展示家族实力，不参与战斗结算。驻守修士获得 <b>+50%</b> 的自身战力加成；修士本身不承受凡人人口死亡率。</p>
+        </div>
+      </section>
+
+      <section class="panel cultivation-panel" data-panel="cultivation-manuals">
+        <div class="panel-head"><h2>功法阁</h2><div class="panel-head-right"><span class="chip chip-locked" id="manual-chip">尚无功法</span><button class="panel-toggle" data-toggle="cultivation-manuals" title="折叠 / 展开" aria-expanded="true">▾</button></div></div>
+        <div class="panel-body">
+          <div class="manual-slots" id="manual-slots"></div>
+          <div class="manual-summary" id="manual-summary"></div>
+          <div class="manual-grid" id="manual-grid"></div>
+          <div class="manual-empty" id="original-manual-info"><strong>道法未传，唯靠苦修</strong><p>尚无家传功法，修炼倍率1×。在洞天或攻伐中有机会取得功法。</p></div>
+        </div>
+      </section>
+
+      <section class="panel cultivation-panel" data-panel="cultivation-roster">
+        <div class="panel-head"><h2>修士名册</h2><div class="panel-head-right"><span class="chip" id="roster-count">0 位修士</span><button class="panel-toggle" data-toggle="cultivation-roster" title="折叠 / 展开" aria-expanded="true">▾</button></div></div>
+        <div class="panel-body">
+          <div id="cultivator-job-stats" class="cultivator-job-stats" data-signature="guard0:retreat0:labor0:explore0:sect0"><div class="job-stat"><strong>0</strong><span>驻守</span></div><div class="job-stat"><strong>0</strong><span>闭关</span></div><div class="job-stat"><strong>0</strong><span>劳作</span></div><div class="job-stat"><strong>0</strong><span>探索</span></div><div class="job-stat"><strong>0</strong><span>宗门</span></div></div>
+          <p class="cultivator-hint">逐人指派职责：<b>驻守</b>提升战力；<b>闭关</b>缓慢积累修为；<b>劳作</b>增加银两产出；<b>探索</b>寻找秘闻。职责调整即时生效，无须答题。</p>
+          <div id="cultivator-list" class="cultivator-list" data-signature=""><div class="cultivator-empty">尚无炼气修士。必须先通过祛障丹或灵池获得第一名修士；没有修士血脉时，绝不会天生修士。</div></div>
+        </div>
+      </section>
+      <section class="panel" data-panel="immortal-expansion"><div class="panel-head"><h2>炼气产业与机缘</h2><button class="panel-toggle" data-toggle="immortal-expansion" title="折叠 / 展开" aria-expanded="true">▾</button></div>
+        <div class="panel-body"><div id="immortal-expansion" class="immortal-expansion">
+ <div class="immortal-block"><h3>🌿 灵池 · 后天祛障</h3><p>秘闻≥12后可在坊市购得灵池蓝图。灵池每秒消耗灵石，使凡人有机会后天祛障，初始天赋为1。无灵石时自动停运。</p>
+ <div class="immortal-statline"><span>灵池 0/10 座</span><span>灵石消耗 0.00000/秒</span><span>蓝图 未得</span></div>
+ <div class="immortal-actions"><button class="btn" data-immortal-action="pool-blueprint" disabled="disabled">坊市购蓝图 · 2灵石</button><button class="btn" data-immortal-action="pool-build" disabled="disabled">营造灵池 · 3灵石+5万银两</button></div></div>
+ <div class="immortal-block"><h3>⛏️ 寻龙探脉 · 灵石矿场</h3><p>秘闻≥15后研习寻龙尺，耗费灵石勘探不同品阶与储量的灵脉。矿场将持续产出灵石，并因危险作业额外损失凡人人口。</p>
+ <div class="immortal-statline"><span>寻龙尺 未研习</span><span>灵脉 0 处可用</span><span>矿场 未建造</span><span>矿工 0 人</span></div>
+ <p>目前尚无可开采的灵脉。</p>
+ <div class="immortal-actions"><button class="btn" data-immortal-action="compass" disabled="disabled">寻龙尺 · 3灵石</button><button class="btn" data-immortal-action="survey" disabled="disabled">探寻灵脉 · 1灵石</button><button class="btn" data-immortal-action="mine-build" disabled="disabled">开设矿场 · 2灵石+8万银两</button></div>
+ 
+ <p class="immortal-warning">矿场可能显著提高凡人死亡人数，灵脉储量耗尽后需重新勘探；修士不受凡人矿难死亡率影响。</p></div>
+ <div class="immortal-block"><h3>🏯 宗门修行 · 上等资质的安全道路</h3><p>三灵根及以上的修士可入宗门修炼：安全稳定、不受洞天与攻伐折损，但不再提供驻守／劳作／探索加成，也不向家族传授宗门功法。入宗时宗门会按资质赠一份引荐礼（灵石）。</p>
+ <div class="immortal-statline"><span>在宗 0 人</span><span>平均天赋 1.00</span></div>
+ <div class="immortal-actions"><select id="sect-person"><option value="" selected="selected">暂无合适人选</option></select><button class="btn" data-immortal-action="sect" disabled="disabled">送入宗门</button></div></div>
+ <div class="immortal-block"><h3>🌀 洞天秘境 · 赌命求机缘</h3><p>探索消耗可用秘闻线索和灵石；任何非宗门修士都能挑战任何级别洞天，但修为不足会大幅降低生还概率，失败可能永久失去修士。</p>
+ <div class="immortal-statline"><span>可用线索 0 条</span><span>历练次数 0</span></div>
+ <div class="immortal-actions"><label>派遣修士 <select id="cave-person"><option value="" selected="selected">尚无修士</option></select></label></div>
+ <div class="immortal-mini"><div class="immortal-mini-row"><div><b>青苔小洞天</b><small>建议炼气1层 · 消耗0.2灵石 / 1线索 · 当前预估生还0.0%</small></div><button class="btn" data-immortal-action="cave" data-cave-index="0" disabled="disabled">冒险进入</button></div><div class="immortal-mini-row"><div><b>流霞洞天</b><small>建议炼气3层 · 消耗1灵石 / 2线索 · 当前预估生还0.0%</small></div><button class="btn" data-immortal-action="cave" data-cave-index="1" disabled="disabled">冒险进入</button></div><div class="immortal-mini-row"><div><b>玄阴秘境</b><small>建议炼气6层 · 消耗4灵石 / 3线索 · 当前预估生还0.0%</small></div><button class="btn" data-immortal-action="cave" data-cave-index="2" disabled="disabled">冒险进入</button></div><div class="immortal-mini-row"><div><b>太虚古境</b><small>建议炼气9层 · 消耗12灵石 / 5线索 · 当前预估生还0.0%</small></div><button class="btn" data-immortal-action="cave" data-cave-index="3" disabled="disabled">冒险进入</button></div></div></div>
+ <div class="immortal-block"><h3>⚔️ 攻伐势力 · 占领领地</h3><p>家族综合战力影响胜率。攻下后获得灵石，可能缴获功法；战败可能有修士阵亡。已占领势力不可重复攻伐。</p>
+ <div class="immortal-mini"><div class="immortal-mini-row"><div><b>青木寨</b><small>敌方战力 110 · 胜算 5.0% · 成功获3灵石</small></div><button class="btn" data-immortal-action="attack" data-foe="valley">发起攻伐</button></div><div class="immortal-mini-row"><div><b>黑水门</b><small>敌方战力 560 · 胜算 5.0% · 成功获15灵石</small></div><button class="btn" data-immortal-action="attack" data-foe="river">发起攻伐</button></div><div class="immortal-mini-row"><div><b>玄铁宗</b><small>敌方战力 2400 · 胜算 5.0% · 成功获65灵石</small></div><button class="btn" data-immortal-action="attack" data-foe="ridge">发起攻伐</button></div></div></div>
+ <div class="immortal-block"><h3>📜 家族功法</h3><p>宗门功法不外传；本家功法可通过洞天与攻伐取得。当前：暂无功法 · 修炼倍率1×。</p>
+ <div class="immortal-actions"><span class="setting-tip">尚未获得任何功法</span></div></div></div></div></section>
+    </section>
+
+    <!-- ══════════ 治学 ══════════ -->
+    <section class="page" data-page="study">
+      <section class="panel" data-panel="study">
+        <div class="panel-head">
+          <h2>书斋</h2>
+          <div class="panel-head-right">
+            <span class="chip" id="study-chip">尚未开课</span>
+            <button class="panel-toggle" data-toggle="study" title="折叠 / 展开" aria-expanded="true">▾</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="metrics" id="study-metrics"><div class="metric" title="答对题数 / 总答题数"><span class="m-label">正确率</span><span class="m-value flat" data-role="v">—</span></div><div class="metric" title="当前连续 / 历史最佳"><span class="m-label">连续答对</span><span class="m-value flat" data-role="v">0 / 0</span></div><div class="metric" title="做过的题 / 当前题库总题数"><span class="m-label">已复习题目</span><span class="m-value flat" data-role="v">0 / 1945</span></div><div class="metric" title="错次 ≥ 对次的题"><span class="m-label">薄弱题</span><span class="m-value flat" data-role="v">0</span></div></div>
+          <p class="note" id="study-note">答对才生效。做错的题会更高频地再出现，直到你掌握。</p>
+          <div class="wrong-book">
+            <div class="wb-head">
+              <span>错题本</span>
+              <span class="wb-count" id="wb-count">0 题</span>
+            </div>
+            <div class="wb-list" id="wb-list"><div class="wb-empty">还没有错题，继续保持。</div></div>
+            <div class="wb-detail" id="wb-detail" hidden></div>
+          </div>
+        </div>
+      </section>
+      <section class="panel" data-panel="question-banks">
+        <div class="panel-head">
+          <h2>自定义题库</h2>
+          <div class="panel-head-right">
+            <span class="chip" id="bank-count">默认题库</span>
+            <button class="panel-toggle" data-toggle="question-banks" title="折叠 / 展开" aria-expanded="true">▾</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="bank-manager">
+            <div class="bank-info">正在使用：<strong id="bank-current-name">六级英语词库</strong><span id="bank-current-size">1945 题</span></div>
+            <p class="bank-intro">把 PPT、笔记等材料交给 AI，按模板生成 JSON 题库，再在这里导入。游戏会使用当前题库进行建造、研习与通商答题。</p>
+            <div class="bank-list" id="bank-list"><article class="bank-card is-selected"><div class="bank-card-name"><span>六级英语词库</span><span class="bank-card-tag">● 当前使用</span></div><div class="bank-card-meta">1945 道题 · 游戏内置英文单词词库</div><div class="bank-card-actions"><button class="btn ghost" type="button" data-action="bank-select" data-bank-id="builtin-cet6" disabled="disabled">已选中</button></div></article></div>
+            <div class="bank-actions">
+              <button class="btn" type="button" data-action="bank-import">＋ 导入 JSON 题库</button>
+              <button class="btn ghost" type="button" data-action="bank-template">↓ 下载题库模板</button>
+              <button class="btn ghost" type="button" data-action="bank-export" id="bank-export" disabled="disabled">↓ 备份当前题库</button>
+            </div>
+
+            <section class="bank-ai" aria-labelledby="bank-ai-heading">
+              <div class="bank-ai-head">
+                <div>
+                  <h3 id="bank-ai-heading">AI 制题助手</h3>
+                  <p>从课件提取可溯源知识点，生成高质量四选一题库。</p>
+                </div>
+                <span class="bank-ai-tag">内置提示词</span>
+              </div>
+              <div class="bank-ai-fields">
+                <label class="bank-ai-field" for="bank-ai-title">题库名称
+                  <input type="text" id="bank-ai-title" value="课程复习题库" maxlength="80" placeholder="例如：分子生物学期末复习" autocomplete="off">
+                </label>
+                <label class="bank-ai-field" for="bank-ai-count">目标题量
+                  <select id="bank-ai-count">
+                    <option value="20">20 题 · 快速练习</option>
+                    <option value="40">40 题 · 精简复习</option>
+                    <option value="60" selected="selected">60 题 · 标准题库</option>
+                    <option value="100">100 题 · 综合复习</option>
+                    <option value="200">200 题 · 深度覆盖</option>
+                  </select>
+                </label>
+                <label class="bank-ai-field" for="bank-ai-focus">复习侧重点
+                  <select id="bank-ai-focus">
+                    <option value="balanced" selected="selected">综合复习</option>
+                    <option value="key">核心考点</option>
+                    <option value="applied">机制与应用</option>
+                  </select>
+                </label>
+              </div>
+              <div class="bank-ai-actions">
+                <button class="btn bank-ai-copy" type="button" data-action="bank-ai-copy" id="bank-ai-copy"><span aria-hidden="true">⧉</span> 一键复制 AI 制题提示词</button>
+                <button class="btn ghost" type="button" data-action="bank-ai-show" id="bank-ai-show" aria-expanded="false" aria-controls="bank-ai-preview-wrap">查看完整提示词</button>
+              </div>
+              <div class="bank-ai-preview-wrap" id="bank-ai-preview-wrap" hidden="">
+                <label for="bank-ai-preview">提示词预览（随上方选项实时更新）</label>
+                <textarea id="bank-ai-preview" rows="12" readonly="readonly" spellcheck="false" aria-label="完整的 AI 制题提示词">你是一名严谨的课程命题教师、学科内容审核员和 JSON 数据校验员。请用我在本对话上传的 PPT、PDF、讲义、笔记等资料，为《修仙世家》制作一份可以直接导入的复习题库。
+
+【本次任务】
+题库名称：课程复习题库
+目标题量：60 道；资料不足时宁可少出，绝不补造。
+复习侧重点：综合复习（知识点均衡覆盖）
+语言：沿用材料的专业术语，以中文题干为主（资料为其他语言时可以使用该语言）。
+
+【资料真实性：最高优先级】
+1. 仅使用我本次提供且你能够实际读取的资料作为知识事实来源。不能为了凑题从一般常识、记忆、网络、其他教材自行补充；遇到缺页、模糊图表、无法辨认的公式、冲突或缺乏明确结论的材料，一律跳过相关命题，不猜测。
+2. 内部先整理“章节/知识点—重要程度—可核查出处”的覆盖清单，再命题；最终输出不要附带分析过程。
+3. 每道题必须有能支持正确答案的可核查出处 source，尽可能写成“真实文件名｜章节/小节｜PPT第X页/文件第Y页”；只写能实际确认的定位，不编造页码、文件名和引文。无法定位可靠依据的题目不要输出。
+4. 保留原文的定义、适用条件、方向、单位、缩写与限定词；遇到例外或条件依赖，必须写清条件，避免将“通常”“部分”“可能”擅改为绝对结论。
+
+【命题质量】
+5. 以重要知识点为中心，优先覆盖高频概念、机制因果、过程顺序、关键对比、图表信息、实验设计与应用分析；避免只考无意义的字面细节。相同知识点不要反复换词凑题。
+6. 依据资料可支持的难度进行分布：约30%基础记忆、50%理解辨析、20%综合应用；若资料不支持应用型问题，则减少应用题，不作无依据的推断。复习侧重点为“核心考点”时提高核心知识覆盖，为“机制与应用”时优先机制推理及资料内案例。
+7. 每题必须是独立完整、表意明确的四选一单选题：恰好一个无争议的正确答案。四个选项应同类、相近长度、互不包含、无歧义；三个干扰项要对应真实易错点，不要明显荒谬，不使用“以上都对/都不对”，避免用长度或语气暗示答案。
+8. 题干不依赖前后题；如引用表格/图示，须在题干中完整描述作答必需的数据，不能只写“见上图”。不要出现“根据材料可知”等缺乏上下文的空泛提问。
+9. explanation 必须说明正确项为什么成立，并尽可能指出关键干扰项错在哪里；不得编造依据，也不要简单照抄答案。四个答案位置 A/B/C/D 尽量均衡、无规律。
+
+【必须严格遵守的游戏格式】
+10. 输出一个合法的 UTF-8 JSON 文件，顶层字段只能有 format、version、title、description、questions。format 固定为 "xiuxian-question-bank"，version 固定为数字 1，title 为本次题库名称，description 简述覆盖范围和实际题量。
+11. questions 是对象数组。每道题只使用以下字段：
+    id：唯一字符串，限英文字母、数字、下划线、短横线，例如 q-0001；最长80字符。
+    question：题干，1–600字符。
+    options：恰好4个不同的非空字符串，每个最长300字符；不要在选项文本前写 A.、B. 等编号。
+    answer："A"、"B"、"C"、"D" 之一，分别对应 options 第1到第4项。
+    explanation：解析，最长1200字符。
+    source：真实可查的材料出处，最长200字符。
+12. 每份至少1题、最多1000题，总文件大小不超过2 MB；总题量不足目标数时以资料支持量为准。多个题库须分别输出完整的 JSON 文件，不能混为数组。
+
+【输出前内部审核：必须逐题执行】
+13. 交叉核对 source 是否确实能支持答案；核对单一正确项、选项不重复、ID 不重复、题意独立、无相近重复题、解析与答案一致、术语及单位无误。
+14. 严格检查可 JSON.parse：只用双引号、无注释、无尾逗号、无 Markdown 代码围栏；不能在 JSON 前后增加解释、摘要或问候。
+15. 若当前无法读取任何有效资料，请直接要求我重新上传清晰材料，不要编造题库。如果有足够资料，则请直接生成完整 JSON，优先提供可下载的 .json 文件；若平台无法提供文件，则只输出 JSON 原文，供我保存为 UTF-8 .json。
+
+【JSON 结构示意——这不是一道正式题，请替换全部占位文字】
+{
+  "format": "xiuxian-question-bank",
+  "version": 1,
+  "title": "课程复习题库",
+  "description": "按照实际已读取的资料编写的复习题库",
+  "questions": [
+    {
+      "id": "q-0001",
+      "question": "根据上传资料编写的完整题干",
+      "options": ["选项一", "选项二", "选项三", "选项四"],
+      "answer": "B",
+      "explanation": "为什么 B 正确，以及易混选项的错误原因",
+      "source": "真实文件名｜真实章节｜真实页码"
+    }
+  ]
+}
+</textarea>
+              </div>
+              <p class="bank-ai-help">复制后，把提示词和 PPT / PDF / 笔记一起发给 AI。请检查生成的题目与出处，再保存为 <strong>.json</strong> 导入上方题库管理区。资料不充分时，AI 应少出题而不是编造。</p>
+            </section>
+            <input class="bank-file-input" id="bank-file" type="file" accept=".json,application/json" aria-label="选择自定义题库JSON文件">
+            <p class="bank-hint">支持 1–1000 道四选一题，题目可附解析和出处；题库保存在本机浏览器，关闭页面后仍可切换。导入不会上传文件。重开游戏也不会删除题库。请不要随意清除浏览器网站数据。</p>
+          </div>
+        </div>
+      </section>
+    </section>
+
+    <!-- 百科：一个独立的栏目。内容由 src/data/codex.js 聚合各区块已有的 lore/desc 生成 -->
+    <section class="page" data-page="codex">
+      <section class="panel" data-panel="codex-index">
+        <div class="panel-head">
+          <h2>百科</h2>
+          <div class="panel-head-right">
+            <span class="chip" id="codex-chip">0 / 0 条</span>
+            <button class="panel-toggle" data-toggle="codex-index" title="折叠 / 展开" aria-expanded="true">▾</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <p class="note">族中子弟整理的见闻录。凡亲身历过的事，条目自会显现；未曾见过的，只留一个空位。</p>
+          <div class="codex-toolbar">
+            <input class="codex-search" id="codex-search" type="search" placeholder="搜条目、正文或数据…" aria-label="搜索百科">
+            <div class="codex-chapters" id="codex-chapters"></div>
+          </div>
+          <div class="codex-list" id="codex-list"></div>
+        </div>
+      </section>
+    </section>
+
+    <!-- 轮回：周目与金手指。元进度跨周目保留，所以重开之后这一页仍然有内容 -->
+    <section class="page" data-page="cycle">
+      <section class="panel" data-panel="cycle">
+        <div class="panel-head">
+          <h2>轮回</h2>
+          <div class="panel-head-right">
+            <span class="chip" id="cycle-chip">第 1 世</span>
+            <button class="panel-toggle" data-toggle="cycle" title="折叠 / 展开" aria-expanded="true">▾</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <p class="note">一世终了，前尘尽忘——但有些东西会留下来。族中有人修至化神，便可重入轮回，带着金手指再走一遍。</p>
+          <div class="codex-list" id="cycle-body"></div>
+        </div>
+      </section>
+    </section>
+
+    </div>
+
+    <!-- 常驻侧栏：族谱纪事。每一页都在，方便随时回看刚才那一步干了什么 -->
+    <aside class="shell-side">
+      <section class="panel log-panel" data-panel="log">
+        <div class="panel-head">
+          <h2>族谱纪事</h2>
+          <div class="panel-head-right">
+            <span class="chip" id="log-chip">1 条</span>
+            <button class="panel-toggle" data-toggle="log" title="折叠 / 展开" aria-expanded="true">▾</button>
+          </div>
+        </div>
+        <div class="panel-body">
+          <div class="log-list" id="log-list"><div class="log-item kind-unlock"><span class="t">17:12:21</span><span class="txt">世家初立，凡尘之路自此始。</span></div></div>
+        </div>
+      </section>
+    </aside>
+
+  </main>
+</div>
+
+<div class="toast-host" id="toast-host"></div>
+
+<div class="quiz-host" id="quiz-host">
+  <div class="quiz-backdrop"></div>
+  <div class="quiz-card" role="dialog" aria-modal="true" aria-labelledby="quiz-op">
+    <div class="quiz-head">
+      <span class="quiz-op" id="quiz-op">—</span>
+      <span class="quiz-diff" id="quiz-diff">普通</span>
+    </div>
+    <div class="quiz-prompt">
+      <div class="quiz-word" id="quiz-word">—</div>
+      <div class="quiz-phonetic" id="quiz-phonetic"></div>
+      <div class="quiz-ask" id="quiz-ask">选出正确的中文释义</div>
+    </div>
+    <div class="quiz-options" id="quiz-options"></div>
+    <div class="quiz-explanation" id="quiz-explanation" aria-live="polite"></div>
+    <div class="quiz-foot">
+      <span class="quiz-cost" id="quiz-cost"></span>
+      <span class="quiz-verdict" id="quiz-verdict" aria-live="polite"></span>
+      <button type="button" class="btn quiz-continue" id="quiz-continue" data-action="quiz-continue" hidden="">已看完，继续游戏 →</button>
+    </div>
+  </div>
+</div>
+
+<script type="module">

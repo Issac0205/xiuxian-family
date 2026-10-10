@@ -1,0 +1,13 @@
+{
+  "name": "xiuxian-family-qi",
+  "version": "0.2.0",
+  "private": true,
+  "type": "module",
+  "description": "修仙世家 · 炼气篇。分区块源码，构建成单文件 HTML。",
+  "scripts": {
+    "build": "node scripts/build.mjs",
+    "check": "node scripts/build.mjs --check",
+    "test": "node scripts/build.mjs --check && node scripts/smoke.mjs",
+    "smoke": "node scripts/smoke.mjs"
+  }
+}
