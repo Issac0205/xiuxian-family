@@ -65,6 +65,9 @@ function visiblePages(state) { return PAGES.filter((p) => pageVisible(state, p))
 function immortalBlockVisible(state, key) {
   const held = worldOf(state).held.length;
   switch (key) {
+    // 人丹：主修血煞一脉才出现。没走这条路的人不该看见「献祭凡人」的按钮
+    case 'humanPill':
+      return schoolUnlocks(state, 'humanPill') || humanPillCount(state) > 0;
     case 'alchemy':
       return held > 0 || (state.cultivation?.alchemy?.crafts || 0) > 0;
     case 'forge':

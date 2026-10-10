@@ -1690,6 +1690,14 @@ body[data-theme="inkwash"] .bank-ai-copy:hover:not(:disabled) { background:#5450
 .manual-card-tier.t1 { color:#b9c3cf; }
 .manual-card-tier.t2 { color:#8fb7d8; }
 .manual-card-tier.t3 { color:var(--gold-soft); border-color:var(--line-strong); }
+/* 流派徽记：玄门不标（它是基准），其余标出来 —— 这一本就是这一世的路线 */
+.manual-card-school { font-size:10px; padding:1px 6px; border-radius:4px; border:1px solid currentColor; flex:0 0 auto; opacity:.85; }
+.manual-card-school.s-evil  { color:#d98d8d; }
+.manual-card-school.s-rose  { color:#d9a0bd; }
+.manual-card-school.s-steel { color:#9fb6cd; }
+.manual-card-school.s-jade  { color:#8fc9a8; }
+.manual-card-school.s-ember { color:#d9ab7a; }
+.manual-slot-school { font-size:10px; color:var(--muted); margin-left:6px; }
 .manual-card-dao { margin-top:2px; font-size:10.5px; color:var(--muted-dim); letter-spacing:1px; }
 .manual-card-effect { margin-top:5px; font-size:11.5px; color:var(--jade); }
 .manual-card-locked { margin-top:5px; font-size:11px; color:var(--muted-dim); line-height:1.5; }
@@ -8159,6 +8167,9 @@ function visiblePages(state) { return PAGES.filter((p) => pageVisible(state, p))
 function immortalBlockVisible(state, key) {
   const held = worldOf(state).held.length;
   switch (key) {
+    // 人丹：主修血煞一脉才出现。没走这条路的人不该看见「献祭凡人」的按钮
+    case 'humanPill':
+      return schoolUnlocks(state, 'humanPill') || humanPillCount(state) > 0;
     case 'alchemy':
       return held > 0 || (state.cultivation?.alchemy?.crafts || 0) > 0;
     case 'forge':
@@ -12180,6 +12191,10 @@ function createUI({ getState, actions, rng }) {
       ['秘闻', (s, d) => `${fmt(d.secretCount)} / ${fmt(d.secretGoal)}`],
       ['灵石', (s, d) => `${fmtStones(d.stones)} 枚`],
       ['炼气人口', (s, d) => `${fmt(d.qi)}`],
+      ['道心', (s) => {
+        const t = moralityTierOf(s);
+        return `${t.name} ${moralityOf(s).toFixed(0)}`;
+      }],
       ['家族战力', (s,d) => fmt(d.totalPower,1)],
     ],
     study: [
@@ -14069,6 +14084,35 @@ window.__xiuxian = {
     /** 流派与道心：R10 新增。测试要拿它们核对数量与档位边界。 */
     schools: MANUAL_SCHOOLS, moralityTiers: MORALITY_TIERS,
   },
+  /** 道心：读写与三条后果。 */
+  morality: {
+    get: () => moralityOf(state),
+    tier: () => moralityTierOf(state),
+    tierOf: (v) => moralityTier(v),
+    add: (d) => addMorality(state, d),
+    advance: (dt) => advanceMorality(state, dt),
+    caveBonus: () => moralityCaveBonus(state),
+    warBonus: () => moralityWarBonus(state),
+    taxMult: () => moralityTaxMult(state),
+    goodDeedPlan: () => goodDeedPlan(state),
+    goodDeed: () => commitGoodDeed(state),
+  },
+  /** 流派：主修位的机制与流血。 */
+  school: {
+    main: () => mainSchoolOf(state),
+    fx: (k) => schoolFx(state, k),
+    drift: () => schoolDrift(state),
+    unlocks: (a) => schoolUnlocks(state, a),
+    birthMult: () => schoolBirthMult(state),
+    deathMult: () => schoolDeathMult(state),
+    humanPill: {
+      count: () => humanPillCount(state),
+      plan: () => humanPillPlan(state),
+      commit: () => commitHumanPill(state),
+      usePlan: (id) => humanPillUsePlan(state, id),
+      use: (id) => commitUseHumanPill(state, id),
+    },
+  },
   /** 百科：条目书与统计。*/
   codex: {
     book: () => codexBook(state),
@@ -14233,6 +14277,15 @@ ${blk('runes','📜 符房 · 画符', immortalBlockVisible(state,'runes'))}<p>�
 <div class="immortal-mini">${RUNE_MATERIALS.map(m=>{const have=runeMatCount(state,m.id);const per=runePerSec(state)[m.id]||0;return `<div class="immortal-mini-row"><div><b>${m.name}</b><span class="map-tier">T${m.tier}</span><small>${have.toFixed(2)} 份 · 产地 ${mapNode(m.node)?.name||'—'}${per>0?` · ${(per*3600).toFixed(2)} 份/时`:' · <span class="map-warn">未产出（该地未占领或镇守不足）</span>'}</small></div><span class="herb-count">${Math.floor(have)}</span></div>`}).join('')}</div>
 <div class="immortal-mini">${RUNE_ITEMS.map(it=>{const plan=runePlan(state,it.id);const n=runeCount(state,it.id);const left=runeExpiresIn(state,it.id);const mat=Object.entries(it.materials).map(([k,v])=>`${RUNE_MATERIAL_MAP[k].name}×${v}`).join(' ');return `<div class="immortal-mini-row${plan.ok?'':' is-locked'}"><div><b>${it.name}</b><span class="map-tier">${it.text}</span>${n>0?`<span class="map-tier">存 ${n} · ${(left/3600).toFixed(1)}h</span>`:''}<small>${mat} · 成功率 ${(runeRate(state,it.id)*100).toFixed(0)}% · 需 ${RUNE_BENCH_LEVELS[it.bench-1].name}</small>${plan.ok?'':`<small class="map-warn">${plan.reason}</small>`}</div><span class="map-garrison">${n>0?`<button class="btn" data-immortal-action="rune-use" data-rune="${it.id}">${it.kind==='train'?'启用':'挂上'}</button>`:''}<button class="btn" data-immortal-action="rune" data-rune="${it.id}" ${plan.ok?'':'disabled'}>画符</button></span></div>`}).join('')}</div>
 <div class="immortal-actions">${(()=>{const up=benchUpgradePlan(state);return up.ok?`<button class="btn" data-immortal-action="rune-bench">升台 → ${up.next.name} · ${up.stones} 灵石 + ${(up.silver/10000).toFixed(0)}万银两</button>`:`<span class="setting-tip">${up.reason}</span>`})()}</div></div>
+${blk('dao','☯ 道心 · 你在世上被当成什么人')}<p>道心不是善恶评分，而是<b>你在这个地界上被当成什么人</b>。它随时间<b>回归中道</b>（离 50 越远回得越快）—— 想守住正道必须主动行善，而堕落只需要换一本功法。主修血煞一脉会让它<b>持续下坠</b>。</p>
+<div class="immortal-statline">${(()=>{const t=moralityTierOf(state);const v=moralityOf(state);return `<span>道心 ${v.toFixed(1)} / ${MORALITY_MAX} · <b>${t.name}</b></span><span>洞天生还 ${t.caveBonus>=0?'+':''}${(t.caveBonus*100).toFixed(0)}pp</span><span>攻伐胜算 ${t.warBonus>=0?'+':''}${(t.warBonus*100).toFixed(0)}pp</span><span>领地赋税 ×${t.taxMult.toFixed(2)}</span>`})()}</div>
+<p class="setting-tip">${moralityTierOf(state).desc}</p>
+<div class="immortal-actions">${(()=>{const p=goodDeedPlan(state);return p.ok?`<button class="btn" data-immortal-action="good-deed">施粥赈济 · ${fmt(p.silver)} 两银 → 道心 +${GOOD_DEED_GAIN}</button>`:`<span class="setting-tip">施粥赈济：${p.reason}</span>`})()}</div></div>
+${blk('human-pill','🩸 人丹 · 以血养功', immortalBlockVisible(state,'humanPill'))}<p>血煞一门的看家手段。把凡人炼成一枚丹，服下者修为暴涨——<b>原料是人</b>，所以这是全篇最重的代价。凡人人口是银两的来源，道心是洞天里的保命符。</p>
+<div class="immortal-statline"><span>人丹存量 <b>${humanPillCount(state)}</b> 枚</span><span>主修流派 ${mainSchoolOf(state).name}</span></div>
+<div class="immortal-actions">${(()=>{const p=humanPillPlan(state);return p.ok?`<button class="btn" data-immortal-action="human-pill" title="献祭 ${p.mortals} 名凡人，道心 ${p.moralityCost}">炼人丹 · 献祭 ${p.mortals} 凡人 + ${p.stones} 灵石</button>`:`<span class="setting-tip">${p.reason}</span>`})()}</div>
+${humanPillCount(state)>0?`<div class="immortal-mini">${(c.cultivators||[]).map(p=>{const up=humanPillUsePlan(state,p.id);return `<div class="immortal-mini-row${up.ok?'':' is-locked'}"><div><b>${p.name}</b><span class="map-tier">${realmName(p.realmIndex)}</span><small>${up.ok?`服下可得修为 +${up.gain}`:`<span class="map-warn">${up.reason}</span>`}</small></div>${up.ok?`<button class="btn" data-immortal-action="use-human-pill" data-person="${p.id}">服丹</button>`:''}</div>`}).join('')}</div>`:''}
+</div>
 ${blk('manual','📜 家族功法')}<p>宗门修的是宗门的法，<b>家族功法只对闭关修士生效</b>——宗门弟子享受不到。当前主修 ${mainManual?`《${mainManual.name}》`:'无'}${assistManual?` · 辅修《${assistManual.name}》`:''}，闭关修炼倍率 <b>${manualTrainingMultiplier(state).toFixed(2)}×</b>，已收录 ${c.manuals.length} / ${CULTIVATION_MANUALS.length} 门。</p>
 <div class="immortal-actions"><span class="setting-tip">装备、参悟与全部功法目录见上方「功法阁」面板</span></div></div>`;
 }
@@ -14519,6 +14572,7 @@ function renderManualPavilion() {
       const att = manualAttune(state, m.id);
       const isMain = c.equippedManual === m.id;
       const isAssist = c.assistManual === m.id;
+      const sc = schoolOf(m);
       const cls = ['manual-card', have ? '' : 'is-locked', isMain ? 'is-main' : '', isAssist ? 'is-assist' : '']
         .filter(Boolean).join(' ');
       const daoEl = MANUAL_DAO_ELEMENT[dao];
@@ -14526,7 +14580,10 @@ function renderManualPavilion() {
         ? `<i class="el-${daoEl}">${elementName(daoEl)}</i>`
         : '<i class="el-none">无属性</i>';
       const head = `<div class="manual-card-head"><span class="manual-card-name">${have ? `《${m.name}》` : m.name}</span>`
-        + `<span class="manual-card-tier t${m.tier}">${MANUAL_TIER_NAME[m.tier]}</span></div>`
+        + `<span class="manual-card-tier t${m.tier}">${MANUAL_TIER_NAME[m.tier]}</span>`
+        // 流派徽记：玄门不标（它是基准），其余标出来 —— 这一本就是这一世的路线
+        + (sc.id === 'orthodox' ? '' : `<span class="manual-card-school s-${sc.tone}">${sc.name}</span>`)
+        + `</div>`
         + `<div class="manual-card-dao">${MANUAL_DAOS[dao].name} ${elTag} · ${MANUAL_DAOS[dao].desc}</div>`
         + `<div class="manual-card-effect">${manualEffectText(m.effect)}</div>`;
 
@@ -14658,6 +14715,7 @@ document.addEventListener('click',ev=>{
   if(!plan.ok){ui.toast(plan.reason,'warn',2600);return;}
   if(!confirm(`升炉到${plan.next.name}？消耗 ${plan.stones} 灵石 + ${plan.next.silver} 两银。`))return;
  }
+ if(kind==='use-human-pill')param=btn.dataset.person;
  if(kind==='mine-workers')param=document.getElementById('mine-workers')?.value;
  if(kind==='equip')param=btn.dataset.manual;
  const result=immortalAction(state,kind,param,rng);

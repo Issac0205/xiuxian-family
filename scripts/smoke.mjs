@@ -2059,5 +2059,166 @@ putSave((raw) => {
   check('已不存在功法的参悟记录被清掉', X5.state.cultivation.attune.ghost === undefined);
 }
 
+
+/* ────────────── R10：流派与道心 ────────────── */
+console.log('\n── R10：流派与道心 ──');
+{
+  const DT = X.data;
+  check('六个流派', DT.schools.length === 6, DT.schools.map((s) => s.name).join(' '));
+  check('每个流派都有 tagline / desc / lore / price',
+    DT.schools.every((s) => s.tagline && s.desc && s.lore && s.price));
+  check('只有玄门正宗没有 fx（它是基准）',
+    DT.schools.filter((s) => !Object.keys(s.fx || {}).length).map((s) => s.id).join(',') === 'orthodox');
+  check('只有血煞解锁炼人丹', DT.schools.find((s) => s.id === 'demonic').unlock === 'humanPill');
+  check('会拉低道心的流派只有血煞与合欢',
+    DT.schools.filter((s) => s.drift).map((s) => s.id).join(',') === 'demonic,dual');
+
+  check('道心五个档位', DT.moralityTiers.length === 5);
+  check('档位首尾相接且覆盖 0–100',
+    DT.moralityTiers[0].min === 0 && DT.moralityTiers[4].max === 100
+    && DT.moralityTiers.every((t, i) => i === 0 || t.min === DT.moralityTiers[i - 1].max + 1));
+  check('档位之间后果严格单调（越善越能养地、越难打仗）',
+    DT.moralityTiers.every((t, i) => {
+      const p = DT.moralityTiers[i - 1];
+      return !p || (p.caveBonus < t.caveBonus && p.taxMult < t.taxMult && p.warBonus > t.warBonus);
+    }));
+  check('每个档位都有文案', DT.moralityTiers.every((t) => t.desc && t.name));
+
+  // ── 百科覆盖 ──
+  const entryIds = new Set(X.codex.book().flatMap((c) => c.entries).map((e) => e.id));
+  const missing = DT.manuals.filter((m) => !entryIds.has(`manual-${m.id}`)).map((m) => m.name);
+  check(`每本功法都有百科条目（共 ${DT.manuals.length} 本）`, missing.length === 0, missing.join(' '));
+  check('每个流派都有百科条目',
+    DT.schools.every((s) => entryIds.has(`school-${s.id}`)));
+  check('道心机制有百科条目',
+    ['morality-what', 'morality-tiers', 'morality-change', 'morality-human-pill']
+      .every((id) => entryIds.has(id)));
+
+  // ── 档位边界 ──
+  check('道心边界取值正确', [[0, '魔道'], [19, '魔道'], [20, '旁门'], [39, '旁门'],
+    [40, '中庸'], [60, '中庸'], [61, '正道'], [80, '正道'], [81, '道心通明'], [100, '道心通明']]
+    .every(([v, name]) => X.morality.tierOf(v).name === name));
+  check('越界值被夹取', X.morality.tierOf(-50).name === '魔道' && X.morality.tierOf(999).name === '道心通明');
+}
+
+{
+  // ── 主修流派：只有主修位生效 ──
+  const c = X.state.cultivation;
+  const before = { main: c.equippedManual, assist: c.assistManual, owned: (c.manuals || []).slice() };
+  c.manuals = ['breath', 'spring', 'xuesha', 'huanxi'];
+  c.equippedManual = 'breath';
+  c.assistManual = null;
+  check('主修玄门时流派是玄门', X.school.main().id === 'orthodox');
+  check('玄门不加修炼也不减修炼', X.school.fx('training') === 0 && X.school.fx('power') === 0);
+  check('玄门不解锁人丹', X.school.unlocks('humanPill') === false);
+  check('玄门不拉低道心', X.school.drift() === 0);
+
+  c.equippedManual = 'xuesha';
+  check('主修血煞 → 流派变了', X.school.main().id === 'demonic');
+  check('血煞解锁炼人丹', X.school.unlocks('humanPill') === true);
+  check('血煞加战力、减修炼', X.school.fx('power') > 0 && X.school.fx('training') < 0);
+  check('血煞抬高凡人死亡率', X.school.deathMult() > 1);
+  check('血煞会拉低道心', X.school.drift() < 0);
+
+  // 辅修的流派**不**生效：换成合欢，机制不该跟着变
+  c.assistManual = 'huanxi';
+  check('辅修合欢不影响主修流派', X.school.main().id === 'demonic');
+  check('辅修合欢不带来出生率加成', X.school.birthMult() === 1);
+
+  // 主修换成合欢，机制才切换
+  c.equippedManual = 'huanxi';
+  c.assistManual = null;
+  check('主修合欢 → 出生率 ×1.4', Math.abs(X.school.birthMult() - 1.4) < 1e-9);
+  check('主修合欢 → 战力为负', X.school.fx('power') < 0);
+  check('主修合欢不解锁人丹', X.school.unlocks('humanPill') === false);
+
+  c.equippedManual = before.main;
+  c.assistManual = before.assist;
+  c.manuals = before.owned;
+}
+
+{
+  // ── 道心回归中道（不是无限爬升） ──
+  X.morality.add(1000);            // 先顶满
+  const peak = X.morality.get();
+  check('道心被夹在 100', peak === 100);
+  // 主修玄门 → 应该往回走，而不是停在 100
+  X.state.cultivation.equippedManual = 'breath';
+  for (let i = 0; i < 200; i += 1) X.morality.advance(60);
+  const settled = X.morality.get();
+  check('不从邪路时道心回归中道（不再是 100）', settled < peak, `${peak} → ${settled.toFixed(1)}`);
+  check('回归方向朝着 50', Math.abs(settled - 50) < Math.abs(peak - 50));
+  check('道心不会越过中道继续下坠', settled >= 45, settled.toFixed(1));
+}
+
+{
+  // ── 三条后果随档位变化 ──
+  const c2 = X.state.cultivation;
+  const keep = c2.equippedManual;
+  c2.equippedManual = 'breath';
+  X.morality.add(-1000);
+  check('魔道洞天生还修正为负', X.morality.caveBonus() < 0);
+  check('魔道攻伐胜算修正为正', X.morality.warBonus() > 0);
+  check('魔道赋税打折', X.morality.taxMult() < 1);
+  X.morality.add(1000);
+  check('道心通明洞天生还修正为正', X.morality.caveBonus() > 0);
+  check('道心通明攻伐胜算修正为负', X.morality.warBonus() < 0);
+  check('道心通明赋税加成', X.morality.taxMult() > 1);
+  c2.equippedManual = keep;
+}
+
+{
+  // ── 炼人丹：守恒 ──
+  const c3 = X.state.cultivation;
+  const keep = { main: c3.equippedManual, pop: X.state.population, stones: X.state.spiritStones };
+  c3.manuals = ['breath', 'xuesha'];
+  c3.equippedManual = 'xuesha';
+  c3.humanPills = 0;
+  X.state.population = 100;
+  X.state.spiritStones = 50;
+  X.morality.add(1000);        // 从中庸开始，便于观察下坠
+
+  const plan = X.school.humanPill.plan();
+  check('有血煞功法时人丹可炼', plan.ok, plan.reason);
+  const popBefore = X.state.population;
+  const moralBefore = X.morality.get();
+  const r = X.school.humanPill.commit();
+  check('炼人丹成功', r.ok, r.reason);
+  check('凡人被扣掉 5 口', X.state.population === popBefore - 5, `${popBefore} → ${X.state.population}`);
+  check('人丹 +1', X.school.humanPill.count() === 1);
+  check('道心下降', X.morality.get() < moralBefore, `${moralBefore.toFixed(1)} → ${X.morality.get().toFixed(1)}`);
+  check('灵石被扣', X.state.spiritStones < 50);
+
+  // 凡人见底就炼不动了
+  X.state.population = 5;
+  check('凡人不足时拒绝炼人丹', X.school.humanPill.plan().ok === false);
+
+  // 换成玄门就该整个入口消失
+  c3.equippedManual = 'breath';
+  check('非血煞流派炼不了人丹', X.school.humanPill.plan().ok === false);
+
+  c3.equippedManual = keep.main;
+  c3.humanPills = 0;
+  X.state.population = keep.pop;
+  X.state.spiritStones = keep.stones;
+}
+
+{
+  // ── 施粥赈济 ──
+  X.morality.add(-1000);
+  X.state.silver = 0;
+  check('没钱时施不了粥', X.morality.goodDeedPlan().ok === false);
+  X.state.silver = 500000;
+  const p = X.morality.goodDeedPlan();
+  check('有钱时施粥可行', p.ok, p.reason);
+  const m0 = X.morality.get();
+  const s0 = X.state.silver;
+  const done = X.morality.goodDeed();
+  check('施粥抬升道心', done.ok && X.morality.get() > m0, `${m0.toFixed(1)} → ${X.morality.get().toFixed(1)}`);
+  check('施粥扣掉银两', X.state.silver < s0);
+  X.morality.add(1000);
+  check('道心圆满时不再需要施粥', X.morality.goodDeedPlan().ok === false);
+}
+
 console.log(failed === 0 ? '\n全部通过 ✓\n' : `\n${failed} 项未通过 ✗\n`);
 process.exit(failed ? 1 : 0);

@@ -86,6 +86,10 @@ function createUI({ getState, actions, rng }) {
       ['秘闻', (s, d) => `${fmt(d.secretCount)} / ${fmt(d.secretGoal)}`],
       ['灵石', (s, d) => `${fmtStones(d.stones)} 枚`],
       ['炼气人口', (s, d) => `${fmt(d.qi)}`],
+      ['道心', (s) => {
+        const t = moralityTierOf(s);
+        return `${t.name} ${moralityOf(s).toFixed(0)}`;
+      }],
       ['家族战力', (s,d) => fmt(d.totalPower,1)],
     ],
     study: [
