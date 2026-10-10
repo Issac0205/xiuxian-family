@@ -72,8 +72,12 @@ xiuxian-qi/
 ```bash
 npm run build     # src/ → game.html
 npm run check     # 校验 game.html 与 src/ 逐字节一致
-npm run smoke     # 533 项断言
+npm run smoke     # 584 项断言
 npm test          # check + smoke
+
+# 一条命令跑完「构建 → 校验 → 测试 → 提交 → 推送」
+# 任何一步失败就整体停下，绝不把没通过测试的东西推上去
+npm run ship -- "feat: 做了什么"
 ```
 
 ---
