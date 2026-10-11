@@ -51,10 +51,19 @@ function step(n, title) {
   console.log(`\n${C.gold}[${n}/${TOTAL}]${C.off} ${title}`);
 }
 
-const message = process.argv.slice(2).join(' ').trim();
+// ⚠ 参数分两段：`ship -- "提交说明" -- <文件1> <文件2> …`
+//   多 agent **共用一个工作区**，所以绝不 `git add -A` —— 那会把别人正在改的
+//   半成品一起提交（本项目真实事故：策划者交付 docs/97 时，工作区有 11 个文件
+//   是程序负责人的 WIP，跑 ship 会连带提交并用 WIP 重建 game.html）。
+//   所以本脚本**要求显式列出要提交的文件**；不列就拒绝，并把工作区改动打出来
+//   让你自己挑。（全局规则 longtask-and-diagnostics R18/R21）
+const rawArgs = process.argv.slice(2);
+const sep = rawArgs.indexOf('--');
+const message = (sep >= 0 ? rawArgs.slice(0, sep) : rawArgs).join(' ').trim();
+const PATHS = sep >= 0 ? rawArgs.slice(sep + 1).filter(Boolean) : [];
 if (!message) {
   console.error(`${C.red}缺少提交说明。${C.off}`);
-  console.error('用法： npm run ship -- "feat: 做了什么"');
+  console.error('用法： npm run ship -- "feat: 做了什么" -- <要提交的文件…>');
   process.exit(1);
 }
 if (message.length < 6) {
@@ -110,16 +119,34 @@ step(5, '推送前置检查（分叉 + 产物卫生）');
   console.log(`${C.green}✓ 无分叉、无一一次性产物${C.off}`);
 }
 
-step(6, '提交（提交到本地，不推送）');
-run('git', ['add', '-A']);
-const staged = capture('git', ['diff', '--cached', '--name-only']);
-if (!staged) {
-  console.log(`${C.dim}  工作区没有改动，跳过提交${C.off}`);
-} else {
-  console.log(`${C.dim}  将提交 ${staged.split('\n').filter(Boolean).length} 个文件：${C.off}`);
-  for (const p of staged.split('\n').filter(Boolean)) console.log(`${C.dim}    ${p}${C.off}`);
-  run('git', ['commit', '-m', message]);
-  console.log(`${C.green}✓ 已提交到本地${C.off}`);
+step(6, '提交你显式列出的文件（提交到本地，不推送）');
+{
+  const dirty = capture('git', ['status', '--porcelain']).split('\n').filter(Boolean);
+  if (!PATHS.length) {
+    console.error(`\n${C.red}✗ 没有指定要提交的文件 —— 本脚本拒绝 git add -A。${C.off}`);
+    console.error(`${C.dim}  多 agent 共用一个工作区，add -A 会把别人正在改的半成品一起提交，`);
+    console.error(`${C.dim}  还可能用 WIP 重建 game.html（全局规则 R18/R21）。${C.off}`);
+    if (dirty.length) {
+      console.error(`${C.dim}  工作区现有 ${dirty.length} 项改动，请挑出属于你的：${C.off}`);
+      for (const l of dirty.slice(0, 40)) console.error(`${C.dim}    ${l}${C.off}`);
+    }
+    console.error(`\n${C.gold}  重跑： npm run ship -- "说明" -- <你的文件…>${C.off}`);
+    console.error(`${C.dim}  提交前用 git diff --cached --name-only 确认暂存区只有你的文件。${C.off}`);
+    process.exit(1);
+  }
+  run('git', ['add', '--', ...PATHS]);
+  const staged = capture('git', ['diff', '--cached', '--name-only']);
+  if (!staged) {
+    console.log(`${C.dim}  这些文件没有改动，跳过提交${C.off}`);
+  } else {
+    const files = staged.split('\n').filter(Boolean);
+    console.log(`${C.dim}  将提交 ${files.length} 个文件（应全部是你指定的）：${C.off}`);
+    for (const p of files) console.log(`${C.dim}    ${p}${C.off}`);
+    const unexpected = dirty.filter((l) => !/^[MADRC?]{1,2}\s/.test(l) && false);
+    if (unexpected.length) console.error(`${C.dim}${unexpected}${C.off}`);
+    run('git', ['commit', '-m', message]);
+    console.log(`${C.green}✓ 已提交到本地${C.off}`);
+  }
 }
 
 const ahead = capture('git', ['log', '--oneline', 'origin/main..HEAD']).split('\n').filter(Boolean);
