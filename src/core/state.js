@@ -99,6 +99,17 @@ function createState(now = Date.now()) {
     /** 已发现的秘闻在 SECRETS 里的下标。 */
     secrets: [],
 
+    /**
+     * 【策划 docs/96 坊市】已花掉的秘闻条数。
+     * `secrets` 是「累计发现」（只增不减，抽池判重也用它），这里是记账。
+     * **一切旧门槛读累计 `secrets`**，所以花钱不会关掉已经打开的门。
+     */
+    secretsUsed: 0,
+    /** 已用秘闻解锁的坊市商品 id（永久有效）。 */
+    marketUnlocks: [],
+    /** 反向兑换（灵石→银两）的次数，纯统计。 */
+    marketSellCount: 0,
+
     /** 修仙侧进度。目前只有炼气这一档。 */
     cultivation: {
       qi: 0,          // 炼气人口，与 cultivators.length 保持一致

@@ -28,6 +28,10 @@
     "marker": "/* ══════════ src/data/trade.js ══════════ */"
   },
   {
+    "path": "src/data/markets.js",
+    "marker": "/* ══════════ src/data/markets.js ══════════ */"
+  },
+  {
     "path": "src/core/formulas.js",
     "marker": "/* ══════════ src/core/formulas.js ══════════ */"
   },
@@ -150,6 +154,10 @@
   {
     "path": "src/systems/immortal-actions.js",
     "marker": "/* ══════════ src/systems/immortal-actions.js ══════════ */"
+  },
+  {
+    "path": "src/systems/markets.js",
+    "marker": "/* ══════════ src/systems/markets.js ══════════ */"
   },
   {
     "path": "src/core/engine.js",

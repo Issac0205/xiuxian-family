@@ -36,6 +36,11 @@ function serialize(state) {
     quiz: state.quiz,
     spiritStones: state.spiritStones,
     secrets: state.secrets,
+    // 【策划 docs/96 坊市】秘闻消耗与坊市解锁状态。**顶层字段**，
+    // 漏在这里就会「花掉的秘闻每次读档复原、解锁的商品又锁上」。
+    secretsUsed: state.secretsUsed,
+    marketUnlocks: state.marketUnlocks,
+    marketSellCount: state.marketSellCount,
     cultivation: state.cultivation,
     // 【策划 T-1】元进度（轮回点 / 金手指）也是**顶层**字段。
     // 它原来是整个白名单里唯一「写进去又读不回来」的字段：hydrate() 会重建 meta，
@@ -153,6 +158,13 @@ function hydrate(raw) {
     fresh.secrets = [...new Set(raw.secrets.map((v) => Number(v)))]
       .filter((v) => Number.isInteger(v) && v >= 0 && v < SECRETS.length);
   }
+  // 【策划 docs/96 坊市】秘闻消耗与解锁状态。
+  // 子集归一化：`secretsUsed` 绝不能超过累计发现数（否则「可用 = 累计 − 已花」为负）。
+  fresh.secretsUsed = Math.min(fresh.secrets.length, Math.max(0, Math.floor(num(raw.secretsUsed, 0))));
+  fresh.marketUnlocks = Array.isArray(raw.marketUnlocks)
+    ? [...new Set(raw.marketUnlocks.filter((id) => typeof id === 'string' && MARKET_GOODS.some((g) => g.id === id)))]
+    : [];
+  fresh.marketSellCount = Math.max(0, Math.floor(num(raw.marketSellCount, 0)));
   if (raw.cultivation && typeof raw.cultivation === 'object') {
     const oldQi = Math.min(CULTIVATOR_LIMIT,Math.max(0, Math.round(num(raw.cultivation.qi, 0))));
     fresh.cultivation.pills = Math.max(0, Math.round(num(raw.cultivation.pills, 0)));

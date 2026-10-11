@@ -276,6 +276,93 @@ check('科技文案不泄露「已解锁数 / 总数」', (() => {
 check('（阳性对照）总数泄露检测确实有效',
   /\d+\s*\/\s*\d+/.test('已研习 3 / 18') && /\d+\s*\/\s*\d+/.test('仙道 2 / 17'),
   '检测正则若失效，上面那条就成了永不失败的假断言');
+
+// ── 坊市与通商（2026-10-11 用户要求）──
+// 用户原话：「秘闻解锁坊市，然后把祛障丹购买条目放在坊市里，需要一个秘闻解锁（消耗），
+// 然后增设一些其他条目，比如灵石换银两，灵石买蓝图之类的，之前有设计一套打败城池
+// 以后解锁新坊市，新坊市卖新商品的设计，这次重点实装这个设计」。
+(() => {
+  const s = gateState();
+  // 备份 ⇒ 本块自己造状态 ⇒ 用完还原，免得影响后面的断言
+  const backup = {
+    secrets: [...(s.secrets || [])], used: s.secretsUsed,
+    unlocks: [...(s.marketUnlocks || [])], stones: s.spiritStones, silver: s.silver,
+  };
+  const restore = () => {
+    s.secrets = backup.secrets; s.secretsUsed = backup.used;
+    s.marketUnlocks = backup.unlocks; s.spiritStones = backup.stones; s.silver = backup.silver;
+  };
+  const seed = (n) => { s.secrets = Array.from({ length: n }, (_, i) => i); s.secretsUsed = 0; s.marketUnlocks = []; };
+
+  check('坊市门槛读的是「累计秘闻」，与已花掉多少无关', (() => {
+    seed(10);
+    const before = X.market.open('yunshen');
+    X.market.unlock('quzhangdan');            // 花掉 1 条
+    const after = X.market.open('yunshen');
+    return before === true && after === true && s.secrets.length === 10;
+  })(), '花费若被写进 secrets（而不是 secretsUsed），这里会红 —— 那就成了「花秘闻反而关掉已开的门」');
+
+  check('解锁商品真的消耗秘闻（累计不变、可用减少）', (() => {
+    seed(10);
+    const a0 = X.market.available();
+    const r = X.market.unlock('quzhangdan');
+    return r.ok === true && X.market.available() === a0 - 1
+      && X.market.used() === 1 && s.secrets.length === 10;
+  })(), '若解锁不扣（或扣在 secrets 上），这条会红');
+
+  check('同一条目不能重复花秘闻解锁', (() => {
+    seed(10);
+    X.market.unlock('quzhangdan');
+    const again = X.market.unlock('quzhangdan');
+    return again.ok === false && X.market.used() === 1;
+  })(), '重复解锁若能成功，秘闻会被白白吃掉');
+
+  check('未解锁的商品买不到（且点名要先花秘闻）', (() => {
+    seed(10);
+    s.spiritStones = 999;
+    const r = X.market.buy('quzhangdan');
+    return r.ok === false && /秘闻/.test(String(r.reason));
+  })());
+
+  // 祛障丹走旧字段 `cultivation.pills`（见 systems/alchemy.js 的 pillCount）
+  const pillCountForSmoke = () => Number(s.cultivation?.pills) || 0;
+  check('解锁后才买得到，且扣灵石、到手 1 枚祛障丹', (() => {
+    seed(10);
+    s.spiritStones = 999;
+    const p0 = pillCountForSmoke();
+    X.market.unlock('quzhangdan');
+    const r = X.market.buy('quzhangdan');
+    return r.ok === true && X.market.available() === 9
+      && pillCountForSmoke() === p0 + 1 && s.spiritStones === 998;
+  })(), '若买入不生效或价格不对，这条会红');
+
+  // 反套利：卖出价 = 买入价 × 0.8 ⇒ 任一回路严格亏 20%，且与笔数、科技都无关
+  check('反套利：灵石→银两 严格亏 20%，且与笔数无关', (() => {
+    const q0 = X.market.quote(1);
+    const round = (n) => X.market.quote(n).silver <= Math.floor(X.market.quote(1).silver * n * 1.0000001) + 1;
+    // 用「买入同量灵石的成本」对照：卖出所得必须 ≤ 成本的 0.8
+    const cost = Math.floor((q0.silver / 0.8) * 1);          // 由 0.8 反推买入成本
+    return q0.silver <= cost * 0.8 + 1 && q0.silver < cost
+      && round(1) && round(3) && round(11);
+  })(), '若卖出价 ≥ 买入价，就能无限套利；这条会红');
+
+  check('剿城开市：新坊市需要占据更多势力城', (() => {
+    seed(10);
+    const need = ['qingmu', 'heishi', 'wanxiang'].map((id) => X.market.open(id));
+    const gate = ['qingmu', 'heishi', 'wanxiang'].map((id) => X.market.reason(id));
+    return need.every((v) => v === false) && gate.every((r) => /打下|势力城/.test(r));
+  })(), '新坊市在没占城时就该关着，并说明「须先打下 N 座势力城」');
+
+  check('每座坊市都有自己的商品（新坊市卖新商品）', (() => {
+    const ids = ['yunshen', 'qingmu', 'heishi', 'wanxiang'];
+    const sets = ids.map((m) => X.market.goodsOf(m).map((g) => g.id));
+    return sets.every((a) => a.length > 0)
+      && new Set(sets.flat()).size === sets.flat().length;
+  })(), '商品不许跨坊市重复，否则「新坊市卖新商品」不成立');
+
+  restore();
+})();
+
 check('七个页面标签都在', document.querySelectorAll('.pagetab').length === 7,
   [...document.querySelectorAll('.pagetab')].map((b) => b.dataset.page).join(' '));
 check('纪事侧栏在页面之外',

@@ -3786,6 +3786,17 @@ function createState(now = Date.now()) {
     /** 已发现的秘闻在 SECRETS 里的下标。 */
     secrets: [],
 
+    /**
+     * 【策划 docs/96 坊市】已花掉的秘闻条数。
+     * `secrets` 是「累计发现」（只增不减，抽池判重也用它），这里是记账。
+     * **一切旧门槛读累计 `secrets`**，所以花钱不会关掉已经打开的门。
+     */
+    secretsUsed: 0,
+    /** 已用秘闻解锁的坊市商品 id（永久有效）。 */
+    marketUnlocks: [],
+    /** 反向兑换（灵石→银两）的次数，纯统计。 */
+    marketSellCount: 0,
+
     /** 修仙侧进度。目前只有炼气这一档。 */
     cultivation: {
       qi: 0,          // 炼气人口，与 cultivators.length 保持一致
@@ -4703,6 +4714,98 @@ const SECRETS = [
   '族中一位老人临终前说：咱们这一姓，本不该只出凡人。',
   '有人在一座废观里找到半截碑，碑上刻着「炼气」二字，其余都被磨平了。',
   '最后一个秘密听起来很平常：山里的路，走上十趟，总会遇见一次不该遇见的东西。',
+];
+
+/* ══════════ src/data/markets.js ══════════ */
+/**
+ * 区块：坊市与通商（数据表）
+ * 【策划 docs/96-坊市与通商.md】
+ *
+ * 三条设计约定（改这张表前先读）：
+ *   1. **坊市开放权来自征伐**：打下一座势力城 → 开放对应坊市。判据用「已占据」
+ *      （`worldOf(state).held`），**不用 `mapReach`** —— 地图是「战力门」不是
+ *      「路径门」（`commitExplore` 在生还判定之前就调 `mapReach`，送死也能解锁）。
+ *   2. **每件商品要用 1 条秘闻解锁，而且是消耗掉**：解锁永久有效，但秘闻一去不回。
+ *   3. **云深谷沿用旧门槛**（秘闻 ≥ SECRET_UNLOCK），不打仗也能进 —— 否则零征伐
+ *      的玩家会连祛障丹都买不到，主线直接断掉。
+ *
+ * ⚠ 商品 id 一旦发布**不许改名或删除**（老存档里按 id 记着解锁状态）。
+ */
+
+/** 每件商品解锁要花的秘闻数。 */
+const MARKET_UNLOCK_SECRETS = 1;
+
+/**
+ * 反向兑换的折价：卖出价 = 买入价 × 0.8。
+ * 【策划 docs/96】灵石→银两是本块**新开的边**（现存代码里没有），所以反套利必须自己守。
+ * 0.8 ⇒ 「银两→灵石→银两」任一回路**严格亏 20%**，且与笔数、与科技培率都无关。
+ */
+const MARKET_SELL_RATIO = 0.8;
+
+/**
+ * 商品表。
+ *   currency：'stones'（灵石）—— 目前只有灵石计价，银两走反向兑换那条边。
+ *   effect.kind：pill / pool-blueprint / clue / silver
+ *     （只允许挂在**已有**的字段上，避免再造一套库存）
+ */
+const MARKET_GOODS = [
+  {
+    id: 'quzhangdan', market: 'yunshen', name: '祛障丹', currency: 'stones', price: 1,
+    unlockSecrets: MARKET_UNLOCK_SECRETS,
+    desc: '直接购得一枚祛障丹（计入祛障丹存量，服下后有机会让族人踏入炼气）。',
+    // ⚠ 存量字段是旧的 `cultivation.pills`，出口在 systems/alchemy.js 的 pillCount，
+    //   它按 id `'quzhang'` 分流（不是 `'quzhangdan'`）—— 写成 `quzhangdan` 会静默进
+    //   丹房那份表，而界面读的是旧字段 ⇒ 买了没反应。
+    effect: { kind: 'pill', pill: 'quzhang', n: 1 },
+  },
+  {
+    id: 'poolblueprint', market: 'yunshen', name: '灵池蓝图', currency: 'stones', price: 2,
+    unlockSecrets: MARKET_UNLOCK_SECRETS,
+    desc: '凭蓝图即可营造灵池 —— 后天祛障的第二条路。',
+    effect: { kind: 'pool-blueprint' },
+  },
+  {
+    id: 'cluebag', market: 'qingmu', name: '线索袋', currency: 'stones', price: 1,
+    unlockSecrets: MARKET_UNLOCK_SECRETS,
+    desc: '一份来历不明的线索，可用于参悟与冲关。',
+    effect: { kind: 'clue', n: 1 },
+  },
+  {
+    id: 'silverbundle', market: 'heishi', name: '银两袋', currency: 'stones', price: 1,
+    unlockSecrets: MARKET_UNLOCK_SECRETS,
+    desc: '一万两白银。灵石换银两的正规入口比私下兑划算。',
+    effect: { kind: 'silver', n: 10000 },
+  },
+  {
+    id: 'cluecase', market: 'wanxiang', name: '线索匣', currency: 'stones', price: 2,
+    unlockSecrets: MARKET_UNLOCK_SECRETS,
+    desc: '三份线索装一匣，比零买省事。',
+    effect: { kind: 'clue', n: 3 },
+  },
+];
+
+/**
+ * 坊市表。
+ *   requiresSecrets：秘闻门槛（云深谷沿用旧门槛，保证零征伐也能起步）
+ *   requiresHeld：需要占据的势力城数（剿城开市）
+ */
+const MARKETS = [
+  {
+    id: 'yunshen', name: '云深谷坊市', requiresSecrets: SECRET_UNLOCK, requiresHeld: 0,
+    desc: '山里人拿石头当钱使的地方。不打仗也能进 —— 前提是先攒够秘闻。',
+  },
+  {
+    id: 'qingmu', name: '青木集市', requiresSecrets: 0, requiresHeld: 1,
+    desc: '打下第一座势力城之后，商路自然通到这里。',
+  },
+  {
+    id: 'heishi', name: '黑石城坊', requiresSecrets: 0, requiresHeld: 2,
+    desc: '两座城到手，黑石城才肯把货摆出来。',
+  },
+  {
+    id: 'wanxiang', name: '万象楼', requiresSecrets: 0, requiresHeld: 3,
+    desc: '三城在握者，才有资格上万象楼。',
+  },
 ];
 
 /* ══════════ src/core/formulas.js ══════════ */
@@ -12094,8 +12197,24 @@ function immortalAction(s,kind,param,rng=Math.random){
  const c=s.cultivation; repairCultivation(s);
  const fail=reason=>({ok:false,reason});
  let msg='';
- if(kind==='pool-blueprint'){
-   if(s.secrets.length<12)return fail('需要已发现12条秘闻');
+ if(kind==='market-unlock'){
+   // 【策划 docs/96 坊市】花秘闻解锁商品条目 —— **真的消耗**（secretsUsed 记账）。
+   const r=commitUnlockGood(s,param);
+   if(!r.ok)return fail(r.reason);
+   msg=`花掉 ${r.cost} 条秘闻，解锁了「${r.name}」`;
+ }else if(kind==='market-buy'){
+   const r=commitBuyGood(s,param);
+   if(!r.ok)return fail(r.reason);
+   msg=`买入「${r.name}」（${r.price} 灵石）`;
+ }else if(kind==='market-sell'){
+   // 【策划 docs/96】反向边：灵石 → 银两，按 0.8 折 ⇒ 换回来必亏 20%。
+   const r=commitSellStones(s,1);
+   if(!r.ok)return fail(r.reason);
+   msg=`${r.stones} 枚灵石折成 ${r.silver} 两白银`;
+ }else if(kind==='pool-blueprint'){
+   // 【策划 docs/96】蓝图现在是**坊市里的一件商品**：改用「是否已解锁」判定，
+   // 不再自带一份硬编码的秘闻门槛（那会与坊市门槛重复且更难维护）。
+   if(!goodUnlocked(s,'poolblueprint'))return fail('须先在坊市花 1 条秘闻解锁「灵池蓝图」');
    if(s.spiritStones<2)return fail('需要2灵石');
    if(c.poolBlueprint)return fail('已拥有灵池蓝图');
    s.spiritStones-=2;c.poolBlueprint=true;msg='购得灵池蓝图，已可营造灵池';
@@ -12270,6 +12389,187 @@ function immortalAction(s,kind,param,rng=Math.random){
    msg=`${back.join('、')}的元婴已回体，重新开始温养`;
  }else{return fail('未知操作')}
  pushLog(s,msg,'cultivate',null,Date.now());return {ok:true,reason:msg};
+}
+
+/* ══════════ src/systems/markets.js ══════════ */
+/**
+ * 区块：坊市与通商（规则）
+ * 【策划 docs/96-坊市与通商.md】
+ *
+ * 三件必须记住的事：
+ *   ① **秘闻是消耗品**：`state.secrets` 是「累计发现」（下标集合，只增不减），
+ *      新加 `state.secretsUsed` 记「已花掉几条」。**一切旧门槛一律读累计**，
+ *      所以花费**不会关掉已经打开的门**（这一条是写这段代码的理由）。
+ *   ② **抽池判重仍只用 `secrets`**：同一条秘闻永不重复出现（`engine.js` 里那段
+ *      不动）。花费只是记账，不与抽池耦合。
+ *   ③ **灵石→银两是本块新开的边**：现存代码里没有这条边，所以反套利必须自己守。
+ *      守法：卖出价 = 买入价 × `MARKET_SELL_RATIO`（0.8）⇒ 任一回路严格亏 20%，
+ *      而且与兑换笔数、与科技培率**都无关**（两侧同除同一个 (1+tradeStoneMult)）。
+ */
+
+/** 当前还剩几条可花的秘闻。 */
+function secretsAvailable(state) {
+  const total = (state.secrets || []).length;
+  const used = Math.max(0, Math.floor(Number(state.secretsUsed) || 0));
+  return Math.max(0, total - used);
+}
+
+function marketOf(id) {
+  return MARKETS.find((m) => m.id === id) || null;
+}
+
+function marketGoodOf(id) {
+  return MARKET_GOODS.find((g) => g.id === id) || null;
+}
+
+function marketGoodsOf(marketId) {
+  return MARKET_GOODS.filter((g) => g.market === marketId);
+}
+
+/** 已占据的势力城数（剿城开市的判据）。⚠ 用 held 不用 reached。 */
+function heldCities(state) {
+  return (worldOf(state).held || []).length;
+}
+
+/** 该坊市是否已开放。 */
+function marketOpen(state, marketId) {
+  const m = marketOf(marketId);
+  if (!m) return false;
+  if ((state.secrets || []).length < (m.requiresSecrets || 0)) return false;
+  return heldCities(state) >= (m.requiresHeld || 0);
+}
+
+/** 为什么没开放（给界面点名理由用）。 */
+function marketBlockReason(state, marketId) {
+  const m = marketOf(marketId);
+  if (!m) return '无此坊市';
+  const need = m.requiresSecrets || 0;
+  const have = (state.secrets || []).length;
+  if (have < need) return `须先集齐 ${need} 条秘闻（现有 ${have}）`;
+  const needHeld = m.requiresHeld || 0;
+  const held = heldCities(state);
+  if (held < needHeld) return `须先打下 ${needHeld} 座势力城（现有 ${held}）`;
+  return '';
+}
+
+function goodUnlocked(state, goodId) {
+  return (state.marketUnlocks || []).includes(goodId);
+}
+
+/** 解锁一件商品的前置检查（不扣秘闻）。 */
+function planUnlockGood(state, goodId) {
+  const g = marketGoodOf(goodId);
+  if (!g) return { ok: false, reason: '无此商品' };
+  if (!marketOpen(state, g.market)) {
+    return { ok: false, reason: `${marketOf(g.market).name}尚未开放：${marketBlockReason(state, g.market)}` };
+  }
+  if (goodUnlocked(state, goodId)) return { ok: false, reason: '此条目已解锁' };
+  const cost = g.unlockSecrets || MARKET_UNLOCK_SECRETS;
+  const have = secretsAvailable(state);
+  if (have < cost) {
+    return { ok: false, reason: `解锁「${g.name}」需 ${cost} 条秘闻（现有 ${have}，已花 ${state.secretsUsed || 0}）` };
+  }
+  return { ok: true, cost, name: g.name };
+}
+
+/** 花秘闻解锁一件商品 —— **真的消耗**，这是本块的核心规则。 */
+function commitUnlockGood(state, goodId) {
+  const plan = planUnlockGood(state, goodId);
+  if (!plan.ok) return plan;
+  state.secretsUsed = Math.max(0, Math.floor(Number(state.secretsUsed) || 0)) + plan.cost;
+  state.marketUnlocks = [...(state.marketUnlocks || []), goodId];
+  pushLog(state, `在${marketOf(marketGoodOf(goodId).market).name}花掉 ${plan.cost} 条秘闻，解锁了「${plan.name}」。`, 'unlock');
+  return { ok: true, ...plan };
+}
+
+/** 买一件商品的前置检查（不扣钱）。 */
+function planBuyGood(state, goodId) {
+  const g = marketGoodOf(goodId);
+  if (!g) return { ok: false, reason: '无此商品' };
+  if (!marketOpen(state, g.market)) {
+    return { ok: false, reason: `${marketOf(g.market).name}尚未开放：${marketBlockReason(state, g.market)}` };
+  }
+  if (!goodUnlocked(state, goodId)) {
+    return { ok: false, reason: `须先花 ${g.unlockSecrets || MARKET_UNLOCK_SECRETS} 条秘闻解锁「${g.name}」` };
+  }
+  const stones = g.price || 0;
+  if ((state.spiritStones || 0) < stones) {
+    return { ok: false, reason: `${g.name}需 ${stones} 灵石（现有 ${(state.spiritStones || 0).toFixed(2)}）` };
+  }
+  return { ok: true, price: stones, name: g.name };
+}
+
+/** 买下并立即生效。 */
+function commitBuyGood(state, goodId) {
+  const plan = planBuyGood(state, goodId);
+  if (!plan.ok) return plan;
+  const g = marketGoodOf(goodId);
+  state.spiritStones = Math.max(0, (state.spiritStones || 0) - plan.price);
+
+  const e = g.effect || {};
+  if (e.kind === 'pill') addPills(state, e.pill, e.n || 1);
+  else if (e.kind === 'pool-blueprint') state.cultivation.poolBlueprint = true;
+  else if (e.kind === 'clue') state.cultivation.clues = Math.max(0, Math.floor(Number(state.cultivation.clues) || 0) + (e.n || 1));
+  else if (e.kind === 'silver') state.silver = Math.max(0, (state.silver || 0) + (e.n || 0));
+
+  pushLog(state, `在${marketOf(g.market).name}买入「${g.name}」（${plan.price} 灵石）。`, 'trade');
+  return { ok: true, ...plan };
+}
+
+/**
+ * 反向兑换：**灵石 → 银两**（本块新开的边）。
+ *
+ * 买入视角：`q.silver` 银两 → `q.stones` 灵石。
+ * 卖出按 0.8 折 ⇒ 换出去再换回来**严格亏 20%**，环闭不上。
+ */
+function marketSellQuote(state, n = 1) {
+  const q = marketExchangeQuote(state);
+  const silverPerStone = q.silver / q.stones;
+  const stones = Math.max(1, Math.floor(n));
+  return { stones, silver: Math.floor(silverPerStone * MARKET_SELL_RATIO * stones) };
+}
+
+function planSellStones(state, n = 1) {
+  const quote = marketSellQuote(state, n);
+  if (!marketOpen(state, 'yunshen')) {
+    return { ok: false, reason: `云深谷坊市尚未开放：${marketBlockReason(state, 'yunshen')}` };
+  }
+  if ((state.spiritStones || 0) < quote.stones) {
+    return { ok: false, reason: `须有 ${quote.stones} 灵石（现有 ${(state.spiritStones || 0).toFixed(2)}）` };
+  }
+  return { ok: true, ...quote };
+}
+
+function commitSellStones(state, n = 1) {
+  const plan = planSellStones(state, n);
+  if (!plan.ok) return plan;
+  state.spiritStones = Math.max(0, (state.spiritStones || 0) - plan.stones);
+  state.silver = Math.max(0, (state.silver || 0) + plan.silver);
+  state.marketSellCount = Math.max(0, Math.floor(Number(state.marketSellCount) || 0)) + 1;
+  pushLog(state, `把 ${plan.stones} 枚灵石折成 ${plan.silver} 两白银（折价 ${Math.round((1 - MARKET_SELL_RATIO) * 100)}%）。`, 'trade');
+  return { ok: true, ...plan };
+}
+
+/** 界面用的一览：每座坊市 + 它的商品 + 当前状态。 */
+function marketOverview(state) {
+  return MARKETS.map((m) => ({
+    id: m.id,
+    name: m.name,
+    desc: m.desc,
+    open: marketOpen(state, m.id),
+    reason: marketBlockReason(state, m.id),
+    goods: marketGoodsOf(m.id).map((g) => {
+      const unlocked = goodUnlocked(state, g.id);
+      const buy = planBuyGood(state, g.id);
+      return {
+        id: g.id, name: g.name, desc: g.desc,
+        price: g.price, unlockSecrets: g.unlockSecrets || MARKET_UNLOCK_SECRETS,
+        unlocked,
+        canUnlock: planUnlockGood(state, g.id).ok,
+        canBuy: buy.ok,
+      };
+    }),
+  }));
 }
 
 /* ══════════ src/core/engine.js ══════════ */
@@ -15601,6 +15901,11 @@ function serialize(state) {
     quiz: state.quiz,
     spiritStones: state.spiritStones,
     secrets: state.secrets,
+    // 【策划 docs/96 坊市】秘闻消耗与坊市解锁状态。**顶层字段**，
+    // 漏在这里就会「花掉的秘闻每次读档复原、解锁的商品又锁上」。
+    secretsUsed: state.secretsUsed,
+    marketUnlocks: state.marketUnlocks,
+    marketSellCount: state.marketSellCount,
     cultivation: state.cultivation,
     // 【策划 T-1】元进度（轮回点 / 金手指）也是**顶层**字段。
     // 它原来是整个白名单里唯一「写进去又读不回来」的字段：hydrate() 会重建 meta，
@@ -15718,6 +16023,13 @@ function hydrate(raw) {
     fresh.secrets = [...new Set(raw.secrets.map((v) => Number(v)))]
       .filter((v) => Number.isInteger(v) && v >= 0 && v < SECRETS.length);
   }
+  // 【策划 docs/96 坊市】秘闻消耗与解锁状态。
+  // 子集归一化：`secretsUsed` 绝不能超过累计发现数（否则「可用 = 累计 − 已花」为负）。
+  fresh.secretsUsed = Math.min(fresh.secrets.length, Math.max(0, Math.floor(num(raw.secretsUsed, 0))));
+  fresh.marketUnlocks = Array.isArray(raw.marketUnlocks)
+    ? [...new Set(raw.marketUnlocks.filter((id) => typeof id === 'string' && MARKET_GOODS.some((g) => g.id === id)))]
+    : [];
+  fresh.marketSellCount = Math.max(0, Math.floor(num(raw.marketSellCount, 0)));
   if (raw.cultivation && typeof raw.cultivation === 'object') {
     const oldQi = Math.min(CULTIVATOR_LIMIT,Math.max(0, Math.round(num(raw.cultivation.qi, 0))));
     fresh.cultivation.pills = Math.max(0, Math.round(num(raw.cultivation.pills, 0)));
@@ -19072,6 +19384,21 @@ window.__xiuxian = {
     /** 对**任意** state 求科技可见性 —— 供「全新状态只露入门科技」那类断言用。*/
     techOf: (s, t, immortal) => techVisible(s, t, immortal),
   },
+  /** 【策划 docs/96 坊市】坊市与通商：调试与测试共用同一批判据。*/
+  market: {
+    overview: () => marketOverview(state),
+    open: (id) => marketOpen(state, id),
+    reason: (id) => marketBlockReason(state, id),
+    goodsOf: (marketId) => marketGoodsOf(marketId),
+    used: () => Math.max(0, Math.floor(Number(state.secretsUsed) || 0)),
+    available: () => secretsAvailable(state),
+    heldCities: () => heldCities(state),
+    quote: (n) => marketSellQuote(state, n),
+    unlock: (g) => commitUnlockGood(state, g),
+    buy: (g) => commitBuyGood(state, g),
+    sell: (n) => commitSellStones(state, n),
+    unlocked: () => [...(state.marketUnlocks || [])],
+  },
   /** 各数据表。调试与测试。—。也方便在控制台里直接核对数值—*/
   data: {
     buildings: BUILDINGS, techs: TECHS, map: MAP_NODES,
@@ -19346,9 +19673,14 @@ function renderImmortalExpansion(){
      + `<button class="panel-toggle" type="button" data-toggle="${key}" title="折叠 / 展开" aria-expanded="${open}">▾</button></div>`;
  };
  el.innerHTML=`
-${blk('pool','🌿 灵池 · 后天祛障')}<p>秘闻≥12后可在坊市购得灵池蓝图。灵池每秒消耗灵石，使凡人有机会后天祛障，初始天赋为1。无灵石时自动停运。</p>
+${blk('market','🏪 坊市与通商 · 剿城开市')}${(()=>{const mk=marketOverview(state);const held=heldCities(state);const avail=secretsAvailable(state);const q=marketSellQuote(state,1);return `<p>秘闻既是钥匙也是货币：集齐 ${SECRET_UNLOCK} 条可进云深谷；<b>坊市里每件商品要花 1 条秘闻解锁</b>（解锁永久、秘闻一去不回）。<b>打下一座势力城，就多开一座坊市</b>，新坊市卖别处没有的货。</p>
+<div class="immortal-statline"><span>已占城池 ${held} 座</span><span>秘闻 可用 ${avail} / 累计 ${state.secrets.length}（已花 ${state.secretsUsed||0}）</span><span>已解锁 ${(state.marketUnlocks||[]).length} 件</span></div>
+<div class="immortal-mini">${mk.map(m=>`<div class="immortal-mini-row${m.open?'':' is-locked'}"><div><b>${m.name}</b><small>${m.open?m.desc:`<span class="map-warn">${m.reason}</span>`}</small></div></div>`).join('')}</div>
+<div class="immortal-mini">${mk.flatMap(m=>m.goods.map(g=>`<div class="immortal-mini-row${m.open&&g.unlocked?'':' is-locked'}"><div><b>${g.name}</b><span class="map-tier">${m.name}</span><small>${g.desc} · 售 ${g.price} 灵石 · ${g.unlocked?'已解锁':`需 ${g.unlockSecrets} 条秘闻解锁`}</small></div>${g.unlocked?`<button class="btn" data-immortal-action="market-buy" data-good="${g.id}" ${g.canBuy?'':'disabled'}>买入</button>`:`<button class="btn" data-immortal-action="market-unlock" data-good="${g.id}" ${g.canUnlock?'':'disabled'}>解锁</button>`}</div>`)).join('')}</div>
+<div class="immortal-actions"><button class="btn" data-immortal-action="market-sell" ${q.ok?'':'disabled'}>灵石 → 银两 · 1 枚换 ${q.silver} 两（折价 20%）</button></div>`;})()}
+${blk('pool','🌿 灵池 · 后天祛障')}<p>在坊市花 1 条秘闻解锁「灵池蓝图」后即可购得。灵池每秒消耗灵石，使凡人有机会后天祛障，初始天赋为1。无灵石时自动停运。</p>
 <div class="immortal-statline"><span>灵池 ${c.pool}/10 座</span><span>灵石消耗 ${(c.pool*.00013).toFixed(5)}/秒</span><span>蓝图 ${c.poolBlueprint?'已得':'未得'}</span></div>
-<div class="immortal-actions"><button class="btn" data-immortal-action="pool-blueprint" ${c.poolBlueprint||state.secrets.length<12?'disabled':''}>坊市购蓝图 · 2灵石</button><button class="btn" data-immortal-action="pool-build" ${!c.poolBlueprint?'disabled':''}>营造灵池 · 3灵石+5万银两</button></div></div>
+<div class="immortal-actions"><button class="btn" data-immortal-action="pool-blueprint" ${c.poolBlueprint||!goodUnlocked(state,'poolblueprint')?'disabled':''}>坊市购蓝图 · 2灵石</button><button class="btn" data-immortal-action="pool-build" ${!c.poolBlueprint?'disabled':''}>营造灵池 · 3灵石+5万银两</button></div></div>
 ${blk('mine','⛏️ 寻龙探脉 · 灵石矿场')}<p>秘闻≥15后研习寻龙尺，耗费灵石勘探不同品阶与储量的灵脉。矿场将持续产出灵石，并因危险作业额外损失凡人人口。</p>
 <div class="immortal-statline"><span>寻龙尺 ${c.compass?'已研习':'未研习'}</span><span>灵脉 ${ready.length} 处可采</span><span>矿场 ${c.mineLevel?'已建成':'未建成'}</span><span>矿工 ${c.mineWorkers} 人</span></div>
 <p>${activeMine?`当前矿脉（${activeMine.grade}阶） · 储量 ${activeMine.reserve.toFixed(2)} 灵石`:'目前尚无可开采的灵脉。'}</p>
@@ -19974,6 +20306,8 @@ document.addEventListener('click',ev=>{
  if(kind==='use-human-pill')param=btn.dataset.person;
  if(kind==='mine-workers')param=document.getElementById('mine-workers')?.value;
  if(kind==='equip')param=btn.dataset.manual;
+ // 【策划 docs/96 坊市】解锁 / 买入都按商品 id 走同一个 param。
+ if(kind==='market-unlock'||kind==='market-buy')param=btn.dataset.good;
  const result=immortalAction(state,kind,param,rng);
  ui.toast(result.reason,result.ok?'ok':'warn',3600);
  if(result.ok){writeSave(state);ui.render();}

@@ -7,8 +7,24 @@ function immortalAction(s,kind,param,rng=Math.random){
  const c=s.cultivation; repairCultivation(s);
  const fail=reason=>({ok:false,reason});
  let msg='';
- if(kind==='pool-blueprint'){
-   if(s.secrets.length<12)return fail('需要已发现12条秘闻');
+ if(kind==='market-unlock'){
+   // 【策划 docs/96 坊市】花秘闻解锁商品条目 —— **真的消耗**（secretsUsed 记账）。
+   const r=commitUnlockGood(s,param);
+   if(!r.ok)return fail(r.reason);
+   msg=`花掉 ${r.cost} 条秘闻，解锁了「${r.name}」`;
+ }else if(kind==='market-buy'){
+   const r=commitBuyGood(s,param);
+   if(!r.ok)return fail(r.reason);
+   msg=`买入「${r.name}」（${r.price} 灵石）`;
+ }else if(kind==='market-sell'){
+   // 【策划 docs/96】反向边：灵石 → 银两，按 0.8 折 ⇒ 换回来必亏 20%。
+   const r=commitSellStones(s,1);
+   if(!r.ok)return fail(r.reason);
+   msg=`${r.stones} 枚灵石折成 ${r.silver} 两白银`;
+ }else if(kind==='pool-blueprint'){
+   // 【策划 docs/96】蓝图现在是**坊市里的一件商品**：改用「是否已解锁」判定，
+   // 不再自带一份硬编码的秘闻门槛（那会与坊市门槛重复且更难维护）。
+   if(!goodUnlocked(s,'poolblueprint'))return fail('须先在坊市花 1 条秘闻解锁「灵池蓝图」');
    if(s.spiritStones<2)return fail('需要2灵石');
    if(c.poolBlueprint)return fail('已拥有灵池蓝图');
    s.spiritStones-=2;c.poolBlueprint=true;msg='购得灵池蓝图，已可营造灵池';

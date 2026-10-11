@@ -694,6 +694,21 @@ window.__xiuxian = {
     /** 对**任意** state 求科技可见性 —— 供「全新状态只露入门科技」那类断言用。*/
     techOf: (s, t, immortal) => techVisible(s, t, immortal),
   },
+  /** 【策划 docs/96 坊市】坊市与通商：调试与测试共用同一批判据。*/
+  market: {
+    overview: () => marketOverview(state),
+    open: (id) => marketOpen(state, id),
+    reason: (id) => marketBlockReason(state, id),
+    goodsOf: (marketId) => marketGoodsOf(marketId),
+    used: () => Math.max(0, Math.floor(Number(state.secretsUsed) || 0)),
+    available: () => secretsAvailable(state),
+    heldCities: () => heldCities(state),
+    quote: (n) => marketSellQuote(state, n),
+    unlock: (g) => commitUnlockGood(state, g),
+    buy: (g) => commitBuyGood(state, g),
+    sell: (n) => commitSellStones(state, n),
+    unlocked: () => [...(state.marketUnlocks || [])],
+  },
   /** 各数据表。调试与测试。—。也方便在控制台里直接核对数值—*/
   data: {
     buildings: BUILDINGS, techs: TECHS, map: MAP_NODES,
@@ -968,9 +983,14 @@ function renderImmortalExpansion(){
      + `<button class="panel-toggle" type="button" data-toggle="${key}" title="折叠 / 展开" aria-expanded="${open}">▾</button></div>`;
  };
  el.innerHTML=`
-${blk('pool','🌿 灵池 · 后天祛障')}<p>秘闻≥12后可在坊市购得灵池蓝图。灵池每秒消耗灵石，使凡人有机会后天祛障，初始天赋为1。无灵石时自动停运。</p>
+${blk('market','🏪 坊市与通商 · 剿城开市')}${(()=>{const mk=marketOverview(state);const held=heldCities(state);const avail=secretsAvailable(state);const q=marketSellQuote(state,1);return `<p>秘闻既是钥匙也是货币：集齐 ${SECRET_UNLOCK} 条可进云深谷；<b>坊市里每件商品要花 1 条秘闻解锁</b>（解锁永久、秘闻一去不回）。<b>打下一座势力城，就多开一座坊市</b>，新坊市卖别处没有的货。</p>
+<div class="immortal-statline"><span>已占城池 ${held} 座</span><span>秘闻 可用 ${avail} / 累计 ${state.secrets.length}（已花 ${state.secretsUsed||0}）</span><span>已解锁 ${(state.marketUnlocks||[]).length} 件</span></div>
+<div class="immortal-mini">${mk.map(m=>`<div class="immortal-mini-row${m.open?'':' is-locked'}"><div><b>${m.name}</b><small>${m.open?m.desc:`<span class="map-warn">${m.reason}</span>`}</small></div></div>`).join('')}</div>
+<div class="immortal-mini">${mk.flatMap(m=>m.goods.map(g=>`<div class="immortal-mini-row${m.open&&g.unlocked?'':' is-locked'}"><div><b>${g.name}</b><span class="map-tier">${m.name}</span><small>${g.desc} · 售 ${g.price} 灵石 · ${g.unlocked?'已解锁':`需 ${g.unlockSecrets} 条秘闻解锁`}</small></div>${g.unlocked?`<button class="btn" data-immortal-action="market-buy" data-good="${g.id}" ${g.canBuy?'':'disabled'}>买入</button>`:`<button class="btn" data-immortal-action="market-unlock" data-good="${g.id}" ${g.canUnlock?'':'disabled'}>解锁</button>`}</div>`)).join('')}</div>
+<div class="immortal-actions"><button class="btn" data-immortal-action="market-sell" ${q.ok?'':'disabled'}>灵石 → 银两 · 1 枚换 ${q.silver} 两（折价 20%）</button></div>`;})()}
+${blk('pool','🌿 灵池 · 后天祛障')}<p>在坊市花 1 条秘闻解锁「灵池蓝图」后即可购得。灵池每秒消耗灵石，使凡人有机会后天祛障，初始天赋为1。无灵石时自动停运。</p>
 <div class="immortal-statline"><span>灵池 ${c.pool}/10 座</span><span>灵石消耗 ${(c.pool*.00013).toFixed(5)}/秒</span><span>蓝图 ${c.poolBlueprint?'已得':'未得'}</span></div>
-<div class="immortal-actions"><button class="btn" data-immortal-action="pool-blueprint" ${c.poolBlueprint||state.secrets.length<12?'disabled':''}>坊市购蓝图 · 2灵石</button><button class="btn" data-immortal-action="pool-build" ${!c.poolBlueprint?'disabled':''}>营造灵池 · 3灵石+5万银两</button></div></div>
+<div class="immortal-actions"><button class="btn" data-immortal-action="pool-blueprint" ${c.poolBlueprint||!goodUnlocked(state,'poolblueprint')?'disabled':''}>坊市购蓝图 · 2灵石</button><button class="btn" data-immortal-action="pool-build" ${!c.poolBlueprint?'disabled':''}>营造灵池 · 3灵石+5万银两</button></div></div>
 ${blk('mine','⛏️ 寻龙探脉 · 灵石矿场')}<p>秘闻≥15后研习寻龙尺，耗费灵石勘探不同品阶与储量的灵脉。矿场将持续产出灵石，并因危险作业额外损失凡人人口。</p>
 <div class="immortal-statline"><span>寻龙尺 ${c.compass?'已研习':'未研习'}</span><span>灵脉 ${ready.length} 处可采</span><span>矿场 ${c.mineLevel?'已建成':'未建成'}</span><span>矿工 ${c.mineWorkers} 人</span></div>
 <p>${activeMine?`当前矿脉（${activeMine.grade}阶） · 储量 ${activeMine.reserve.toFixed(2)} 灵石`:'目前尚无可开采的灵脉。'}</p>
@@ -1596,6 +1616,8 @@ document.addEventListener('click',ev=>{
  if(kind==='use-human-pill')param=btn.dataset.person;
  if(kind==='mine-workers')param=document.getElementById('mine-workers')?.value;
  if(kind==='equip')param=btn.dataset.manual;
+ // 【策划 docs/96 坊市】解锁 / 买入都按商品 id 走同一个 param。
+ if(kind==='market-unlock'||kind==='market-buy')param=btn.dataset.good;
  const result=immortalAction(state,kind,param,rng);
  ui.toast(result.reason,result.ok?'ok':'warn',3600);
  if(result.ok){writeSave(state);ui.render();}
