@@ -340,6 +340,17 @@ function marketExchangeCount(state) {
  * 这样「把城做大」会实打实地延长这条动脉，而不是只把单价压低。
  */
 function marketExchangeLimit(state) {
+  // 【用户实机报告 · 软锁】这里原来返回一个有限笔数（基础 12 + 每项相关科技 +4）。
+  // 后果是**可复现的死局**：玩家把灵石全买了祛障丹、丹药全失败（或修士阵亡），
+  // 而银两→灵石又有上限 ⇒ 再也换不出灵石 ⇒ 永远拿不到第一个修士。
+  //   灵石是**唯一**能撬动仙途的资源，它的来源绝不能有总量上限。
+  // 现在返回无限：兑换仍按平价结算（见 MARKET_EXCHANGE_*），反向的灵石→银两
+  // 按 0.8 折（MARKET_SELL_RATIO），所以放开上限不会造出套利空间。
+  // 函数保留（调用方与旧断言都还在用），语义变成「不设限」。
+  return Number.POSITIVE_INFINITY;
+}
+/** 旧口径的笔数上限，仅供调试/文档引用；兑换逻辑**不再**用它。 */
+function marketExchangeLegacyLimit(state) {
   let n = MARKET_EXCHANGE_MAX;
   const count = (list, map) => {
     for (const id of list || []) {

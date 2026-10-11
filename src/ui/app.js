@@ -1132,15 +1132,17 @@ function createUI({ getState, actions, rng }) {
     // 报价与实际结算共用同一个来源（derive → marketExchangeQuote），
     // 界面不再自己存一份汇率 —— 单一真相源，显示多少就结算多少。
     const q = d.marketExchange;
-    const full = d.marketExchangeCount >= d.marketExchangeLimit;
-    const can = unlocked && !full && s.silver >= q.silver;
+    // 【用户实机报告 · 软锁】兑换不再有笔数上限 —— 见 core/formulas.js 的
+    // marketExchangeLimit。界面也不该再暗示「有额度」。
+    const can = unlocked && s.silver >= q.silver;
+    const full = false;   // 【软锁修复】不再有「兑满」状态（上限已取消）
 
     const chip = $('market-chip');
-    chip.textContent = !unlocked ? `需 ${d.secretGoal} 秘闻` : full ? '已兑满' : '已通';
+    chip.textContent = !unlocked ? `需 ${d.secretGoal} 秘闻` : '已通';
     chip.className = `chip${unlocked ? (can ? ' chip-open' : '') : ' chip-locked'}`;
 
     $('market-desc').textContent = unlocked
-      ? `${fmt(q.silver)} 银两 → ${fmtStones(q.stones)} 灵石（已兑 ${d.marketExchangeCount}/${d.marketExchangeLimit} 笔）。`
+      ? `${fmt(q.silver)} 银两 → ${fmtStones(q.stones)} 灵石（已兑 ${d.marketExchangeCount} 笔，不限次数）。`
         + '那边的客人看不上银子，兑率苛刻得很。'
       : `集齐 ${d.secretGoal} 条秘闻，才能摸到这条路（现有 ${d.secretCount} 条）。`;
 

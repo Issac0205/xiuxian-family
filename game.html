@@ -5151,6 +5151,17 @@ function marketExchangeCount(state) {
  * 这样「把城做大」会实打实地延长这条动脉，而不是只把单价压低。
  */
 function marketExchangeLimit(state) {
+  // 【用户实机报告 · 软锁】这里原来返回一个有限笔数（基础 12 + 每项相关科技 +4）。
+  // 后果是**可复现的死局**：玩家把灵石全买了祛障丹、丹药全失败（或修士阵亡），
+  // 而银两→灵石又有上限 ⇒ 再也换不出灵石 ⇒ 永远拿不到第一个修士。
+  //   灵石是**唯一**能撬动仙途的资源，它的来源绝不能有总量上限。
+  // 现在返回无限：兑换仍按平价结算（见 MARKET_EXCHANGE_*），反向的灵石→银两
+  // 按 0.8 折（MARKET_SELL_RATIO），所以放开上限不会造出套利空间。
+  // 函数保留（调用方与旧断言都还在用），语义变成「不设限」。
+  return Number.POSITIVE_INFINITY;
+}
+/** 旧口径的笔数上限，仅供调试/文档引用；兑换逻辑**不再**用它。 */
+function marketExchangeLegacyLimit(state) {
   let n = MARKET_EXCHANGE_MAX;
   const count = (list, map) => {
     for (const id of list || []) {
@@ -17736,15 +17747,17 @@ function createUI({ getState, actions, rng }) {
     // 报价与实际结算共用同一个来源（derive → marketExchangeQuote），
     // 界面不再自己存一份汇率 —— 单一真相源，显示多少就结算多少。
     const q = d.marketExchange;
-    const full = d.marketExchangeCount >= d.marketExchangeLimit;
-    const can = unlocked && !full && s.silver >= q.silver;
+    // 【用户实机报告 · 软锁】兑换不再有笔数上限 —— 见 core/formulas.js 的
+    // marketExchangeLimit。界面也不该再暗示「有额度」。
+    const can = unlocked && s.silver >= q.silver;
+    const full = false;   // 【软锁修复】不再有「兑满」状态（上限已取消）
 
     const chip = $('market-chip');
-    chip.textContent = !unlocked ? `需 ${d.secretGoal} 秘闻` : full ? '已兑满' : '已通';
+    chip.textContent = !unlocked ? `需 ${d.secretGoal} 秘闻` : '已通';
     chip.className = `chip${unlocked ? (can ? ' chip-open' : '') : ' chip-locked'}`;
 
     $('market-desc').textContent = unlocked
-      ? `${fmt(q.silver)} 银两 → ${fmtStones(q.stones)} 灵石（已兑 ${d.marketExchangeCount}/${d.marketExchangeLimit} 笔）。`
+      ? `${fmt(q.silver)} 银两 → ${fmtStones(q.stones)} 灵石（已兑 ${d.marketExchangeCount} 笔，不限次数）。`
         + '那边的客人看不上银子，兑率苛刻得很。'
       : `集齐 ${d.secretGoal} 条秘闻，才能摸到这条路（现有 ${d.secretCount} 条）。`;
 
@@ -19397,6 +19410,8 @@ window.__xiuxian = {
     unlock: (g) => commitUnlockGood(state, g),
     buy: (g) => commitBuyGood(state, g),
     sell: (n) => commitSellStones(state, n),
+    /** 【软锁回归】兑换是否还能继续（不限笔数）——测试用来钉住「灵石来源不设上限」。*/
+    exchangePlan: (n) => planExchange(state, n),
     unlocked: () => [...(state.marketUnlocks || [])],
   },
   /** 各数据表。调试与测试。—。也方便在控制台里直接核对数值—*/

@@ -363,6 +363,44 @@ check('（阳性对照）总数泄露检测确实有效',
   restore();
 })();
 
+// ── 灵石来源不设总量上限（2026-10-11 用户实机报告的死局）──
+// 用户原话：「我实际游玩发现当前版本坊市银两换灵石居然是有上限的，这是不对的，
+// 比如说我换取灵石购买祛障丹，然后全部失败了，或者修士死亡了，而且坊市换灵石
+// 也没办法换了，那我就彻底卡死了，对于玩家来说是不可接受的」。
+// 灵石是**唯一**能撬动仙途的资源，它的来源一旦封顶就是可复现的死局。
+check('灵石来源不设总量上限：兑过极多笔之后仍可继续兑', (() => {
+  const s = gateState();
+  const backup = { c: s.exchangeCount, st: s.spiritStones, sv: s.silver, sec: [...(s.secrets || [])] };
+  s.secrets = Array.from({ length: 10 }, (_, i) => i);   // 门槛：云深谷需 10 条秘闻
+  s.exchangeCount = 9999;
+  s.spiritStones = 0;
+  s.silver = 1e9;
+  const r = X.market.exchangePlan(1);
+  const okNow = r && r.ok === true;
+  s.exchangeCount = backup.c; s.spiritStones = backup.st;
+  s.silver = backup.sv; s.secrets = backup.sec;
+  return okNow === true;
+})(), '若上限还在（哪怕 9999 笔后封顶），这条会红 —— 那正是用户报的「彻底卡死」');
+
+check('软锁复现链：丹药耗尽后仍能靠银两重新换到灵石', (() => {
+  const s = gateState();
+  const backup = { st: s.spiritStones, sv: s.silver, pills: s.cultivation?.pills, sec: [...(s.secrets || [])], used: s.secretsUsed };
+  s.secrets = Array.from({ length: 10 }, (_, i) => i); s.secretsUsed = 0;
+  s.spiritStones = 0; s.silver = 1e6;
+  // 走真实路径：先换灵石 → 再买祛障丹（这一步不再依赖任何「剩余额度」）
+  // 平价为 0.5 石/笔，所以换 2 笔才有 1 枚丹的钱
+  const ex = X.market.exchangePlan(2);
+  let bought = false;
+  if (ex.ok) {
+    s.spiritStones += 1;
+    X.market.unlock('quzhangdan');
+    bought = X.market.buy('quzhangdan').ok === true;
+  }
+  if (backup.pills !== undefined && s.cultivation) s.cultivation.pills = backup.pills;
+  s.spiritStones = backup.st; s.silver = backup.sv; s.secrets = backup.sec; s.secretsUsed = backup.used;
+  return ex.ok === true && bought === true;
+})(), '「换灵石 → 买丹」这条路必须永远走得通，否则玩家会永久卡在凡人篇');
+
 check('七个页面标签都在', document.querySelectorAll('.pagetab').length === 7,
   [...document.querySelectorAll('.pagetab')].map((b) => b.dataset.page).join(' '));
 check('纪事侧栏在页面之外',
@@ -5325,8 +5363,9 @@ section('仙凡经济：城市作坊与兑率');
   const q1 = X.cityEconomy().exchange;
   check('界墟提高了兑率（同价换更多灵石）', q1.stones > q0.stones,
     `${q0.stones} → ${q1.stones}`);
-  check('界墟同时撑大了坊市的胃口', X.cityEconomy().exchangeLimit > 12,
-    `${X.cityEconomy().exchangeLimit} 笔`);
+  // 【软锁修复】兑换不再有总量上限：上限恒为 Infinity，有限笔数永远不拦人。
+  check('兑换不设总量上限（上限恒为无穷）', X.cityEconomy().exchangeLimit === Infinity,
+    `${X.cityEconomy().exchangeLimit}`);
 
   // 兑换是**平价**的（用户实机裁决：两种货币体系的兑换不涨价，只有建筑涨价）
   S.immortalTechs = [];
@@ -5389,10 +5428,11 @@ section('仙凡经济：城市作坊与兑率');
     X2.ui.render();
     check('银两不够一笔时兑换按钮不可点', $2('exchange-btn').disabled === true);
     S2.silver = 100_000_000;
-    S2.exchangeCount = 12;                         // 兑满（无扩量科技 ⇒ 上限 12）
+    // 【软锁修复】不再有「兑满」：总量上限已取消（灵石是唯一能撬动仙途的资源）。
+    S2.exchangeCount = 9999;
     X2.ui.render();
-    check('兑满后按钮不可点、提示已兑满',
-      $2('exchange-btn').disabled === true && $2('market-chip').textContent === '已兑满',
+    check('兑换不限笔数：兑过极多笔后按钮仍可点、不再出现「已兑满」',
+      $2('exchange-btn').disabled === false && !/兑满/.test($2('market-chip').textContent),
       `${$2('market-chip').textContent}｜${$2('exchange-btn').textContent.trim()}`);
   }
 

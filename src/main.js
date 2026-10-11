@@ -707,6 +707,8 @@ window.__xiuxian = {
     unlock: (g) => commitUnlockGood(state, g),
     buy: (g) => commitBuyGood(state, g),
     sell: (n) => commitSellStones(state, n),
+    /** 【软锁回归】兑换是否还能继续（不限笔数）——测试用来钉住「灵石来源不设上限」。*/
+    exchangePlan: (n) => planExchange(state, n),
     unlocked: () => [...(state.marketUnlocks || [])],
   },
   /** 各数据表。调试与测试。—。也方便在控制台里直接核对数值—*/
