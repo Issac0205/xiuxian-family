@@ -689,6 +689,10 @@ window.__xiuxian = {
     dashboardKey: () => realmDashboardKey(state),
     dashboard: (key) => dashboardVisible(state, key),
     highestRealm: () => highestRealmIndex(state),
+    /** 【策划 docs/17 · 科技树门控】某一项科技此刻该不该露出（界面与测试共用同一判据）。*/
+    tech: (t, immortal) => techVisible(state, t, immortal),
+    /** 对**任意** state 求科技可见性 —— 供「全新状态只露入门科技」那类断言用。*/
+    techOf: (s, t, immortal) => techVisible(s, t, immortal),
   },
   /** 各数据表。调试与测试。—。也方便在控制台里直接核对数值—*/
   data: {

@@ -213,6 +213,69 @@ check('两条科技线的互斥 CSS 真的定义了',
   '缺 .tech-list.is-hidden{display:none} 会让 setTechLine() 变成空操作，两条线同时铺开');
 check('仙道线默认收起（两条线不能同时铺开）',
   String(document.getElementById('immortal-tech-list').className).includes('is-hidden'));
+
+// ── 科技树可见性门控（2026-10-11 用户要求）──
+// 用户原话：「我希望设置门控，玩家一进游戏看见好多未解锁科技其实是不太好的，
+// 建议只展示下一阶段的科技，每次解锁以后再出现新的科技这样玩起来会觉得每次
+// 都有新内容，而不是早早的看见了终点，因此已解锁科技数/总科技数也不要显示」。
+// 规则：可见 = 已研习 ∪ {前置全部满足}；总数一律不显示。
+const gateState = () => (typeof X.state === 'function' ? X.state() : X.state);
+const gateShown = (sel) => [...document.querySelectorAll(`${sel} .tech[data-tech]`)]
+  .filter((r) => !r.classList.contains('is-hidden')).map((r) => r.dataset.tech).sort();
+const gateWant = (s, defs, immortal) => defs
+  .filter((t) => X.visible.techOf(s, t, immortal)).map((t) => t.id).sort();
+const sameIds = (a, b) => a.length === b.length && a.every((v, i) => v === b[i]);
+
+check('凡人科技门控：界面可见集合 === 已研习 ∪ 前置满足', (() => {
+  const want = gateWant(gateState(), X.data.techs, false);
+  return sameIds(want, gateShown('#tech-list'));
+})(), (() => {
+  const want = gateWant(gateState(), X.data.techs, false);
+  const got = gateShown('#tech-list');
+  return sameIds(want, got)
+    ? `${got.length} 条`
+    : `期望 ${want.length} 条 / 实际 ${got.length} 条；少了 ${want.filter((i) => !got.includes(i)).join(',') || '无'}；多了 ${got.filter((i) => !want.includes(i)).join(',') || '无'}`;
+})());
+
+check('仙道科技门控：界面可见集合 === 已研习 ∪ 前置满足', (() => {
+  const want = gateWant(gateState(), X.data.immortalTechs, true);
+  return sameIds(want, gateShown('#immortal-tech-list'));
+})(), `${gateShown('#immortal-tech-list').length} / ${X.data.immortalTechs.length}`);
+
+check('门控确实藏起了东西（不是全露）',
+  gateShown('#tech-list').length < X.data.techs.length,
+  `${gateShown('#tech-list').length} / ${X.data.techs.length}`);
+
+// 全新状态：只该露出「零前置、且不要求秘闻」的入门科技
+check('全新状态只露入门科技', (() => {
+  const fresh = { techs: [], immortalTechs: [], secrets: [] };
+  const shown = X.data.techs.filter((t) => X.visible.techOf(fresh, t, false));
+  const entry = X.data.techs.filter(
+    (t) => !(t.requires || []).length && !(t.requiresImmortal || []).length && !t.requiresSecrets);
+  return shown.length > 0 && shown.length < X.data.techs.length
+    && sameIds(shown.map((t) => t.id).sort(), entry.map((t) => t.id).sort());
+})(), '门控若恒真（全露）或恒假（全藏），这条会红');
+
+// 解锁后下一代浮现：研习前置之前不可见 → 之后可见（两侧）
+check('研习前置后，后继科技随之出现', (() => {
+  const withParent = X.data.techs.find((t) => (t.requires || []).length);
+  if (!withParent) return false;                       // 数据表变了也要报警，不是静默通过
+  const parentId = withParent.requires[0];
+  const before = X.visible.techOf({ techs: [], immortalTechs: [], secrets: [] }, withParent, false);
+  const after = X.visible.techOf({ techs: [parentId], immortalTechs: [], secrets: [] }, withParent, false);
+  return before === false && after === true;
+})(), '门控若恒真或恒假，这条会红');
+
+check('科技文案不泄露「已解锁数 / 总数」', (() => {
+  const t = document.getElementById('tech-chip')?.textContent || '';
+  const i = document.getElementById('immortal-tech-chip')?.textContent || '';
+  const total = /\d+\s*\/\s*\d+/;
+  return !total.test(t) && !total.test(i) && !/已研习\s*\d/.test(t) && !/仙道\s*\d/.test(i);
+})(), `${document.getElementById('tech-chip')?.textContent} ｜ ${document.getElementById('immortal-tech-chip')?.textContent}`);
+// 阳性对照：证明上面的泄露检测真的能发现「已解锁 N / 总 M」这种文案
+check('（阳性对照）总数泄露检测确实有效',
+  /\d+\s*\/\s*\d+/.test('已研习 3 / 18') && /\d+\s*\/\s*\d+/.test('仙道 2 / 17'),
+  '检测正则若失效，上面那条就成了永不失败的假断言');
 check('七个页面标签都在', document.querySelectorAll('.pagetab').length === 7,
   [...document.querySelectorAll('.pagetab')].map((b) => b.dataset.page).join(' '));
 check('纪事侧栏在页面之外',

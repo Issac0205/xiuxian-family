@@ -2520,8 +2520,9 @@ body[data-theme="daotian"] ::-webkit-scrollbar-thumb:hover { background: #3a4c60
         <div class="panel-head">
           <h2>格物</h2>
           <div class="panel-head-right">
-            <span class="chip" id="tech-chip">已研习 0 / 12</span>
-            <span class="chip" id="immortal-tech-chip">仙道 0 / 17</span>
+            <!-- 【策划 docs/17 门控】初始文案也不报总数：JS 接管之前同样不该剧透 -->
+            <span class="chip" id="tech-chip">格物</span>
+            <span class="chip" id="immortal-tech-chip">仙道</span>
             <button class="btn ghost tiny" id="hide-done-btn" data-action="toggle-hide-done" title="把已经研习过的科技收起来，剩下的才看得清。">隐藏已研习</button>
             <button class="panel-toggle" data-toggle="techs" title="折叠 / 展开" aria-expanded="true">▾</button>
           </div>
@@ -11983,6 +11984,36 @@ function dashboardVisible(state, key) {
   return realmDashboardKey(state) === key;
 }
 
+/**
+ * 【策划 docs/17 · 科技树可见性门控】某一项科技现在该不该出现在列表里。
+ *
+ * 判据（三条硬规则，界面与测试共用同一个函数）：
+ *   可见 = {已研习} ∪ {前置全部满足}
+ *   —— 未达前置的不露；研习后下一代自然浮现；总数不显示（那是另一处的事）。
+ *
+ * 理由（用户原话）：一进游戏看见一大堆未解锁科技不好；早早看见终点就没有
+ * 「每次解锁都有新内容」的体感。
+ *
+ * @param {object} state 游戏状态
+ * @param {object} tech  科技定义（凡人线或仙道线）
+ * @param {boolean} immortal 该科技属于仙道线时传 true
+ */
+function techVisible(state, tech, immortal) {
+  const researched = immortal
+    ? isImmortalTechResearched(state, tech.id)
+    : isResearched(state, tech.id);
+  if (researched) return true;
+
+  // 前置三类：本线科技 / 跨线科技（凡人↔仙道咬合）/ 秘闻条数门槛
+  const missTech = (tech.requires || []).filter((id) => !isResearched(state, id));
+  const missImmortal = (tech.requiresImmortal || [])
+    .filter((id) => !isImmortalTechResearched(state, id));
+  const missSecrets = Boolean(tech.requiresSecrets)
+    && (state.secrets || []).length < CULTIVATOR_MARKET.requiresSecrets;
+
+  return !missTech.length && !missImmortal.length && !missSecrets;
+}
+
 /* ══════════ src/systems/immortal-economy.js ══════════ */
 
 /* ────────────────────────────────────────────────────────────────
@@ -16340,7 +16371,7 @@ function createUI({ getState, actions, rng }) {
     ],
     techs: [
       ['银两', (s, d) => `${fmt(Math.floor(s.silver))} / ${fmt(d.silverCap)}`],
-      ['已研习', (s) => `${s.techs.length} / ${TECHS.length}`],
+      // 【策划 docs/17 门控】原来这里有一行「已研习 N / 总 M」——看到总数就是剧透，已移除。
     ],
     trade: [
       ['银两', (s, d) => `${fmt(Math.floor(s.silver))} / ${fmt(d.silverCap)}`],
@@ -16985,20 +17016,27 @@ function createUI({ getState, actions, rng }) {
     $('line-immortal-btn')?.classList.toggle('is-active', imm);
   }
 
-  /** 「隐藏已研习」：把 done 的科技收起，免得列表越拉越长。 */
-  function syncHideDone() {
-    const hide = Boolean(state()?.ui?.hideDoneTechs);
-
-    const btn = $('hide-done-btn');
-    btn.classList.toggle('is-active', hide);
-    btn.textContent = hide ? '显示全部' : '隐藏已研习';
+  /**
+   * 【策划 docs/17 · 科技树可见性门控】统一决定哪些科技行可见。
+   *
+   * 两条叠加规则：
+   *   ① 门控（techVisible）：未达前置的不露 —— 只展示「已研习 + 当前可研习」，
+   *      研习后下一代自然浮现，避免玩家一进游戏就看见终点；
+   *   ② 「隐藏已研习」开关：把已完成的行收起来，免得列表越拉越长。
+   *
+   * 采用 `is-hidden` 类而不是不渲染 DOM —— 这样「所有科技行都在 DOM 里」的
+   * 既有断言（smoke 里数 .tech[data-tech] 条数）不被破坏。
+   */
+  function applyTechVisibility(s) {
+    const hide = Boolean(s?.ui?.hideDoneTechs);
 
     for (const tech of TECHS) {
       const ref = techRefs[tech.id];
       if (!ref) continue;
+      const gatedOut = !techVisible(s, tech, false);
       ref.root.classList.toggle(
         'is-hidden',
-        hide && ref.root.classList.contains('is-done'),
+        gatedOut || (hide && ref.root.classList.contains('is-done')),
       );
     }
     // 一整代都被藏起来的话，连标题一起收掉
@@ -17011,8 +17049,24 @@ function createUI({ getState, actions, rng }) {
     for (const tech of IMMORTAL_TECHS) {
       const ref = immortalTechRefs[tech.id];
       if (!ref) continue;
-      ref.root.classList.toggle('is-hidden', hide && ref.root.classList.contains('is-done'));
+      const gatedOut = !techVisible(s, tech, true);
+      ref.root.classList.toggle(
+        'is-hidden',
+        gatedOut || (hide && ref.root.classList.contains('is-done')),
+      );
     }
+  }
+
+  /** 「隐藏已研习」：把 done 的科技收起，免得列表越拉越长。 */
+  function syncHideDone() {
+    const s = state();
+    const hide = Boolean(s?.ui?.hideDoneTechs);
+
+    const btn = $('hide-done-btn');
+    btn.classList.toggle('is-active', hide);
+    btn.textContent = hide ? '显示全部' : '隐藏已研习';
+
+    applyTechVisibility(s);
   }
 
   function updateCard(def, s, d) {
@@ -17124,12 +17178,13 @@ function createUI({ getState, actions, rng }) {
     }
 
     updateImmortalTechs(s);
+    // 状态类（is-done/is-ready…）刷新完才能决定可见性 ← 放在这里
+    applyTechVisibility(s);
 
     const chip = $('tech-chip');
     const ready = researchableCount(s);
-    chip.textContent = ready > 0
-      ? `已研习 ${s.techs.length} / ${TECHS.length} · ${ready} 项可研习`
-      : `已研习 ${s.techs.length} / ${TECHS.length}`;
+    // 【策划 docs/17 门控】不显示已解锁数/总数 —— 看到终点就是剧透，只报「当前可研习」。
+    chip.textContent = ready > 0 ? `${ready} 项可研习` : '暂无可研习的科技';
     chip.className = `chip${ready > 0 ? ' chip-open' : ''}`;
     const techNav = document.querySelector('.pagetab[data-page="techs"]');
     if (techNav) techNav.dataset.ready = String(ready > 0 || researchableImmortalCount(s) > 0);
@@ -17173,11 +17228,9 @@ function createUI({ getState, actions, rng }) {
 
     const chip = $('immortal-tech-chip');
     if (!chip) return;
-    const owned = (s.immortalTechs || []).length;
     const ready = researchableImmortalCount(s);
-    chip.textContent = ready > 0
-      ? `仙道 ${owned} / ${IMMORTAL_TECHS.length} · ${ready} 项可参悟`
-      : `仙道 ${owned} / ${IMMORTAL_TECHS.length}`;
+    // 【策划 docs/17 门控】同上：不报总数，只报「当前可参悟」。
+    chip.textContent = ready > 0 ? `${ready} 项可参悟` : '暂无可参悟的功法';
     chip.className = `chip${ready > 0 ? ' chip-open' : ''}`;
   }
 
@@ -19014,6 +19067,10 @@ window.__xiuxian = {
     dashboardKey: () => realmDashboardKey(state),
     dashboard: (key) => dashboardVisible(state, key),
     highestRealm: () => highestRealmIndex(state),
+    /** 【策划 docs/17 · 科技树门控】某一项科技此刻该不该露出（界面与测试共用同一判据）。*/
+    tech: (t, immortal) => techVisible(state, t, immortal),
+    /** 对**任意** state 求科技可见性 —— 供「全新状态只露入门科技」那类断言用。*/
+    techOf: (s, t, immortal) => techVisible(s, t, immortal),
   },
   /** 各数据表。调试与测试。—。也方便在控制台里直接核对数值—*/
   data: {

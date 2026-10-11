@@ -79,7 +79,7 @@ function createUI({ getState, actions, rng }) {
     ],
     techs: [
       ['银两', (s, d) => `${fmt(Math.floor(s.silver))} / ${fmt(d.silverCap)}`],
-      ['已研习', (s) => `${s.techs.length} / ${TECHS.length}`],
+      // 【策划 docs/17 门控】原来这里有一行「已研习 N / 总 M」——看到总数就是剧透，已移除。
     ],
     trade: [
       ['银两', (s, d) => `${fmt(Math.floor(s.silver))} / ${fmt(d.silverCap)}`],
@@ -724,20 +724,27 @@ function createUI({ getState, actions, rng }) {
     $('line-immortal-btn')?.classList.toggle('is-active', imm);
   }
 
-  /** 「隐藏已研习」：把 done 的科技收起，免得列表越拉越长。 */
-  function syncHideDone() {
-    const hide = Boolean(state()?.ui?.hideDoneTechs);
-
-    const btn = $('hide-done-btn');
-    btn.classList.toggle('is-active', hide);
-    btn.textContent = hide ? '显示全部' : '隐藏已研习';
+  /**
+   * 【策划 docs/17 · 科技树可见性门控】统一决定哪些科技行可见。
+   *
+   * 两条叠加规则：
+   *   ① 门控（techVisible）：未达前置的不露 —— 只展示「已研习 + 当前可研习」，
+   *      研习后下一代自然浮现，避免玩家一进游戏就看见终点；
+   *   ② 「隐藏已研习」开关：把已完成的行收起来，免得列表越拉越长。
+   *
+   * 采用 `is-hidden` 类而不是不渲染 DOM —— 这样「所有科技行都在 DOM 里」的
+   * 既有断言（smoke 里数 .tech[data-tech] 条数）不被破坏。
+   */
+  function applyTechVisibility(s) {
+    const hide = Boolean(s?.ui?.hideDoneTechs);
 
     for (const tech of TECHS) {
       const ref = techRefs[tech.id];
       if (!ref) continue;
+      const gatedOut = !techVisible(s, tech, false);
       ref.root.classList.toggle(
         'is-hidden',
-        hide && ref.root.classList.contains('is-done'),
+        gatedOut || (hide && ref.root.classList.contains('is-done')),
       );
     }
     // 一整代都被藏起来的话，连标题一起收掉
@@ -750,8 +757,24 @@ function createUI({ getState, actions, rng }) {
     for (const tech of IMMORTAL_TECHS) {
       const ref = immortalTechRefs[tech.id];
       if (!ref) continue;
-      ref.root.classList.toggle('is-hidden', hide && ref.root.classList.contains('is-done'));
+      const gatedOut = !techVisible(s, tech, true);
+      ref.root.classList.toggle(
+        'is-hidden',
+        gatedOut || (hide && ref.root.classList.contains('is-done')),
+      );
     }
+  }
+
+  /** 「隐藏已研习」：把 done 的科技收起，免得列表越拉越长。 */
+  function syncHideDone() {
+    const s = state();
+    const hide = Boolean(s?.ui?.hideDoneTechs);
+
+    const btn = $('hide-done-btn');
+    btn.classList.toggle('is-active', hide);
+    btn.textContent = hide ? '显示全部' : '隐藏已研习';
+
+    applyTechVisibility(s);
   }
 
   function updateCard(def, s, d) {
@@ -863,12 +886,13 @@ function createUI({ getState, actions, rng }) {
     }
 
     updateImmortalTechs(s);
+    // 状态类（is-done/is-ready…）刷新完才能决定可见性 ← 放在这里
+    applyTechVisibility(s);
 
     const chip = $('tech-chip');
     const ready = researchableCount(s);
-    chip.textContent = ready > 0
-      ? `已研习 ${s.techs.length} / ${TECHS.length} · ${ready} 项可研习`
-      : `已研习 ${s.techs.length} / ${TECHS.length}`;
+    // 【策划 docs/17 门控】不显示已解锁数/总数 —— 看到终点就是剧透，只报「当前可研习」。
+    chip.textContent = ready > 0 ? `${ready} 项可研习` : '暂无可研习的科技';
     chip.className = `chip${ready > 0 ? ' chip-open' : ''}`;
     const techNav = document.querySelector('.pagetab[data-page="techs"]');
     if (techNav) techNav.dataset.ready = String(ready > 0 || researchableImmortalCount(s) > 0);
@@ -912,11 +936,9 @@ function createUI({ getState, actions, rng }) {
 
     const chip = $('immortal-tech-chip');
     if (!chip) return;
-    const owned = (s.immortalTechs || []).length;
     const ready = researchableImmortalCount(s);
-    chip.textContent = ready > 0
-      ? `仙道 ${owned} / ${IMMORTAL_TECHS.length} · ${ready} 项可参悟`
-      : `仙道 ${owned} / ${IMMORTAL_TECHS.length}`;
+    // 【策划 docs/17 门控】同上：不报总数，只报「当前可参悟」。
+    chip.textContent = ready > 0 ? `${ready} 项可参悟` : '暂无可参悟的功法';
     chip.className = `chip${ready > 0 ? ' chip-open' : ''}`;
   }
 

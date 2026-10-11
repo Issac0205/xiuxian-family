@@ -163,3 +163,33 @@ function realmDashboardKey(state) {
 function dashboardVisible(state, key) {
   return realmDashboardKey(state) === key;
 }
+
+/**
+ * 【策划 docs/17 · 科技树可见性门控】某一项科技现在该不该出现在列表里。
+ *
+ * 判据（三条硬规则，界面与测试共用同一个函数）：
+ *   可见 = {已研习} ∪ {前置全部满足}
+ *   —— 未达前置的不露；研习后下一代自然浮现；总数不显示（那是另一处的事）。
+ *
+ * 理由（用户原话）：一进游戏看见一大堆未解锁科技不好；早早看见终点就没有
+ * 「每次解锁都有新内容」的体感。
+ *
+ * @param {object} state 游戏状态
+ * @param {object} tech  科技定义（凡人线或仙道线）
+ * @param {boolean} immortal 该科技属于仙道线时传 true
+ */
+function techVisible(state, tech, immortal) {
+  const researched = immortal
+    ? isImmortalTechResearched(state, tech.id)
+    : isResearched(state, tech.id);
+  if (researched) return true;
+
+  // 前置三类：本线科技 / 跨线科技（凡人↔仙道咬合）/ 秘闻条数门槛
+  const missTech = (tech.requires || []).filter((id) => !isResearched(state, id));
+  const missImmortal = (tech.requiresImmortal || [])
+    .filter((id) => !isImmortalTechResearched(state, id));
+  const missSecrets = Boolean(tech.requiresSecrets)
+    && (state.secrets || []).length < CULTIVATOR_MARKET.requiresSecrets;
+
+  return !missTech.length && !missImmortal.length && !missSecrets;
+}
