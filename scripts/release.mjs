@@ -63,7 +63,10 @@ step(1, DOCS_ONLY ? '断言本批提交不含 src / UI 改动' : '工作区状�
   //   本项目真实踩过：一次 merge 提交的内容与远端逐字节相同 ⇒ `git diff` 为空 ⇒
   //   旧写法报「没有待推送」并直接 exit 0，把那个提交**静默留在本地**。
   //   三点 `origin/main...HEAD` 取「本批带来的内容变化」，仅用于列文件。
-  const files = capture('git', ['diff', '--name-only', 'origin/main...HEAD']).split('\n').filter(Boolean);
+  // ⚠ `-z`（NUL 分隔、不做转义）：默认 `--name-only` 会把非 ASCII 路径转义成
+  //   `docs/91-\350\220...`。RISKY 正则只匹配 ASCII 前缀，所以转义不影响判定，
+  //   但**打印出来没人看得懂**，而且任何"拿路径跟字面中文比较"的下游都会永远不等。
+  const files = capture('git', ['diff', '--name-only', '-z', 'origin/main...HEAD']).split('\0').filter(Boolean);
   console.log(`${C.dim}  待推送 ${nCommits} 个提交，涉及 ${files.length} 个文件：${C.off}`);
   for (const f of files) console.log(`${C.dim}    ${f}${C.off}`);
 

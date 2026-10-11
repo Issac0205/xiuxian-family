@@ -158,7 +158,12 @@ step('推送前置检查（分叉 + 产物卫生）');
 step('提交你显式列出的文件（提交到本地，不推送）');
 {
   run('git', ['add', '--', ...PATHS]);
-  const staged = cap('git', ['diff', '--cached', '--name-only']).split('\n').filter(Boolean);
+  // ⚠ 必须用 `-z`（NUL 分隔、**不做转义**）：默认的 `--name-only` 会对非 ASCII 路径
+  //   做 C 风格转义（`docs/91-\350\220...`），拿它跟字面中文比较**永远不等**
+  //   ⇒ **凡改中文文档的批次都在这一步被误拒**。本项目真实发生过：多个成员因此
+  //   弃用本脚本、改用手工 `git add` + `git commit -F` —— 等于把闸门绕掉了。
+  //   **一条会误拒正确操作的闸门等于没有闸门**，因为用户会学会绕开它。
+  const staged = cap('git', ['diff', '--cached', '--name-only', '-z']).split('\0').filter(Boolean);
   if (!staged.length) {
     console.log(`${C.dim}  这些文件没有改动，跳过提交${C.off}`);
   } else {
