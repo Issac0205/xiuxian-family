@@ -407,7 +407,11 @@ const CODEX_CHAPTERS = [
           `现建 ${n} 座`,
           `第 ${n + 1} 座造价：${fmt(b.baseCost * Math.pow(b.growth, n))} 银两`,
         ];
-        if (b.tech) out.push(`需研习：${TECH_MAP[b.tech]?.name || b.tech}`);
+        // 【修复 用户实机缺陷 ③·拼音泄漏】百科这里有**和建筑卡完全一样的那处漏**：
+        //   `TECH_MAP[b.tech]?.name || b.tech`。`TECH_MAP` 只有凡人线，
+        //   而百科条目也会引用仙道线 id ⇒ 回退打印拼音。
+        //   统一改走 `techLabelOf()`（两条线一起查；查不到给中文「未知科技」）。
+        if (b.tech) out.push(`需研习：${techLabelOf(b.tech)}`);
         if (b.footnote) out.push(b.footnote());
         return out;
       },

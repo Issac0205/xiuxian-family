@@ -3951,6 +3951,39 @@ section('用户实机缺陷：仙途死锁 / 百科自锁 / 拼音泄漏');
       .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
     return !/\|\|\s*def\.tech\b/.test(src) && /techLabelOf\(/.test(src);
   })());
+  /* 【验收 5/8】百科正文同样要扫 —— 建筑卡修了、百科漏了，是这个 bug 的**第二个落点**
+   * （`src/data/codex.js` 原来也有 `TECH_MAP[b.tech]?.name || b.tech`）。
+   * 这条直接调百科自己的 `lines()` 取正文，凡是「需研习：」「须研习「」后面跟纯小写标识符就判红。 */
+  check('缺陷③（机械扫描·百科正文）：百科吐出的正文里不出现小写标识符泄漏', (() => {
+    const srcBad = readFileSync('src/data/codex.js', 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+    if (/\|\|\s*b\.tech\b/.test(srcBad)) return false;   // 源码层面先拦一次
+    // ⚠ `X.codex.raw()` 返回的是**章节**（每章有 entries），不是条目数组 ——
+    //   直接 for..of 会拿到章节对象、`lines` 不存在 ⇒ 收集到 0 段（假失败）。
+    const entries = [];
+    for (const ch of X.codex.raw()) for (const e of (ch.entries || [])) entries.push(e);
+    const bodies = [];
+    for (const e of entries) {
+      if (e.prose) bodies.push(String(e.prose));
+      if (typeof e.lines === 'function') {
+        try { for (const l of e.lines(state) || []) bodies.push(String(l)); } catch { /* 缺前置的条目，跳过 */ }
+      }
+    }
+    const text = bodies.join('\n');
+    return entries.length > 30 && bodies.length > 20
+      && !/(需研习|须研习)[：:]?\s*「?[a-z0-9_]+」?/.test(text);
+  })(), (() => {
+    const entries = [];
+    for (const ch of X.codex.raw()) for (const e of (ch.entries || [])) entries.push(e);
+    const bodies = [];
+    for (const e of entries) {
+      if (e.prose) bodies.push(String(e.prose));
+      if (typeof e.lines === 'function') { try { for (const l of e.lines(state) || []) bodies.push(String(l)); } catch {} }
+    }
+    const hits = [...bodies.join('\n').matchAll(/(需研习|须研习)[：:]?\s*「?([a-z0-9_]+)」?/g)].map((m) => m[2]);
+    return `${entries.length} 条 / ${bodies.length} 段正文，泄漏 ${hits.length} 处${hits.length ? '：' + [...new Set(hits)].join(',') : ''}`;
+  })());
 }
 
 section('T-6 结丹（每一次修为满，都是一次下注）');{
