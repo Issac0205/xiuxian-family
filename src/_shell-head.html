@@ -669,6 +669,12 @@ body {
 /* ───────────────────────── 格物（科技） ───────────────────────── */
 
 .tech-list { padding: 4px 0 8px; }
+/* 【缺陷修复 · 由 6d2ce7f 引入】凡人 / 仙道 两条科技线的互斥显示。
+   原先 .is-hidden 只给 .tech 与 .tech-group 定过（见下方「隐藏已研习」那段），
+   唯独漏了 .tech-list —— 于是 setTechLine() 的 class 切换是个**空操作**：
+   #immortal-tech-list 上的 `class="tech-list is-hidden"` 毫无视觉效果，仙道线永远可见。
+   两条科技线各 18 / 21 项，同时铺出来会让人以为「凡人线没了」。这里补上。 */
+.tech-list.is-hidden { display: none; }
 
 /* 两条科技线的切换。仙道那一半整体偏青，与凡人侧的暖金区分开。 */
 .tech-lines {

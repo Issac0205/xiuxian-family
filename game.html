@@ -669,6 +669,12 @@ body {
 /* ───────────────────────── 格物（科技） ───────────────────────── */
 
 .tech-list { padding: 4px 0 8px; }
+/* 【缺陷修复 · 由 6d2ce7f 引入】凡人 / 仙道 两条科技线的互斥显示。
+   原先 .is-hidden 只给 .tech 与 .tech-group 定过（见下方「隐藏已研习」那段），
+   唯独漏了 .tech-list —— 于是 setTechLine() 的 class 切换是个**空操作**：
+   #immortal-tech-list 上的 `class="tech-list is-hidden"` 毫无视觉效果，仙道线永远可见。
+   两条科技线各 18 / 21 项，同时铺出来会让人以为「凡人线没了」。这里补上。 */
+.tech-list.is-hidden { display: none; }
 
 /* 两条科技线的切换。仙道那一半整体偏青，与凡人侧的暖金区分开。 */
 .tech-lines {
@@ -15342,6 +15348,22 @@ function createUI({ getState, actions, rng }) {
 
   function buildTechs() {
     const host = $('tech-list');
+    // 【缺陷修复 · 由 6d2ce7f 引入】静态骨架把 #tech-list 包在
+    // `.tech-list-static-placeholder[hidden]` 里（本意是 JS 接管前藏住静态标记）。
+    // 但 buildTechs 是往 #tech-list **内部**重建的，于是整条凡人科技线永远待在
+    // hidden 祖先内部 —— 界面上一条都看不见（房地产 / 建筑学 / 钱庄 / …），
+    // 玩家会以为这些内容被删掉了，而家业页的建筑卡片还在提示
+    // 「须研习『房地产』」，形成死结。
+    // smoke 抓不到这个：`#tech-list .tech[data-tech].length === 18` 照样通过，
+    // 因为 DOM 里确实有 18 个子节点 —— 无头垫片不计算可见性。
+    // 修法：JS 接管后把占位层的 hidden 摘掉。容器 (#tech-list) 留在原位即可见，
+    // 而且保住了原本「JS 接管前藏住静态标记」的防闪意图 —— 因为解除隐藏时
+    // 紧跟其后的 innerHTML='' 会把静态标记清掉，玩家只可能看到 JS 构建的结果。
+    // ⚠ 不要改用 insertBefore 把容器搬出去：无头垫片 scripts/dom-shim.mjs 没实现它，
+    //    会抛 "insertBefore is not a function"；而它的 appendChild(:62) 不先从旧父节点
+    //    摘除，搬移会变成复制。`hidden` 是 REFLECTED_BOOL，属性赋值即可生效。
+    const ph = host.parentElement;
+    if (ph && ph.classList.contains('tech-list-static-placeholder')) ph.hidden = false;
     host.innerHTML = '';
     techGroups.length = 0;
 

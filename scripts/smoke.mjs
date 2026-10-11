@@ -162,6 +162,57 @@ check('两条线的切换按钮都在',
   Boolean(document.querySelector('[data-action="tech-line"][data-line="mortal"]'))
   && Boolean(document.querySelector('[data-action="tech-line"][data-line="immortal"]'))
   && Boolean(document.querySelector('#immortal-tech-chip')));
+
+// ── 可见性回归守卫（2026-10-11 用户报「根本没有房地产了」后补）──
+// 背景：6d2ce7f 把 #tech-list 包进了 `.tech-list-static-placeholder[hidden]`，
+// 而 buildTechs() 是往它**内部**重建列表的 —— 于是整条凡人科技线
+//（房地产 / 建筑学 / 金融 / … 共 18 条）在浏览器里一条都看不见。
+//
+// 最刺眼的地方是：上面那条「凡人科技行数与数据表一致」**照样全绿**。
+// 因为 DOM 里确实有 18 个子节点，只是被祖先的 hidden 罩住了 ——
+// **无头垫片不计算可见性**。所以可见性必须单独钉住，不能靠行数断言代替。
+//
+// 玩家看到的症状：家业页的建筑卡片写着「须研习『房地产』」，
+// 而去格物页找房地产却什么都没有 —— 死结。
+function hiddenAncestor(el) {
+  for (let p = el.parentElement; p; p = p.parentElement) {
+    if (p.hidden === false) continue;                    // 显式取消隐藏（浏览器与垫片都认属性赋值）
+    if (p.hidden === true) return p;
+    if (typeof p.getAttribute === 'function' && p.getAttribute('hidden') !== null) return p;
+  }
+  return null;
+}
+check('凡人科技容器没有被 hidden 祖先罩住',
+  hiddenAncestor(document.getElementById('tech-list')) === null,
+  (() => {
+    const a = hiddenAncestor(document.getElementById('tech-list'));
+    return a ? `祖先 .${a.className} 带 hidden —— 整条凡人科技线不可见` : '';
+  })());
+// 阳性对照：证明上面那个检测函数**真的能发现** hidden 祖先，而不是恒返回 null。
+// 少了这条，上面那条断言在检测函数失效时会变成「永不失败的假断言」——
+// 那正是这个 bug 头一次能活下来的机制：断言在，但测不到东西。
+// ⚠ 不要拿骨架里的静态元素（如 #wb-detail）当样本：实测那条对照是**失败**的，
+//   说明 dom-shim 的解析器没有把 `hidden` 属性变成检测函数看得见的形态。
+//   所以这里用 createElement + setAttribute 自造一个样本，只依赖垫片自己的 API。
+check('（阳性对照）hidden 祖先检测函数确实有效', (() => {
+  const wrap = document.createElement('div');
+  const probe = document.createElement('div');
+  wrap.setAttribute('hidden', '');
+  wrap.appendChild(probe);
+  return hiddenAncestor(probe) !== null;
+})(), '检测函数若恒返回 null，上面那条断言就是空的');
+// 阳性对照 2：没带 hidden 的祖先不能被误判（否则上面那条是靠「检测函数太敏感」蒙过去的）
+check('（阳性对照）没有 hidden 的祖先不会误判', (() => {
+  const wrap = document.createElement('div');
+  const probe = document.createElement('div');
+  wrap.appendChild(probe);
+  return hiddenAncestor(probe) === null;
+})());
+check('两条科技线的互斥 CSS 真的定义了',
+  /\.tech-list\.is-hidden\s*\{[^}]*display\s*:\s*none/.test(html),
+  '缺 .tech-list.is-hidden{display:none} 会让 setTechLine() 变成空操作，两条线同时铺开');
+check('仙道线默认收起（两条线不能同时铺开）',
+  String(document.getElementById('immortal-tech-list').className).includes('is-hidden'));
 check('七个页面标签都在', document.querySelectorAll('.pagetab').length === 7,
   [...document.querySelectorAll('.pagetab')].map((b) => b.dataset.page).join(' '));
 check('纪事侧栏在页面之外',

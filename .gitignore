@@ -12,3 +12,5 @@ _*out.txt
 # 调试者做界面临场确认时的一次性产物
 _shot.html
 docs/dbg-*.png
+# 调试者跑 build/smoke/balance 时的 stdout 重定向产物
+_dbg-*.txt
