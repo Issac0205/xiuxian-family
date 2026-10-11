@@ -3,8 +3,8 @@
  * 脚本：**主策专用** ——「重新过一遍审查门 → 推送到 GitHub」
  *
  * 用法：
- *   npm run release
- *   node scripts/release.mjs --yes      # 跳过交互确认（自动化用）
+ *   npm run release                    # 常规：工作区必须干净，重跑全部审查
+ *   node scripts/release.mjs --docs-only   # 只推「不含 src/UI 改动」的批次
  *
  * 为什么单独一个脚本（2026-10-11 用户决定）：
  *   用户明确要求「推送只能由队长进行」。成员跑 `npm run ship` 只提交到本地，
@@ -14,25 +14,20 @@
  *   不可见 + 投帖问路/金丹晋升两处入口是死的，而冒烟 **805 项全绿**。
  *   **断言绿 ≠ 玩家能用** —— 放行必须有人在真浏览器里看过。
  *
- * 本脚本与 ship.mjs 的区别（重要）：
- *   ship.mjs 在**改动提交之前**跑审查门，审的是工作区；
- *   本脚本在**推送之前**重跑一遍，审的是**即将推出去的那个提交**。
- *   中间可能有人又改了东西 —— 所以必须重审，不能复用 ship 的结论。
- *
- * 步骤：
- *   0. 工作区必须干净（推送的是提交，不是工作区）
- *   1. 构建产物必须与 src/ 一致（防「改了源码忘了 build」）
- *   2. 冒烟测试
- *   3. 界面可见性审查（真实浏览器）
- *   4. 分叉检查（分叉时 push 必被拒，且与网络无关）
- *   5. 推送
+ * 为什么要有 `--docs-only`（而不是「偷偷 push 一下」）：
+ *   第 1–3 步都跑在**工作区**上。多 agent 共用一个工作区时，别人正在改
+ *   `src/**`（本项目常态），此时跑 gate 验证的**不是要推的东西** —— 这正是
+ *   这道门存在的原因。但「一批提交只含 docs / 工具脚本、完全不含 src 与 UI」
+ *   是**可机械判定**的情形，对它们跑界面审查是空集。
+ *   所以不搞例外、不偷偷绕过，而是**把这条通道写进门里并自我验证**：
+ *   它先断言 `origin/main..HEAD` 的改动不碰任何 src/UI 文件，碰了就拒绝。
  * ──────────────────────────────────────────────────────────────── */
 
 import { spawnSync } from 'node:child_process';
 
 const C = { dim: '\x1b[2m', red: '\x1b[31m', green: '\x1b[32m', gold: '\x1b[33m', off: '\x1b[0m' };
-const TOTAL = 6;
-const SKIP_CONFIRM = process.argv.includes('--yes');
+const DOCS_ONLY = process.argv.includes('--docs-only');
+const TOTAL = DOCS_ONLY ? 3 : 6;
 
 function run(cmd, args, { allowFail = false } = {}) {
   const r = spawnSync(cmd, args, { stdio: 'inherit' });
@@ -52,52 +47,81 @@ function capture(cmd, args) {
 const NODE = process.execPath;
 const step = (n, t) => console.log(`\n${C.gold}[${n}/${TOTAL}]${C.off} ${t}`);
 
-/* ── 步骤 0：工作区必须干净 ── */
-step(0, '工作区状态检查');
+if (DOCS_ONLY) {
+  console.log(`${C.gold}模式：--docs-only${C.off}${C.dim}（只放行不含 src/UI 改动的提交批次）${C.off}`);
+}
+
+/* ── 步骤 1：批次判定 ── */
+step(1, DOCS_ONLY ? '断言本批提交不含 src / UI 改动' : '工作区状态检查');
 {
-  const dirty = capture('git', ['status', '--porcelain']);
-  if (dirty) {
-    console.error(`${C.red}✗ 工作区有未提交改动 —— 推送的必须是提交，不是工作区。${C.off}`);
-    for (const l of dirty.split('\n').filter(Boolean)) console.error(`${C.dim}    ${l}${C.off}`);
-    console.error(`${C.dim}  先跑 npm run ship -- "说明" 把它们提交掉。${C.off}`);
-    process.exit(1);
-  }
-  const ahead = capture('git', ['log', '--oneline', 'origin/main..HEAD']).split('\n').filter(Boolean);
-  if (!ahead.length) {
+  const files = capture('git', ['diff', '--name-only', 'origin/main..HEAD']).split('\n').filter(Boolean);
+  if (!files.length) {
     console.log(`${C.green}✓ 没有待推送的提交，已是最新${C.off}`);
     process.exit(0);
   }
-  console.log(`${C.dim}  待推送 ${ahead.length} 个提交：${C.off}`);
-  for (const l of ahead) console.log(`${C.dim}    ${l}${C.off}`);
+  console.log(`${C.dim}  待推送 ${capture('git', ['rev-list', '--count', 'origin/main..HEAD'])} 个提交，涉及 ${files.length} 个文件：${C.off}`);
+  for (const f of files) console.log(`${C.dim}    ${f}${C.off}`);
+
+  if (DOCS_ONLY) {
+    // 会改变玩家所见的路径：src/**、构建产物、页面骨架、以及三个"审查器"自身。
+    // 其余（docs/**、.gitignore、package.json、ship/release/savecompat/snapshot/rollback/balance）
+    // 不影响界面，故对它们跑界面审查是空集。
+    const RISKY = /^(src\/|game\.html$|scripts\/(smoke|uicheck|dom-shim)\.mjs$)/;
+    const risky = files.filter((f) => RISKY.test(f));
+    if (risky.length) {
+      console.error(`\n${C.red}✗ 本批提交动了会改变玩家所见的东西 —— --docs-only 拒绝放行：${C.off}`);
+      for (const f of risky) console.error(`${C.dim}    ${f}${C.off}`);
+      console.error(`${C.dim}  这些必须走完整门（要求工作区干净，好让 build/smoke/uicheck 验证的`);
+      console.error(`${C.dim}  就是要推的东西）。等改 src 的人收工后跑 npm run release。${C.off}`);
+      process.exit(1);
+    }
+    console.log(`${C.green}✓ 本批不含 src / UI 改动 —— 界面与存档审查对其为空集${C.off}`);
+  } else {
+    const dirty = capture('git', ['status', '--porcelain']);
+    if (dirty) {
+      console.error(`${C.red}✗ 工作区有未提交改动 —— 推送的必须是提交，不是工作区。${C.off}`);
+      for (const l of dirty.split('\n').filter(Boolean).slice(0, 12)) console.error(`${C.dim}    ${l}${C.off}`);
+      console.error(`${C.dim}  原因：第 2–4 步跑在工作区上，脏工作区会让它们验证的不是要推的东西。${C.off}`);
+      console.error(`${C.dim}  先让在改 src 的人跑 npm run ship 提交，或改用 --docs-only（仅当本批不含 src/UI）。${C.off}`);
+      process.exit(1);
+    }
+  }
 }
 
-/* ── 步骤 1-3：重跑审查门（审的是即将推出去的那个提交）── */
-step(1, '校验构建产物与 src/ 一致');
-run(NODE, ['scripts/build.mjs', '--check']);
+/* ── 步骤 2–4：完整模式才跑的审查（都依赖工作区 == 待推内容）── */
+if (!DOCS_ONLY) {
+  step(2, '校验构建产物与 src/ 一致');
+  run(NODE, ['scripts/build.mjs', '--check']);
 
-step(2, '冒烟测试');
-run(NODE, ['scripts/smoke.mjs']);
+  step(3, '冒烟测试');
+  run(NODE, ['scripts/smoke.mjs']);
 
-step(3, '界面可见性审查（真实浏览器 Edge headless）');
-run(NODE, ['scripts/uicheck.mjs']);
+  step(4, '界面可见性审查（真实浏览器 Edge headless）');
+  run(NODE, ['scripts/uicheck.mjs']);
 
-/* ── 步骤 4：存档兼容（老玩家的进度还在不在）── */
-// 挂机游戏的命根子：玩家的存档可能挂了几十小时，一次不兼容的更新就全废了。
-// 这一步查冒烟查不到的三件事：数据表 id 只增不减、存档键未变、白名单无漏字段。
-step(4, '存档兼容审查（老存档的解锁内容是否仍然有效）');
-run(NODE, ['scripts/savecompat.mjs']);
+  step(5, '存档兼容审查（老存档的解锁内容是否仍然有效）');
+  run(NODE, ['scripts/savecompat.mjs']);
+} else {
+  console.log(`${C.dim}  · 已跳过 build/smoke/uicheck/savecompat：它们跑在工作区上，`);
+  console.log(`    而工作区此刻可能正被改 src 的成员占用 —— 跑了也验证不到本批提交。${C.off}`);
+}
 
-/* ── 步骤 5：分叉检查 ── */
-step(5, '分叉检查');
+/* ── 分叉检查（两种模式都跑）── */
+step(DOCS_ONLY ? 2 : 5, '分叉检查');
 run('git', ['merge-base', '--is-ancestor', 'origin/main', 'HEAD']);
-console.log(`${C.green}✓ 无分叉，可快进${C.off}`);
+{
+  const remoteOnly = capture('git', ['log', '--oneline', 'HEAD..origin/main']);
+  if (remoteOnly) {
+    console.error(`${C.red}✗ 远端有本地没有的提交 —— 先 git merge origin/main。${C.off}`);
+    console.error(`${C.dim}${remoteOnly}${C.off}`);
+    process.exit(1);
+  }
+  console.log(`${C.green}✓ 无分叉，可快进${C.off}`);
+}
 
-/* ── 步骤 6：推送 ── */
-step(6, '推送到 GitHub');
-// 注意：这里**不做交互确认**。理由：本脚本会被非交互地调用（自动化/agent），
-// 一个等待输入的 prompt 会让它永久挂住，比没有确认更糟。
-// 真正的闸门是上面 1-4 步（尤其第 3 步的真实浏览器审查），不是这一行提示。
-console.log(`${C.dim}  即将推送上面的提交（本脚本无交互确认，闸门在上面 1-4 步）。${C.off}`);
+/* ── 推送 ── */
+step(DOCS_ONLY ? 3 : 6, '推送到 GitHub');
+console.log(`${C.dim}  即将推送上面的提交（本脚本无交互确认，闸门在上面的步骤）。${C.off}`);
 
 const pushed = run('git', ['push'], { allowFail: true });
 if (pushed) {
