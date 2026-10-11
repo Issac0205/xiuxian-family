@@ -23,7 +23,7 @@
  *   node scripts/rollback.mjs ckpt/xxx        回退到某个快照（会先自动再快照一次）
  */
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdirSync, existsSync, unlinkSync, readdirSync } from 'node:fs';
 import { join, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { tmpdir } from 'node:os';
@@ -106,6 +106,14 @@ function prune(keep = KEEP_DEFAULT) {
   const all = listCheckpoints();
   const drop = all.slice(keep);
   for (const t of drop) git(['tag', '-d', t], {}, { allowFail: true });
+  // 顺手清掉遗留的临时索引。每次快照都用新的 `idx-<时间戳>-<pid>`，
+  // 所以这里的都是过期产物；自动化每 20 分钟跑一次，不清理会堆积成百上千个碎文件。
+  try {
+    for (const f of readdirSync(SNAP_DIR)) {
+      if (!f.startsWith('idx-')) continue;
+      try { unlinkSync(join(SNAP_DIR, f)); } catch { /* 正被占用，留到下次 */ }
+    }
+  } catch { /* SNAP_DIR 尚不存在 */ }
   return drop;
 }
 
