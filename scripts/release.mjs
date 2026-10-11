@@ -31,7 +31,7 @@
 import { spawnSync } from 'node:child_process';
 
 const C = { dim: '\x1b[2m', red: '\x1b[31m', green: '\x1b[32m', gold: '\x1b[33m', off: '\x1b[0m' };
-const TOTAL = 5;
+const TOTAL = 6;
 const SKIP_CONFIRM = process.argv.includes('--yes');
 
 function run(cmd, args, { allowFail = false } = {}) {
@@ -81,13 +81,19 @@ run(NODE, ['scripts/smoke.mjs']);
 step(3, '界面可见性审查（真实浏览器 Edge headless）');
 run(NODE, ['scripts/uicheck.mjs']);
 
-/* ── 步骤 4：分叉检查 ── */
-step(4, '分叉检查');
+/* ── 步骤 4：存档兼容（老玩家的进度还在不在）── */
+// 挂机游戏的命根子：玩家的存档可能挂了几十小时，一次不兼容的更新就全废了。
+// 这一步查冒烟查不到的三件事：数据表 id 只增不减、存档键未变、白名单无漏字段。
+step(4, '存档兼容审查（老存档的解锁内容是否仍然有效）');
+run(NODE, ['scripts/savecompat.mjs']);
+
+/* ── 步骤 5：分叉检查 ── */
+step(5, '分叉检查');
 run('git', ['merge-base', '--is-ancestor', 'origin/main', 'HEAD']);
 console.log(`${C.green}✓ 无分叉，可快进${C.off}`);
 
-/* ── 步骤 5：推送 ── */
-step(5, '推送到 GitHub');
+/* ── 步骤 6：推送 ── */
+step(6, '推送到 GitHub');
 // 注意：这里**不做交互确认**。理由：本脚本会被非交互地调用（自动化/agent），
 // 一个等待输入的 prompt 会让它永久挂住，比没有确认更糟。
 // 真正的闸门是上面 1-4 步（尤其第 3 步的真实浏览器审查），不是这一行提示。
