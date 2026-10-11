@@ -9,6 +9,7 @@
     "check": "node scripts/build.mjs --check",
     "test": "node scripts/build.mjs --check && node scripts/smoke.mjs",
     "smoke": "node scripts/smoke.mjs",
-    "ship": "node scripts/ship.mjs"
+    "ship": "node scripts/ship.mjs",
+    "release": "node scripts/release.mjs"
   }
 }

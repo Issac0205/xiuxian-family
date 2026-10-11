@@ -1,36 +1,32 @@
 #!/usr/bin/env node
 /* ────────────────────────────────────────────────────────────────
- * 脚本：一条命令跑完「构建 → 校验 → 测试 → 界面审查 → 推送前置检查 → 提交 → 推送」
+ * 脚本：成员用 ——「构建 → 校验 → 冒烟 → 界面审查 → 前置检查 → 提交」
  *
  * 用法：
  *   npm run ship -- "feat: 说明"
- *   node scripts/ship.mjs "feat: 说明"
  *
- * 设计意图：
- *   这个项目吃过一次「没有版本历史、只能从乱码里逆向」的亏。
- *   从此每次改动都必须留下可回退的点，而且要真的传到远端 ——
- *   本地提交不算数，本地提交只有一块硬盘记得住。
+ * ⚠⚠ 本脚本**不推送**。推送由主策专用脚本 `npm run release` 执行。
  *
- *   ⚠ 2026-10-11 又吃了一亏：整条凡人科技线（18 项，含房地产）在界面上不可见，
- *     而冒烟测试 **805 项全绿** —— 因为 DOM 垫片不计算可见性，
- *     `#tech-list .tech[data-tech].length === 18` 照样通过（节点确实在，只是被
- *     `hidden` 祖先罩住）。缺陷被推上 GitHub，是**用户**发现的。
- *   ⇒ 结论：**「断言绿」不是放行条件。** 推送前必须真的在浏览器里看一眼。
- *     第 4 步（界面可见性审查）与第 5 步（推送前置检查）就是为此加的。
+ * 为什么把推送权收归主策（2026-10-11 用户决定）：
+ *   这一天连吃两次亏 —— 整条凡人科技线（18 项，含房地产）在界面上不可见，
+ *   而冒烟测试 **805 项全绿**（DOM 垫片不计算可见性），缺陷被推上 GitHub，
+ *   是**用户**发现的；随后又发现投帖问路与金丹「晋升」两处界面入口是死的。
+ *   共同点：**断言绿 ≠ 玩家能用**。所以放行必须有人在真浏览器里看过。
+ *   ⇒ 成员负责「把改动做对并提交」，主策负责「确认无误后推给世界」。
+ *     单点闸门，而不是每个成员各推一次。
  *
  * 原则：
- *   1. **任何一步失败就整体停下**，绝不把没通过审查的东西推上去。
+ *   1. **任何一步失败就整体停下**，绝不提交没通过审查的东西。
  *   2. 用 stdio:'inherit' 而不是 'pipe' —— 这个环境里管道抓子进程输出会 EPERM。
- *      所以「有没有改动」靠 `git diff --cached --quiet` 的**退出码**判断，
- *      而不是去解析输出。
+ *      所以「有没有改动」靠 `git diff --cached --quiet` 的**退出码**判断。
  *   3. 不加 shell —— 提交说明里可能有引号等字符，交给 shell 会被二次解析。
- *   4. **绝不 force push**。分叉时正确动作是 merge，不是覆盖远端。
+ *   4. **绝不 force push**（本脚本已无推送能力，由 release.mjs 统一把关）。
  * ──────────────────────────────────────────────────────────────── */
 
 import { spawnSync } from 'node:child_process';
 
 const C = { dim: '\x1b[2m', red: '\x1b[31m', green: '\x1b[32m', gold: '\x1b[33m', off: '\x1b[0m' };
-const TOTAL = 7;
+const TOTAL = 6;
 
 /** 跑一条命令，输出直接继承到终端。返回是否成功。 */
 function run(cmd, args, { allowFail = false } = {}) {
@@ -49,7 +45,6 @@ function capture(cmd, args) {
   return (r.stdout || '').trim();
 }
 
-/** node 用 process.execPath，免得依赖 PATH。 */
 const NODE = process.execPath;
 
 function step(n, title) {
@@ -81,7 +76,7 @@ run(NODE, ['scripts/smoke.mjs']);
 step(4, '界面可见性审查（真实浏览器 Edge headless）');
 run(NODE, ['scripts/uicheck.mjs']);
 
-// ── 审查门 ②：推送前置检查 ──
+// ── 审查门 ②：推送前置检查（提前做，免得等主策放行时才发现分叉）──
 step(5, '推送前置检查（分叉 + 产物卫生）');
 {
   // 5a. 分叉：本地必须是「领先」远端，而不是与它分叉。
@@ -89,7 +84,7 @@ step(5, '推送前置检查（分叉 + 产物卫生）');
   const ancestor = run('git', ['merge-base', '--is-ancestor', 'origin/main', 'HEAD'], { allowFail: true });
   if (!ancestor) {
     const remoteOnly = capture('git', ['log', '--oneline', 'HEAD..origin/main']);
-    console.error(`\n${C.red}✗ 本地与 origin/main 已分叉 —— 拒绝了这次推送。${C.off}`);
+    console.error(`\n${C.red}✗ 本地与 origin/main 已分叉 —— 请先解决，不要提交。${C.off}`);
     console.error(`${C.dim}  远端独有：\n${remoteOnly || '    （空）'}${C.off}`);
     console.error(`${C.dim}  正确动作：git merge origin/main（解决冲突后重跑 ship）${C.off}`);
     console.error(`${C.dim}  ❌ 绝不要 git push --force / --force-with-lease —— 会抹掉别人的提交${C.off}`);
@@ -97,8 +92,6 @@ step(5, '推送前置检查（分叉 + 产物卫生）');
   }
 
   // 5b. 产物卫生：git add -A 会把**没被 gitignore 覆盖的一次性产物**一起提交。
-  //     这条判据来自真实事故：_bal-*.txt / _smoke-*.txt / _dbg-*.txt 都曾差点被提交。
-  //     用退出码/文件名自查，不靠肉眼。
   const dirty = capture('git', ['status', '--porcelain'])
     .split('\n').map((l) => l.trim()).filter(Boolean);
   const untracked = dirty.filter((l) => l.startsWith('??')).map((l) => l.replace(/^\?\?\s+/, '').replace(/^"|"$/g, ''));
@@ -108,7 +101,6 @@ step(5, '推送前置检查（分叉 + 产物卫生）');
     console.error(`\n${C.red}✗ 有 ${suspicious.length} 个疑似一次性产物未被忽略，git add -A 会把它们提交进仓库：${C.off}`);
     for (const p of suspicious) console.error(`${C.dim}    ${p}${C.off}`);
     console.error(`${C.dim}  处理：删掉它，或往 .gitignore 加规则。${C.off}`);
-    console.error(`${C.dim}  自查：git check-ignore -v <文件>（退出码 0=已忽略 / 1=未忽略）${C.off}`);
     process.exit(1);
   }
   if (untracked.length) {
@@ -118,9 +110,8 @@ step(5, '推送前置检查（分叉 + 产物卫生）');
   console.log(`${C.green}✓ 无分叉、无一一次性产物${C.off}`);
 }
 
-step(6, '提交');
+step(6, '提交（提交到本地，不推送）');
 run('git', ['add', '-A']);
-// 把将提交的文件列出来 —— 多 agent 共用工作区时，「扫走了别人的半成品」是最常见的翻车。
 const staged = capture('git', ['diff', '--cached', '--name-only']);
 if (!staged) {
   console.log(`${C.dim}  工作区没有改动，跳过提交${C.off}`);
@@ -128,21 +119,13 @@ if (!staged) {
   console.log(`${C.dim}  将提交 ${staged.split('\n').filter(Boolean).length} 个文件：${C.off}`);
   for (const p of staged.split('\n').filter(Boolean)) console.log(`${C.dim}    ${p}${C.off}`);
   run('git', ['commit', '-m', message]);
-  console.log(`${C.green}✓ 已提交${C.off}`);
+  console.log(`${C.green}✓ 已提交到本地${C.off}`);
 }
 
-step(7, '推送到 GitHub');
-const pushed = run('git', ['push'], { allowFail: true });
-if (pushed) {
-  console.log(`${C.green}✓ 已推送${C.off}`);
-} else {
-  // 提交已经在本地了，这一点必须说清楚，否则用户会以为东西丢了
-  console.error(`\n${C.red}✗ 推送失败${C.off} —— 但**提交已经在本地**，没有丢失。`);
-  console.error(`${C.dim}  先分层判定，别急着动凭据：${C.off}`);
-  console.error(`${C.dim}    ① 分叉？ git log --oneline HEAD..origin/main（非空 = 分叉，需 merge）${C.off}`);
-  console.error(`${C.dim}    ② 链路？ node --use-system-ca -e "fetch('https://github.com').catch(e=>console.log(e.message))"${C.off}`);
-  console.error(`${C.dim}  链路抖动时原地重试即可，不要重装凭据、不要改 remote、不要 rebase。${C.off}`);
-  process.exit(1);
-}
-
-console.log(`\n${C.green}全部完成 ✓${C.off}`);
+const ahead = capture('git', ['log', '--oneline', 'origin/main..HEAD']).split('\n').filter(Boolean);
+console.log(`\n${C.green}审查门全过，已提交到本地 ✓${C.off}`);
+console.log(`${C.dim}  尚未推送（本脚本**不会**推送）—— 本地领先远端 ${ahead.length} 个提交：${C.off}`);
+for (const l of ahead) console.log(`${C.dim}    ${l}${C.off}`);
+console.log(`\n${C.gold}  ⚠ 推送由主策专用脚本执行：${C.off}${C.green}npm run release${C.off}`);
+console.log(`${C.dim}    请把「改动做了什么、玩家会看到什么不同」报给主策，由主策复核审查输出后放行。${C.off}`);
+console.log(`${C.dim}    ❌ 不要直接 git push —— 那会绕过界面审查这条唯一的放行闸门。${C.off}`);
