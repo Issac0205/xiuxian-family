@@ -9,3 +9,6 @@ _smoke-*.txt
 _uat-*.txt
 scripts/_uat*.mjs
 _*out.txt
+# 调试者做界面临场确认时的一次性产物
+_shot.html
+docs/dbg-*.png
