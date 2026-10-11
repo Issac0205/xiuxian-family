@@ -5130,6 +5130,7 @@ section('仙凡经济：城市作坊与兑率');
     buildings: { ...S.buildings }, population: S.population,
     immortal: (S.immortalTechs || []).slice(), techs: S.techs.slice(),
     exchange: S.exchangeCount, silver: S.silver, stones: S.spiritStones,
+    secrets: S.secrets.slice(),
   };
 
   // 清掉所有作坊，看基线
@@ -5177,15 +5178,73 @@ section('仙凡经济：城市作坊与兑率');
   check('界墟同时撑大了坊市的胃口', X.cityEconomy().exchangeLimit > 12,
     `${X.cityEconomy().exchangeLimit} 笔`);
 
-  // 兑换是递进的
+  // 兑换是**平价**的（用户实机裁决：两种货币体系的兑换不涨价，只有建筑涨价）
   S.immortalTechs = [];
   S.exchangeCount = 0;
   S.silver = 100_000_000;
-  const e0 = X.cityEconomy().exchange;
-  S.exchangeCount = 3;
-  const e3 = X.cityEconomy().exchange;
-  check('兑换逐笔变贵', e3.silver > e0.silver, `${e0.silver} → ${e3.silver}`);
-  check('兑换逐笔多给灵石', e3.stones > e0.stones, `${e0.stones} → ${e3.stones}`);
+  const quotes = [0, 1, 5, 11].map((n) => { S.exchangeCount = n; return X.cityEconomy().exchange; });
+  check('任意笔数的银两成本都与第一笔相同（平价兑换）',
+    quotes.every((q) => q.silver === quotes[0].silver),
+    quotes.map((q) => q.silver).join(' / '));
+  check('任意笔数的灵石收益都与第一笔相同（平价兑换）',
+    quotes.every((q) => q.stones === quotes[0].stones),
+    quotes.map((q) => q.stones).join(' / '));
+  check('首笔报价即固定兑率：100000 银两 → 0.5 灵石',
+    quotes[0].silver === 100000 && quotes[0].stones === 0.5,
+    `${quotes[0].silver} → ${quotes[0].stones}`);
+
+  // 科技杠杆保留：只放大灵石侧，银两侧不动；单价 = 200000 ÷ (1 + tradeStoneMult)，与笔数无关
+  S.immortalTechs = ['jiexu'];
+  const mJx = d.immortalTechs.find((t) => t.id === 'jiexu').effect.tradeStoneMult || 0;
+  const qJx = X.cityEconomy().exchange;   // exchangeCount 仍 = 11
+  check('科技放大灵石收益（tradeStoneMult 杠杆保留）',
+    near(qJx.stones, +(0.5 * (1 + mJx)).toFixed(4), 1e-9), `${qJx.stones}（m=${mJx}）`);
+  check('科技不动银两成本', qJx.silver === 100000, `${qJx.silver}`);
+  check('单价恒为 200000÷(1+tradeStoneMult)，与笔数无关',
+    near(qJx.silver / qJx.stones, 200000 / (1 + mJx), 1e-6),
+    `${(qJx.silver / qJx.stones).toFixed(1)} 银两/灵石`);
+  S.immortalTechs = [];
+
+  // 阳性对照：建筑的 baseCost × growth^座数 涨价机制原样保留（第 2 座确实更贵）
+  S.techs = ['realestate'];
+  S.buildings.estate = 0;
+  const buy0 = X.engine.planBuy('estate');
+  S.buildings.estate = 1;
+  const buy1 = X.engine.planBuy('estate');
+  check('阳性对照：建筑仍涨（第 2 座地产 = 第 1 座 ×1.22）',
+    buy0.ok && buy1.ok && near(buy1.cost / buy0.cost, 1.22, 1e-9),
+    buy0.ok && buy1.ok ? `${buy0.cost} → ${buy1.cost}` : `${buy0.reason}｜${buy1.reason}`);
+  S.techs = [];
+
+  // 界面显示 = 实际结算（单一真相源：updateMarket 读 derive().marketExchange）
+  // ⚠ 必须新开干净实例：§16 的「刷新」测试重装了 DOM，旧实例 render 会写进新文档、
+  //   而本文件的 `$` 读的是第一份文档 —— 两者错位会让断言读到陈旧文本。
+  {
+    const dom2 = installDOM(html, { store: dom.store });
+    new Function(code)();
+    const X2 = window.__xiuxian;
+    clearInterval(X2.timer);
+    const $2 = (id) => dom2.document.getElementById(id);
+    const S2 = X2.state;
+    S2.techs = [];
+    S2.immortalTechs = [];
+    S2.secrets = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];   // 凑满 10 条秘闻开门
+    S2.silver = 100_000_000;
+    S2.exchangeCount = 7;                          // L2 状态注入：任意笔数下标价都必须一样
+    X2.ui.render();
+    check('界面标价在任意笔数下都是固定兑率（10万 → 0.5）',
+      $2('market-desc').textContent.includes('10万 银两 → 0.5 灵石'),
+      $2('market-desc').textContent);
+    S2.silver = 50_000;                            // 不够一笔
+    X2.ui.render();
+    check('银两不够一笔时兑换按钮不可点', $2('exchange-btn').disabled === true);
+    S2.silver = 100_000_000;
+    S2.exchangeCount = 12;                         // 兑满（无扩量科技 ⇒ 上限 12）
+    X2.ui.render();
+    check('兑满后按钮不可点、提示已兑满',
+      $2('exchange-btn').disabled === true && $2('market-chip').textContent === '已兑满',
+      `${$2('market-chip').textContent}｜${$2('exchange-btn').textContent.trim()}`);
+  }
 
   // 恢复
   S.buildings = keep.buildings;
@@ -5195,6 +5254,7 @@ section('仙凡经济：城市作坊与兑率');
   S.exchangeCount = keep.exchange;
   S.silver = keep.silver;
   S.spiritStones = keep.stones;
+  S.secrets = keep.secrets;
 }
 
 console.log(failed === 0 ? '\n全部通过 ✓\n' : `\n${failed} 项未通过 ✗\n`);

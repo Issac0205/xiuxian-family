@@ -372,8 +372,10 @@ function sell(state, id, count = 1, now = Date.now()) {
 /**
  * 询价：再兑一笔灵石要多少银两、给多少灵石。不改动状态。
  *
- * ⚠ 兑率是**递进**的（见 core/config.js 的 MARKET_EXCHANGE_*）：
- *   第 n 笔比第 n-1 笔贵 COST_GROWTH 倍，但给的石子也多 YIELD_GROWTH 倍。
+ * ⚠ 兑率是**平价**的（见 core/config.js 的 MARKET_EXCHANGE_*）：
+ *   每一笔的银两成本与灵石收益都相同，不随笔数涨价（用户实机裁决：
+ *   两种货币体系的兑换不涨价，只有建筑涨价）。限制总量的是
+ *   marketExchangeLimit 的**笔数上限**（总量闸门，与定价两码事），
  *   所以「换过几次」本身是一条进度线，而不是可以无限刷的兑换按钮。
  *
  * 灵石那一侧还乘 (1 + tradeStoneMult) ——

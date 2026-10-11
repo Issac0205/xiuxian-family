@@ -49,8 +49,9 @@ function createState(now = Date.now()) {
 
     /**
      * 在云深谷坊市换过几次灵石。
-     * 兑率是**递进**的（见 core/config.js 的 MARKET_EXCHANGE_*），
-     * 所以这是一个「进度」而不是一个计数器 —— 界面会把它画成一条进度条。
+     * 兑率是**平价**的（见 core/config.js 的 MARKET_EXCHANGE_*），
+     * 这个字段只数「总量闸门还剩几笔」，不再影响定价 ——
+     * 界面会把它画成一条进度条。旧存档的该字段原样保留，无需迁移。
      */
     exchangeCount: 0,
 

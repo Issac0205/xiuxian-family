@@ -1107,14 +1107,18 @@ function createUI({ getState, actions, rng }) {
 
   function updateMarket(s, d) {
     const unlocked = d.marketUnlocked;
-    const can = unlocked && s.silver >= CULTIVATOR_MARKET.silver;
+    // 报价与实际结算共用同一个来源（derive → marketExchangeQuote），
+    // 界面不再自己存一份汇率 —— 单一真相源，显示多少就结算多少。
+    const q = d.marketExchange;
+    const full = d.marketExchangeCount >= d.marketExchangeLimit;
+    const can = unlocked && !full && s.silver >= q.silver;
 
     const chip = $('market-chip');
-    chip.textContent = unlocked ? '已通' : `需 ${d.secretGoal} 秘闻`;
+    chip.textContent = !unlocked ? `需 ${d.secretGoal} 秘闻` : full ? '已兑满' : '已通';
     chip.className = `chip${unlocked ? (can ? ' chip-open' : '') : ' chip-locked'}`;
 
     $('market-desc').textContent = unlocked
-      ? `${fmt(CULTIVATOR_MARKET.silver)} 银两 → ${fmtStones(CULTIVATOR_MARKET.stones)} 灵石。`
+      ? `${fmt(q.silver)} 银两 → ${fmtStones(q.stones)} 灵石（已兑 ${d.marketExchangeCount}/${d.marketExchangeLimit} 笔）。`
         + '那边的客人看不上银子，兑率苛刻得很。'
       : `集齐 ${d.secretGoal} 条秘闻，才能摸到这条路（现有 ${d.secretCount} 条）。`;
 
@@ -1122,9 +1126,11 @@ function createUI({ getState, actions, rng }) {
     btn.disabled = !can;
     btn.querySelector('[data-role="exchangetext"]').textContent = !unlocked
       ? '未通'
-      : can
-        ? `兑换 ${fmtStones(CULTIVATOR_MARKET.stones)} 灵石`
-        : `需 ${fmt(CULTIVATOR_MARKET.silver)} 银两`;
+      : full
+        ? '坊市已吃饱'
+        : can
+          ? `兑换 ${fmtStones(q.stones)} 灵石`
+          : `需 ${fmt(q.silver)} 银两`;
   }
 
   function updateImmortal(s, d) {

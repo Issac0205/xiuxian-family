@@ -311,19 +311,18 @@ function cityMarketWorkers(state) {
 /**
  * 云深谷坊市的**第 n 次**兑换报价（n 从 0 起）。
  *
- * 银两按 COST_GROWTH 递增、灵石按 YIELD_GROWTH 递增，两者同速，
- * 所以「兑率」本身不变，变的是**这一笔的规模**——想换更多就得先攒更多。
+ * 兑率是**平价**的：无论第几笔，银两成本与灵石收益都与第一笔相同 ——
+ * 这是两种货币体系的兑换，不涨价（用户实机裁决；会涨价的只有建筑）。
  * tradeStoneMult 直接乘在灵石那一侧，这就是城市科技对兑率的杠杆。
+ * 笔数只走 marketExchangeLimit 的**总量闸门**，与定价无关。
  */
 function marketExchangeQuote(state, n = marketExchangeCount(state)) {
   const i = Math.max(0, Math.floor(Number(n) || 0));
   const fx = techEffects(state);
-  const costGrowth = Math.pow(MARKET_EXCHANGE_COST_GROWTH, i);
-  const yieldGrowth = Math.pow(MARKET_EXCHANGE_YIELD_GROWTH, i);
   return {
     index: i,
-    silver: Math.round(MARKET_EXCHANGE_BASE_SILVER * costGrowth),
-    stones: +(MARKET_EXCHANGE_BASE_STONES * yieldGrowth * (1 + fx.tradeStoneMult)).toFixed(4),
+    silver: MARKET_EXCHANGE_BASE_SILVER,
+    stones: +(MARKET_EXCHANGE_BASE_STONES * (1 + fx.tradeStoneMult)).toFixed(4),
   };
 }
 
