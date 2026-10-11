@@ -169,17 +169,40 @@ function serialize(el) {
   return `<${el.tagName.toLowerCase()}${attrs}>${el.textContent}</${el.tagName.toLowerCase()}>`;
 }
 
-/** 匹配单一复合选择器：tag / #id / .cls / [attr] / [attr="v"] 的组合。 */
+/** 匹配单一复合选择器：tag / #id / .cls / [attr] / [attr="v"] / :checked 的组合。 */
 function matchesCompound(el, sel) {
-  const parts = String(sel).trim().match(/^([a-zA-Z][\w-]*)?((?:[.#][\w-]+|\[[^\]]+\])*)$/);
+  const parts = String(sel).trim().match(/^([a-zA-Z][\w-]*)?((?:[.#][\w-]+|\[[^\]]+\]|:[\w-]+)*)$/);
   if (!parts) return false;
   if (parts[1] && el.tagName !== parts[1].toUpperCase()) return false;
 
-  for (const token of parts[2].match(/[.#][\w-]+|\[[^\]]+\]/g) || []) {
+  /* 逐字符切 token，而不是用一个正则去 match。
+   * 原因：`:checked` 这类 token 以 `:` 开头，而 `[.#][\w-]+` 那种交替式正则
+   * 只覆盖 `.` 与 `#` 开头的 token，`:` 开头的会被**静默丢掉** —— 于是
+   * `[data-errand-check]:checked` 退化成 `[data-errand-check]`，
+   * 凡是对上属性的元素**全都算命中** ⇒ 判定恰好在语义上反了。
+   * 切出来之后按首字符分派，以后再加伪类也不用改正则。 */
+  const tokens = [];
+  let cur = '';
+  for (const ch of (parts[2] || '')) {
+    if (ch === '.' || ch === '#' || ch === '[' || ch === ':') {
+      if (cur) { tokens.push(cur); cur = ''; }
+    }
+    cur += ch;
+  }
+  if (cur) tokens.push(cur);
+
+  for (const token of tokens) {
     if (token[0] === '.') {
       if (!el.classList.contains(token.slice(1))) return false;
     } else if (token[0] === '#') {
       if (el.attrs.id !== token.slice(1)) return false;
+    } else if (token[0] === ':') {
+      // 伪类：只实现项目里真正用到的 `:checked`。
+      // 没实现的伪类**返回 false**（而不是忽略），免得出现「静默不匹配/静默全匹配」。
+      const name = token.slice(1).toLowerCase();
+      if (name === 'checked') { if (el.checked !== true) return false; }
+      else if (name === 'disabled') { if (el.disabled !== true) return false; }
+      else return false;
     } else {
       const m = token.slice(1, -1).match(/^([\w-]+)(?:=(?:"([^"]*)"|'([^']*)'))?$/);
       if (!m) return false;

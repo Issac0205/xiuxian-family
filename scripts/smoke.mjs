@@ -376,9 +376,20 @@ check('修为满了进入「瓶颈」状态', X.realm.stateOf(1).kind === 'block
 section('突破：门槛拦截');
 state.spiritStones = 5;
 check('灵石不足时拒绝', X.realm.plan(1).ok === false, X.realm.plan(1).reason);
+// 【t12 验收】每道门槛都要「拒绝理由**点名**缺哪一样」——
+// 只说 ok===false 是不够的：玩家看不到「还缺什么」就等于没有提示。
+// 这三条对应 t9 的 findings「冲关的灵石/线索门槛只断言 ok===false，理由未被断言点名」。
+check('灵石不足时理由点名灵石与差额',
+  (() => { const p = X.realm.plan(1);
+    return p.ok === false && /灵石/.test(p.reason) && /8/.test(p.reason) && /5/.test(p.reason); })(),
+  X.realm.plan(1).reason);
 atGate();
 state.cultivation.clues = 0;
 check('线索不足时拒绝', X.realm.plan(1).ok === false, X.realm.plan(1).reason);
+check('线索不足时理由点名线索与差额',
+  (() => { const p = X.realm.plan(1);
+    return p.ok === false && /线索/.test(p.reason) && /2/.test(p.reason); })(),
+  X.realm.plan(1).reason);
 atGate();
 {
   // 没有丹药就冲不了关 —— 这是炼丹区块存在的理由
@@ -386,6 +397,21 @@ atGate();
   const plan = X.realm.plan(1);
   check('没有丹药时拒绝冲关', plan.ok === false, plan.reason);
   check('拒绝理由点名了缺哪一味丹', plan.reason.includes('筑基丹'), plan.reason);
+  atGate();
+}
+// 【t12 验收 · 另一侧】资源刚好够 → 必须放行（配合上面「差一点 → 被拒并点名」，构成两侧）。
+// 只断言拒绝侧的话，一个「永远拒绝」的实现也会全绿 —— 两侧缺一不可。
+{
+  atGate();
+  state.spiritStones = 8;        // 恰好等于门槛
+  state.cultivation.clues = 2;   // 恰好等于门槛
+  X.alchemy.addPills('zhuji', 1); // 恰好一枚
+  // ⚠ 炼气九层那道门槛**还要求择地**（T-5），所以询价必须带 siteId ——
+  //   不带的话会先被「请先择地筑基」拦下，断言会误判成「资源不够」。
+  check('冲关资源刚好够（8 灵石 / 2 线索 / 1 枚筑基丹 + 已择地）→ 放行', (() => {
+    const p = X.realm.plan(1, 'mosscave');
+    return p.ok === true && p.stones === 8 && p.clues === 2 && p.pill === 'zhuji';
+  })(), (() => { const p = X.realm.plan(1, 'mosscave'); return `${p.ok} ${p.reason || ''} ${p.stones}/${p.clues}/${p.pill}`; })());
   atGate();
 }
 function addPillAndZero(id) {
@@ -2651,6 +2677,33 @@ section('T-4 投帖问路（拿族人的命换线索）');
       setPeople(person({ id: 1, realmIndex: 3, job: 'sect', talent: 1 }));
       return X.immortalAction('errand', '1').ok === false;
     })());
+    // 【t12 验收】投帖的三道门槛同样要「理由点名」——
+    // 上面两条只说 ok===false，玩家看不到「为什么这个人不能派」。
+    check('投帖拒绝理由点名：筑基以上的人 → 理由含其名与缘由',
+      (() => { setPeople(person({ id: 1, realmIndex: 12, job: 'retreat', talent: 1 }));
+        const r = X.immortalAction('errand', '1');
+        return r.ok === false && /炼气/.test(r.reason) && /林清衡/.test(r.reason); })(),
+      (() => { setPeople(person({ id: 1, realmIndex: 12, job: 'retreat', talent: 1 }));
+        return X.immortalAction('errand', '1').reason; })());
+    check('投帖拒绝理由点名：宗门修士 → 理由含「宗门」',
+      (() => { setPeople(person({ id: 1, realmIndex: 3, job: 'sect', talent: 1 }));
+        const r = X.immortalAction('errand', '1');
+        return r.ok === false && /宗门/.test(r.reason); })(),
+      (() => { setPeople(person({ id: 1, realmIndex: 3, job: 'sect', talent: 1 }));
+        return X.immortalAction('errand', '1').reason; })());
+    check('投帖拒绝理由点名：一个人都没勾 → 理由含「勾选」',
+      (() => { setPeople(person({ id: 1, realmIndex: 3, job: 'retreat', talent: 1 }));
+        const r = X.immortalAction('errand', '');
+        return r.ok === false && /勾选/.test(r.reason); })(),
+      (() => { setPeople(person({ id: 1, realmIndex: 3, job: 'retreat', talent: 1 }));
+        return X.immortalAction('errand', '').reason; })());
+    // 两侧：刚好够 → 必成（上面 ⑥ 已断言两人都变成 errand，这里补「再派已在外的会被拒」）
+    check('投帖拒绝理由点名：已在外的再派 → 理由含「已经在外面」',
+      (() => { setPeople(person({ id: 1, realmIndex: 3, job: 'errand', talent: 1 }));
+        const r = X.immortalAction('errand', '1');
+        return r.ok === false && /在外/.test(r.reason); })(),
+      (() => { setPeople(person({ id: 1, realmIndex: 3, job: 'errand', talent: 1 }));
+        return X.immortalAction('errand', '1').reason; })());
   }
 
   // ⑦ 卡片上的勾选框与按钮
@@ -2715,7 +2768,9 @@ section('T-4 投帖问路（拿族人的命换线索）');
     for (const fn of (listQ()._listeners?.change || [])) fn({ target: cbTarget });
     const eb = listQ().querySelector('[data-errand]');
     check('T-4-A2：勾选并派发 change 后入口不再 disabled —— 入口是活的',
-      eb.disabled === false, `disabled=${eb.disabled}`);
+      // 先要求入口**存在**再查 disabled：否则按钮一旦消失，`.disabled` 读 undefined
+      // 会让 `=== false` 变成假失败，而 `!== true` 又会变成恒真 —— 两头都是坑。
+      Boolean(eb) && eb.disabled === false, eb ? `disabled=${eb.disabled}` : '入口不存在');
     dom.click(eb);
     check('T-4-A2：端到端点击投帖 → 勾选的 2 人 job 变成 errand',
       state.cultivation.cultivators[0].job === 'errand'
@@ -2748,6 +2803,133 @@ section('T-4 投帖问路（拿族人的命换线索）');
       dom.click(listQ().querySelector('[data-recall]'));
       return state.cultivation.cultivators[0].job === 'errand';
     })());
+
+    /* ── T-4-A5 / A6【修复 t9 缺陷③】勾选状态必须**活过一次重渲染** ──
+     * 这是投帖缺陷的第三种形态（前两种：入口根本没渲染、处理器恒不触发）。
+     * 原来 856 条断言全绿也抓不到它，因为旧断言是「勾选 → **立刻**点击」，
+     * 中间没有重渲染 —— 而那正是对照组。挂机时每几秒就有一次重渲染，所以
+     * 「勾选 → 重渲染 → 点击」才是玩家真实会遇到的路径。
+     * 当时的表现：勾选框被重建为空，按钮却仍 enabled 且文案写着「已勾选 2 人」
+     * ⇒ **同一画面自相矛盾**，点下去一个人也不出门。 */
+    setPeople(
+      person({ id: 1, realmIndex: 3, job: 'retreat', talent: 1 }),
+      person({ id: 2, realmIndex: 3, job: 'retreat', talent: 1 }),
+      person({ id: 3, realmIndex: 3, job: 'sect', talent: 1 }),
+    );
+    state.population = 0;
+    X.ui.render();
+    {
+      const boxes = listQ().querySelectorAll('[data-errand-check]');
+      boxes[0].checked = true;
+      boxes[1].checked = true;
+      // 让容器上的 change 委托就地刷新按钮（垫片不冒泡，直接调容器的监听器）
+      for (const fn of (listQ()._listeners?.change || [])) fn({ target: boxes[0] });
+      check('T-4-A5-前置：勾选 2 人后按钮可用且文案为 2 人',
+        listQ().querySelector('[data-errand]').disabled === false
+        && /勾选 2 人/.test(listQ().querySelector('[data-errand]').textContent),
+        listQ().querySelector('[data-errand]').textContent);
+
+      // ★ 关键：中间插入一次重渲染（模拟挂机时的自动刷新）
+      X.ui.render();
+      const stillChecked = listQ().querySelectorAll('[data-errand-check]:checked').length;
+      check('T-4-A5：勾选状态活过一次重渲染（重渲染后仍勾着 2 人）',
+        stillChecked === 2, `${stillChecked} 个仍勾选`);
+      // 阳性对照：`:checked` 必须**能区分**勾与没勾 —— 否则上面那条会是恒真的空检查
+      // （垫片原本不认识 `:checked`，会把它静默丢掉、退化成只按属性匹配 ⇒ 两个框都算命中）。
+      check('T-4-A5 阳性对照：:checked 能区分勾选状态（不勾的框不算命中）', (() => {
+        const all = listQ().querySelectorAll('[data-errand-check]');
+        const before = listQ().querySelectorAll('[data-errand-check]:checked').length;
+        all[0].checked = false;
+        const after = listQ().querySelectorAll('[data-errand-check]:checked').length;
+        all[0].checked = true;   // 复原，别影响后面的断言
+        return before === 2 && after === 1;
+      })());
+      check('T-4-A6：重渲染后按钮的 disabled/文案与**真实**勾选数一致（按钮不再说谎）',
+        (() => {
+          const b = listQ().querySelector('[data-errand]');
+          return b.disabled === false && /勾选 2 人/.test(b.textContent);
+        })(),
+        (() => { const b = listQ().querySelector('[data-errand]');
+          return `disabled=${b.disabled} text=${b.textContent.trim()}`; })());
+
+      // 端到端：重渲染之后点它，必须真的把人派出去（对照组能过、这里也必须能过）
+      dom.click(listQ().querySelector('[data-errand]'));
+      check('T-4-A5：重渲染后点击仍能把勾选的 2 人派出去（不是只弹「请先勾选」）',
+        state.cultivation.cultivators[0].job === 'errand'
+        && state.cultivation.cultivators[1].job === 'errand',
+        `${state.cultivation.cultivators.map((p) => p.job).join(',')}`);
+      check('T-4-A5：派帖成功后勾选被清空（「已在外」的人不会再被算进勾选数）',
+        // 这两人都出门之后，卡片上**没有**可勾的人了 ⇒ 投帖工具栏整条按设计不渲染
+        // （`canErrand` 为假）。所以正确的断言是「没有残留勾选，且入口要么不存在要么是灰的」，
+        // 而不是硬要求入口存在 —— 那样会在「所有人都已在外」这个正常情形下假失败。
+        listQ().querySelectorAll('[data-errand-check]:checked').length === 0
+        && (() => { const b = listQ().querySelector('[data-errand]'); return !b || b.disabled === true; })(),
+        `checked=${listQ().querySelectorAll('[data-errand-check]:checked').length}，入口=${listQ().querySelector('[data-errand]') ? '存在' : '已收起'}`);
+    }
+
+    /* ── T-4-A7 / A8 / A9（docs/91 §12.11.4，主策采纳的两处加固）──
+     * A7 的不变量：**回填集 = 文案计数 = 派发取值**，三者必须恒等。
+     *   以前它们各算一遍：文案数 DOM 上的勾、派发读 DOM 上的勾、回填用 checkedIds
+     *   ⇒ 任何一处与「本轮仍走候选分支的人」脱钩，就会出现按钮说谎。
+     *   `data-errand-count` 就是为这条可机读断言加的（否则只能解析中文文案，改文案即废）。
+     * A8：有人离开候选分支（死了 / 被派走 / 过了炼气期）时**不得多报** ——
+     *   这正是加固 1 修的那个「多报 1、持续一个渲染周期」的小窗口。
+     * A9：勾 0 人时 disabled。 */
+    {
+      setPeople(
+        person({ id: 1, realmIndex: 3, job: 'retreat', talent: 1 }),
+        person({ id: 2, realmIndex: 3, job: 'retreat', talent: 1 }),
+        person({ id: 3, realmIndex: 3, job: 'sect', talent: 1 }),
+      );
+      state.population = 0;
+      X.ui.render();
+
+      // A9：一个都没勾 → disabled
+      check('T-4-A9：勾 0 人时投帖入口 disabled',
+        listQ().querySelector('[data-errand]').disabled === true);
+
+      const boxes = listQ().querySelectorAll('[data-errand-check]');
+      boxes[0].checked = true;
+      boxes[1].checked = true;
+      for (const fn of (listQ()._listeners?.change || [])) fn({ target: boxes[0] });
+      X.ui.render();
+
+      // A7：三者恒等（机读 data-errand-count，不解析中文文案）
+      check('T-4-A7：data-errand-count === 勾选数 === 真被派出去的人数（三者恒等）', (() => {
+        const btn = listQ().querySelector('[data-errand]');
+        const declared = Number(btn.dataset.errandCount);
+        const checkedNow = listQ().querySelectorAll('[data-errand-check]:checked').length;
+        // 实际会派出去的人数：模拟派发取值的口径（勾选 ∩ 仍走候选分支）
+        const wouldSend = [...listQ().querySelectorAll('[data-errand-check]')]
+          .filter((n) => n.checked && !n.disabled).length;
+        return declared === 2 && checkedNow === 2 && wouldSend === 2;
+      })(), (() => { const b = listQ().querySelector('[data-errand]');
+        return `count=${b.dataset.errandCount} checked=${listQ().querySelectorAll('[data-errand-check]:checked').length}`; })());
+      check('T-4-A7：文案里的数字与 data-errand-count 一致',
+        (() => { const b = listQ().querySelector('[data-errand]');
+          return new RegExp(`勾选 ${b.dataset.errandCount} 人`).test(b.textContent); })());
+
+      // A8：勾着的人**离开候选分支**（这里让他变成宗门弟子）⇒ 不得多报
+      check('T-4-A8：勾着的人离开候选分支后不得多报（计数与 disabled 同步收紧）', (() => {
+        const before = Number(listQ().querySelector('[data-errand]').dataset.errandCount);
+        // 把 id=1 改成宗门弟子：他不再走候选分支，因此不会被回填 checked
+        state.cultivation.cultivators[0].job = 'sect';
+        X.ui.render();
+        const btn = listQ().querySelector('[data-errand]');
+        const after = btn ? Number(btn.dataset.errandCount) : 0;
+        return before === 2 && after === 1;
+      })(), (() => { const b = listQ().querySelector('[data-errand]');
+        return b ? `count=${b.dataset.errandCount}` : '入口已收起'; })());
+
+      // A8 续：**全部**离开候选分支 ⇒ 必须多报 0（而不是留下一个虚高的数）
+      check('T-4-A8：全部离开候选分支后计数归 0，且入口变灰（不留下虚高的数字）', (() => {
+        state.cultivation.cultivators[1].job = 'sect';
+        X.ui.render();
+        const btn = listQ().querySelector('[data-errand]');
+        if (!btn) return true;   // 已无人可派 ⇒ 工具栏按设计收起，也算「不多报」
+        return Number(btn.dataset.errandCount) === 0 && btn.disabled === true;
+      })());
+    }
   }
 
   /* ── 【修复 t4 缺陷⑦ / pre-push-review-gate.md R2⑤】死交互属性静态扫描（带阳性对照）──
@@ -2794,6 +2976,11 @@ section('T-4 投帖问路（拿族人的命换线索）');
     const mainSrc = stripComments(readFileSync('src/main.js', 'utf8'));
     const rendered = scanRendered(appSrc);
     const read = scanRead(appSrc + '\n' + mainSrc);
+    // `data-errand-count` 是**给测试用的机械锚点**（它唯一的消费者就是本文件下面的
+    // A7/A8 断言，不是 main.js 的交互读取侧）。把它显式登记为「已读」——
+    // 这不是豁免死属性，恰恰相反：它存在的目的就是让 A7 的「三者恒等」能写成
+    // 纯属性断言，而不是去解析中文文案（改一次文案就废一批断言）。
+    if (appSrc.includes('data-errand-count')) read.add('data-errand-count');
     /**
      * 「语义标记」——渲染出来**只为给 CSS / 调试看**、不需要 JS 读取侧的属性。
      * ⚠ 新加一项等于承认又多了一个没人读的属性，所以每加一项都要写清理由。
@@ -3393,6 +3580,53 @@ section('T-6 结丹（每一次修为满，都是一次下注）');
     check('T-6-C4″：foldPlan 的得纹/上限三档齐（1/6、3/12、6/null）',
       specByFold[0] === '1/6' && specByFold[1] === '3/12' && specByFold[2] === '6/null',
       specByFold.join(' '));
+
+    /* ── 【t12 验收】结丹资源门槛：两侧 + **拒绝理由点名** ──
+     * t9 报的「话术口」：实现两侧都对、话术也点名了，但**回归套件里一条断言都没有** ⇒
+     * 将来话术退化成「不能结丹」这种笼统文案，没有任何东西会红。
+     * 规则（`test-blindspots.md` R4）：既不能只查数据源/文案（漏「分派错档」），
+     * 也不能只查 `ok` 布尔（漏「话术退化」）—— 本条属后者，故断言 **reason 里的关键词与数字**。
+     * 「刚好够 → 能结」与「差一个 → 被拒并点名缺哪一样」两侧都覆盖。 */
+    {
+      const setRes = (stones, grass) => {
+        atJindan();
+        state.cultivation.cultivators[0].core = { marks: 0, mercy: 0, used: {} };
+        state.spiritStones = stones;
+        state.cultivation.alchemy.herbs.grass = grass;
+      };
+      // 武火：10 灵石 + 1 药草
+      setRes(10, 1);
+      check('结丹资源门槛：武火（刚好 10 灵石 + 1 药草）→ 放行',
+        X.realm.foldPlan(1, 'wu').ok === true, X.realm.foldPlan(1, 'wu').reason);
+      setRes(9, 1);
+      check('结丹资源门槛：武火差 1 灵石 → 拒绝，且理由点名「10 灵石」与现有数',
+        (() => { const p = X.realm.foldPlan(1, 'wu');
+          return p.ok === false && p.reason.includes('10') && p.reason.includes('灵石') && p.reason.includes('9'); })(),
+        X.realm.foldPlan(1, 'wu').reason);
+      setRes(100, 0);
+      check('结丹资源门槛：武火缺药草 → 拒绝，且理由点名「药草」',
+        (() => { const p = X.realm.foldPlan(1, 'wu');
+          return p.ok === false && p.reason.includes('药草') && p.reason.includes('1'); })(),
+        X.realm.foldPlan(1, 'wu').reason);
+      // 真火：60 灵石 + 3 药草
+      setRes(60, 3);
+      check('结丹资源门槛：真火（刚好 60 灵石 + 3 药草）→ 放行',
+        X.realm.foldPlan(1, 'zhen').ok === true, X.realm.foldPlan(1, 'zhen').reason);
+      setRes(59, 3);
+      check('结丹资源门槛：真火差 1 灵石 → 拒绝，且理由点名「60 灵石」',
+        (() => { const p = X.realm.foldPlan(1, 'zhen');
+          return p.ok === false && p.reason.includes('60') && p.reason.includes('灵石'); })(),
+        X.realm.foldPlan(1, 'zhen').reason);
+      setRes(1000, 2);
+      check('结丹资源门槛：真火缺药草 → 拒绝，且理由点名「药草」与 3 份',
+        (() => { const p = X.realm.foldPlan(1, 'zhen');
+          return p.ok === false && p.reason.includes('药草') && p.reason.includes('3'); })(),
+        X.realm.foldPlan(1, 'zhen').reason);
+      // 文火：0 灵石 0 药草 —— 免费档，任何资源状态下都应放行（两侧的另一侧）
+      setRes(0, 0);
+      check('结丹资源门槛：文火免费（0 灵石 / 0 药草）→ 仍然放行',
+        X.realm.foldPlan(1, 'wen').ok === true, X.realm.foldPlan(1, 'wen').reason);
+    }
 
     /* ── T-6-C7：风险披露 —— 按钮必须同时写成率与上限，真火要写「三成只得九品」──
      * 这不是数值问题而是**公平性**问题：真火贵 6 倍却均值更低（5.332 < 5.807），

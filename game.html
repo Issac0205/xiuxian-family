@@ -16485,9 +16485,27 @@ function createUI({ getState, actions, rng }) {
       .filter(n=>n.checked)
       .map(n=>Number(n.dataset.errandCheck))
       .filter(n=>Number.isFinite(n)&&n>0);
-    const checkedCount=checkedIds.length;
+    // 【修复 t9 缺陷③ / 主策加固 1】**谁真的能被派**这条规则必须只写一处。
+    //   原来勾选框的候选判定散在模板里、而计数只数 DOM 上的勾 ⇒ 两者会脱钩：
+    //   某人刚死、刚被派走、刚过炼气期（不再走候选分支 ⇒ 不会被回填 checked），
+    //   但勾选集合里还留着他的 id ⇒ 按钮文案**多报 1**，且持续一个渲染周期。
+    //   现在 `live` 用「本轮仍走候选分支的人」重算，并统一供：
+    //   回填 checked / 文案计数 / disabled / 派发取值 —— 四者同一个来源，不可能各说各话。
+    const canErrandPerson = (p) => p.realmIndex>=1 && p.realmIndex<=9
+      && p.job!=='sect' && p.job!=='garrison' && p.job!=='errand';
+    // ⚠ 卡片是否**显示**投帖相关控件，是**另一条**规则，不是上面那条的重复抄写：
+    //   它比「能被派」多放行一种人 —— 已经在外（`errand`）的人也要显示控件（显示的是「召回」）。
+    //   所以本判定**必须由 `canErrandPerson` 派生**，而不是再手抄一遍境界/职责条件：
+    //   手抄版与 `canErrandPerson` 可以独立漂移，且**危险方向不对称** ——
+    //   若有人给卡片守卫加一个新的排除条件而忘了改 `canErrandPerson`，那个人的 id 仍会在
+    //   `liveIds` 里被计数、但卡片不渲染勾选框 ⇒ `data-errand-count` 比 DOM 里真实的
+    //   `:checked` 多 1 ⇒ **A7「三者恒等」当场破**。
+    //   派生之后这条不变量从「靠两处保持同步」变成「结构上不可能不同步」。
+    const showsErrandControls = (p) => canErrandPerson(p) || p.job==='errand';
+    const liveIds = checkedIds.filter((id)=>people.some((p)=>p.id===id && canErrandPerson(p)));
+    const checkedCount=liveIds.length;
     const outCount=people.filter(p=>p.job==='errand').length;
-    const canErrand=people.some(p=>p.realmIndex>=1&&p.realmIndex<=9&&p.job!=='sect'&&p.job!=='garrison'&&p.job!=='errand');
+    const canErrand=people.some(canErrandPerson);
     // 脏检查要把「会影响卡片上一切按钮状态的东西」都算进去：
     // 境界、修为、失败次数、灵石与线索（否则材料变少了按钮不会变灰），
     // 以及本轮新增的 push / stalled / 在外 / 道基 / 丹纹 / 年份
@@ -16513,9 +16531,12 @@ function createUI({ getState, actions, rng }) {
     // 【策划 C1 / 任务 T-4-A1/A4】投帖工具栏：**恰好一个** `[data-errand]`。
     // A4 要求「勾选 0 人时按钮必须 disabled」—— 否则点下去只会得到一条
     // 「请先勾选族人」的 toast，那个入口在语义上是死的。
+    // 【修复 t9 缺陷③ / 主策加固 2】按钮带 **`data-errand-count`**（= 本轮真正会被派出去的人数）。
+    //   没有它，断言只能解析中文文案（「已勾选 N 人」），改一次文案就废一批断言 ——
+    //   而 A7 要求的「回填集 / 计数 / 派发取值 三者恒等」正需要这个可机读的数。
     const errandBar=canErrand
       ? `<div class="errand-bar"><span class="errand-hint">勾选族人后可投帖问路（在外不涨修为，有去无回的风险，可随时召回）</span>`
-        +`<button class="btn errand" data-errand="1" ${checkedCount?'':'disabled'}`
+        +`<button class="btn errand" data-errand="1" data-errand-count="${checkedCount}" ${checkedCount?'':'disabled'}`
         +` title="把勾选的族人派出去打探秘闻线索">投帖 · 派出门（已勾选 ${checkedCount} 人）</button>`
         +(outCount?`<span class="errand-out">在外 ${outCount} 人</span>`:'')
         +`</div>`
@@ -16567,12 +16588,22 @@ function createUI({ getState, actions, rng }) {
       //   （一次派一批），渲染成 N 个会让 `[data-errand]` 的数量随人数变化，
       //   也会给出 N 个入口去做同一件事。docs/91 §十二 T-4-A1 要求它恰好 1 个。
       let errandBox='';
-      if(p.realmIndex>=1&&p.realmIndex<=9&&p.job!=='sect'&&p.job!=='garrison'){
+      if(showsErrandControls(p)){
         if(p.job==='errand'){
           errandBox=`<label class="errand-box"><input type="checkbox" data-errand-check="${p.id}">在外中</label>`
             +`<button class="btn recall" data-recall="${p.id}" title="召回瞬时生效、无冷却">召回</button>`;
         }else{
-          errandBox=`<label class="errand-box"><input type="checkbox" data-errand-check="${p.id}">选去投帖</label>`;
+          // ⚠【修复 t9 发现的缺陷③】这里**必须回填 `checked`**。
+          //   上面注释原本就承诺了「渲染时按这个集合回填」，但代码没写 —— 于是
+          //   勾选后只要发生一次重渲染（挂机时每几秒一次），勾选框就被重建为空，
+          //   而按钮的 disabled/文案用的是**重建前**的计数 ⇒ **同一画面自相矛盾**：
+          //   按钮写着「已勾选 2 人」且可点，点下去却一个人也不出门。
+          //   这是投帖缺陷的第三种形态：入口有了、处理器对了，但**勾选状态活不过重渲染**。
+          //   回填用 `liveIds`（= 已勾 ∩ 本轮仍走候选分支），不是原始 `checkedIds` ——
+          //   这样「回填集 / 文案计数 / 派发取值」三者同源，A7 的恒等式才成立。
+          //   对照实验：勾选→立刻点（成功）vs 勾选→重渲染→点（不出门）。
+          //   断言 T-4-A5/A6 专门盯这条路径（原来 856 条全绿也抓不到，因为旧断言中间没有重渲染）。
+          errandBox=`<label class="errand-box"><input type="checkbox" data-errand-check="${p.id}"${liveIds.includes(p.id)?' checked':''}>选去投帖</label>`;
         }
       }
 
@@ -18530,7 +18561,14 @@ document.addEventListener('click',ev=>{
  }
  const r=immortalAction(state,errandBtn?'errand':'recall',ids.join(','),rng);
  ui.toast(r.reason,r.ok?'ok':'warn',3600);
- if(r.ok){writeSave(state);ui.render();}
+ if(r.ok){
+   // 【修复 t9 缺陷③的配套】派帖/召回成功后**必须清空勾选**：
+   //   勾选集合是「本轮要派谁」的选择，动作完成就不该留着 ——
+   //   否则「已在外」的人会被继续算进「已勾选 N 人」，按钮文案继续虚高。
+   //   （勾选框是活 DOM、不随状态自动清，所以在这里显式清。）
+   for(const n of document.querySelectorAll('[data-errand-check]')) n.checked=false;
+   writeSave(state);ui.render();
+ }
  repaintExpansion(true);
 });
 

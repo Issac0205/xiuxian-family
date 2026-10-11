@@ -1329,7 +1329,14 @@ document.addEventListener('click',ev=>{
  }
  const r=immortalAction(state,errandBtn?'errand':'recall',ids.join(','),rng);
  ui.toast(r.reason,r.ok?'ok':'warn',3600);
- if(r.ok){writeSave(state);ui.render();}
+ if(r.ok){
+   // 【修复 t9 缺陷③的配套】派帖/召回成功后**必须清空勾选**：
+   //   勾选集合是「本轮要派谁」的选择，动作完成就不该留着 ——
+   //   否则「已在外」的人会被继续算进「已勾选 N 人」，按钮文案继续虚高。
+   //   （勾选框是活 DOM、不随状态自动清，所以在这里显式清。）
+   for(const n of document.querySelectorAll('[data-errand-check]')) n.checked=false;
+   writeSave(state);ui.render();
+ }
  repaintExpansion(true);
 });
 
