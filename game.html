@@ -14498,6 +14498,13 @@ window.__xiuxian = {
     repaintExpansion(true);
     return state;
   },
+  /**
+   * 只推进数值，不重绘。
+   * `step` 每次都会走一遍完整重绘，跑长程数值仿真时开销全在画界面上；
+   * 平衡工具（scripts/balance.mjs）需要连续推进几万次 tick，所以单独开这个口子。
+   * 语义与 `step` 完全一致，只少了渲染那一步。
+   */
+  tick: (gameSeconds) => tick(state, Number(gameSeconds) || 0, Date.now(), rng),
   /** 直接塞一名修士，方便调试。*/
   addCultivator: (origin = 'innate') => {
     const p = addCultivator(state, origin, Date.now(), true, origin === 'innate' ? 'cultivator-mortal' : '', rng);
