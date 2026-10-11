@@ -37,7 +37,12 @@ function runesOf(state) {
     r.prof[k] = Math.max(0, Math.min(RUNE_PROFICIENCY_MAX, Math.floor(Number(r.prof[k]) || 0)));
   }
   for (const k of Object.keys(r.pending)) {
-    if (!['cave', 'attack', 'break'].includes(k)) { delete r.pending[k]; continue; }
+    // 【策划 C11 / 任务 T-8】`tribulation` 是新增的挂靠点（天劫用的护身符）。
+    // ⚠ 这份白名单是**第二处**「允许的 pending 种类」清单：
+    //   `src/core/save.js` 的 hydrate 里还有一份同样的过滤。
+    //   两处都要加，否则符会被这里静默删掉、天劫永远读不到护身符
+    //   （而且不报错 —— 只表现为「护身符没生效」）。
+    if (!['cave', 'attack', 'break', 'tribulation'].includes(k)) { delete r.pending[k]; continue; }
     r.pending[k] = Math.max(0, Number(r.pending[k]) || 0);
   }
   return r;

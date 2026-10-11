@@ -152,6 +152,35 @@ function immortalAction(s,kind,param,rng=Math.random){
    }
    if(!back.length)return fail('没有在外的人需要召回');
    msg=`${back.join('、')}已归家，重回闭关`;
+ }else if(kind==='nascent-out'){
+   // 【策划 C8 / 任务 T-7】元婴出窍：param 是 `personId:nodeId`。
+   // 只在元婴及以上、且该节点**已占领**时可用（未占领的地没有「压着」的意义）。
+   const parts=String(param).split(':');
+   const p=c.cultivators.find(v=>v.id===Number(parts[0]));
+   const nodeId=parts[1];
+   if(!p)return fail('修士不存在');
+   if(!hasNascent(p))return fail(`${p.name}尚未结婴，无元婴可出窍`);
+   const na=nascentOf(p);
+   if(na.lost)return fail(`${p.name}的元婴早已离体不返`);
+   if(!nodeId||!mapNode(nodeId))return fail('请选择一处要去坐镇的地方');
+   if(!mapHeld(s,nodeId))return fail('只能把元婴送到已占领的地方');
+   na.out=true;na.place=nodeId;
+   msg=`${p.name}的元婴出窍，往${mapNode(nodeId).name}去了 —— 本体修为停涨，稳固每分每秒都在掉`;
+ }else if(kind==='nascent-recall'){
+   // 【策划 C8 / 任务 T-7】回体：瞬时、无冷却（与投帖召回同一约定：风险可中断）
+   const ids=String(param).split(',').map(v=>Number(v)).filter(v=>Number.isFinite(v)&&v>0);
+   if(!ids.length)return fail('请先选择要回体的元婴');
+   const back=[];
+   for(const id of ids){
+     const p=c.cultivators.find(v=>v.id===id);
+     if(!p||!hasNascent(p))continue;
+     const na=nascentOf(p);
+     if(!na.out)continue;
+     na.out=false;na.place=null;
+     back.push(p.name);
+   }
+   if(!back.length)return fail('没有在外面的元婴');
+   msg=`${back.join('、')}的元婴已回体，重新开始温养`;
  }else{return fail('未知操作')}
  pushLog(s,msg,'cultivate',null,Date.now());return {ok:true,reason:msg};
 }

@@ -293,6 +293,47 @@ const CODEX_MECHANICS = [
     seen: (s) => (s.cultivation?.cultivators || []).some((p) => p.realmIndex >= 14),
     hint: '有族人修至金丹前后可见',
   },
+  /* ── 【策划 C8 / C11 / 任务 T-7 / T-8】后期两境的机制词条 ──
+   * 志书体，照 docs/00-整体策划.md §4.9：克制的白描，不用感叹号。 */
+  {
+    id: 'mech-nascent', title: '圣胎：你的第二个自己会想跑',
+    prose: '结婴之后，人就有了第二个自己。它可以出窍，到你占下的地方去坐着 —— '
+      + '本体不动，那块地不必派镇守也照旧纳贡，城里的怨气也散得快。'
+      + '但它是油，出窍就是点火：稳固度一息一息地掉，掉到三十以下就要开始躁动，'
+      + '修为也跟着提不起来；掉到零，它就回不来了。'
+      + '回来的那个仍是活人，战力还在，只是从此不再精进。'
+      + '你若不在，它自会回体 —— 这一条是刻意的：这个游戏不惩罚你离开。',
+    lines: (s) => {
+      const people = (s.cultivation?.cultivators || []).filter((p) => Math.floor(p.realmIndex || 0) >= 18);
+      const out = people.filter((p) => p.nascent?.out === true);
+      return [
+        `稳固度：在体 +${NASCENT_RECOVER_PER_SEC}/秒 · 出窍 −${NASCENT_DRAIN_PER_SEC}/秒`,
+        `满稳固可出窍 ${(NASCENT_STABILITY_MAX / NASCENT_DRAIN_PER_SEC / 60).toFixed(1)} 分钟；回满需 ${(NASCENT_STABILITY_MAX / NASCENT_RECOVER_PER_SEC / 60).toFixed(1)} 分钟`,
+        `低于 ${NASCENT_RESTLESS_BELOW} 起躁动：修为 ×${NASCENT_RESTLESS_TRAIN_MULT}`,
+        `族中已结婴者 ${people.length} 人，其中出窍在外 ${out.length} 人`,
+      ];
+    },
+    seen: (s) => (s.cultivation?.cultivators || []).some((p) => Math.floor(p.realmIndex || 0) >= 18),
+    hint: '有族人结婴之后可见',
+  },
+  {
+    id: 'mech-tribulation', title: '天劫：你越强，天地越要收你',
+    prose: '化神的路不是走上去的，是挨过去的。三次晋阶，每一次都要引一次雷 —— '
+      + '界面会先替你算清楚：此劫共需卸几点，你手上有多少能卸。'
+      + '封地、护法、法器、道心，都可入阵；缺的那些，便由城里的凡人去填，'
+      + '每两点缺口落一道雷。'
+      + '不备而渡，第三劫必死 —— 这不是意外，是分寸。'
+      + '但死也不是白死：道统会留下十条秘闻与一件旧物。',
+    lines: () => [
+      ...Object.entries(REALM_TRIALS).map(([idx, dmg]) => `${realmName(Number(idx))} → ${realmName(Number(idx) + 1)}：基础雷伤 ${dmg} 点`),
+      `减免来源：封地 −${Math.round(TRIBULATION_SOURCES[0].per * 100)}%/处（至多 ${TRIBULATION_SOURCES[0].max} 处）· 护法 −${Math.round(TRIBULATION_SOURCES[1].per * 100)}%/位（至多 ${TRIBULATION_SOURCES[1].max} 位）· 法器 −${Math.round(TRIBULATION_SOURCES[2].per * 100)}%/件（至多 ${TRIBULATION_SOURCES[2].max} 件）`,
+      `道心 ≥${TRIBULATION_MORALITY.goodAt} 再减 ${Math.round(TRIBULATION_MORALITY.goodBonus * 100)}%；道心 ≤${TRIBULATION_MORALITY.evilAt} 反而招雷 ${Math.round(-TRIBULATION_MORALITY.evilBonus * 100)}%（诛邪神雷）`,
+      `每 ${TRIBULATION_BOLT_PER} 点缺口，城内落雷一道，每道折损人口 ${(TRIBULATION_BOLT_POP_LOSS * 100).toFixed(1)}%`,
+      '减免全在凡人/仙道两条科技线上攒 —— 化神过不过，不由化神期决定',
+    ],
+    seen: (s) => (s.cultivation?.cultivators || []).some((p) => Math.floor(p.realmIndex || 0) >= 22),
+    hint: '有族人修至化神之后可见',
+  },
 ];
 
 /* ── 章节 ── */

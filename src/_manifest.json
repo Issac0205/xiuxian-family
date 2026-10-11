@@ -44,6 +44,10 @@
     "marker": "/* ══════════ src/data/realms.js ══════════ */"
   },
   {
+    "path": "src/data/tribulation.js",
+    "marker": "/* ══════════ src/data/tribulation.js ══════════ */"
+  },
+  {
     "path": "src/data/roots.js",
     "marker": "/* ══════════ src/data/roots.js ══════════ */"
   },

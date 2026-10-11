@@ -3171,6 +3171,41 @@ const ERRAND_CLUE_PER_SEC = 2.5e-5;
 /** 每名在外族人每秒「不回来」的概率。出处：docs/91 §三 T-4。 */
 const ERRAND_DEATH_PER_SEC = 4e-6;
 
+/* ══════════════════════════════════════════════════════════════════
+ * 【策划 C8 / 任务 T-7】圣胎温养（元婴出窍）
+ *
+ * 数值出处：docs/91-落地任务清单.md §三 T-7「数值设计」：
+ *   稳固度 0–100；在体 +0.02/秒、出窍 −0.03/秒
+ *   ⇒ 100→0 需 55.6 分钟、100→30 需 38.9 分钟、0→100 需 83.3 分钟，
+ *   「一轮出窍 + 回满」= 138.9 分钟，出窍占 40%（刻意做成 0.67 : 1）。
+ *   低于 30：修为速率 −40%，且每秒 5e-5 概率「元婴躁动」→ 陨落。
+ * ⚠ 躁动概率**维持 5e-5/秒**（点子库曾自我否定说降到 0.0005%/秒，那个 16.5% 算错了分母：
+ *   躁动只在稳固度 < 30 时判定，窗口只有 30/0.03 = 1000 秒，
+ *   所以每轮实际概率 1 − e^(−5e-5×1000) = **4.9%**，不是 16.5%）。
+ *   4.9% = 「大约每 20 次冒险出一次事」—— 玩家有 1000 秒反应时间，是可靠的警告而非彩票。
+ * ⚠ 离线期间**出窍者自动回体、稳固度不下降**（见 engine.js runOffline 的显式跳过）——
+ *   这是本条与「离线不该惩罚玩家」约定的交点，也是 T-7 的头号风险点。
+ * ══════════════════════════════════════════════════════════════════ */
+
+/** 稳固度上限。 */
+const NASCENT_STABILITY_MAX = 100;
+/** 在体时每秒回复的稳固度。出处：docs/91 §三 T-7。 */
+const NASCENT_RECOVER_PER_SEC = 0.02;
+/** 出窍时每秒消耗的稳固度。出处：docs/91 §三 T-7。 */
+const NASCENT_DRAIN_PER_SEC = 0.03;
+/** 低于此值进入「躁动」区：修为 −40%，且每秒有躁动概率。 */
+const NASCENT_RESTLESS_BELOW = 30;
+/** 躁动区的修为惩罚倍率（−40%）。 */
+const NASCENT_RESTLESS_TRAIN_MULT = 0.6;
+/** 躁动区每秒陨落概率。出处：docs/91 §三 T-7（维持 5e-5，理由见上）。 */
+const NASCENT_RESTLESS_PER_SEC = 5e-5;
+/** 离体不返时冻结的境界（元婴初期）—— 战力保留，只是不再涨修为。 */
+const NASCENT_LOST_REALM = 18;
+/** 出窍者所在节点的民怨回落倍率（等效额外 −2×MAP_CALM_PER_SEC ⇒ 合计 3 倍）。 */
+const NASCENT_CALM_MULT = 3;
+/** 边界警告阈值（docs/91 §三 T-7 验收标准 8）。 */
+const NASCENT_WARN_AT = [30, 15, 5];
+
 /* ────────────────── 通往修仙篇的那条链 ────────────────── */
 
 /** 集齐多少条秘闻，云深谷坊市才会显现。 */
@@ -5824,6 +5859,116 @@ function realmPacing() {
   return { tiers, total };
 }
 
+/* ══════════ src/data/tribulation.js ══════════ */
+
+/* ────────────────────────────────────────────────────────────────
+ * 区块：天劫表（化神期的三次晋升）
+ * 职责：**纯数据**。化神期的晋升不再是「点一下冲关」，而是一次「引雷」结算：
+ *       基础雷伤 − 家族能卸掉的减免 = 实际雷伤，按实际雷伤分档。
+ *       「准备到什么程度才安全」全部由这张表决定，逻辑在 systems/breakthrough.js。
+ * 依赖：无（只有查表函数；减免来源的**取值**由 breakthrough.js 从各子系统读）
+ * 调参：TRIBULATION_BASE 三档基础雷伤 → 决定「不准备必死」的门槛。
+ * 文档：docs/91-落地任务清单.md §三 T-8
+ *       （数值已按 docs/90 的勘误修正：领地只有 4 处可占领，不是 8 处）
+ * ──────────────────────────────────────────────────────────────── */
+
+/**
+ * 【策划 C11 / 任务 T-8】三次天劫的基础雷伤。
+ * 键 = 晋升**前**的 `realmIndex`（22 化神初期 / 23 中期 / 24 后期）。
+ * 出处：docs/91 §三 T-8「三次天劫的强度」——初期 6 / 中期 7 / 后期 9。
+ */
+const REALM_TRIALS = { 22: 6, 23: 7, 24: 9 };
+
+/**
+ * 减免来源表。**每一条都是已有的东西**（doc 明确：不新增任何货币或资源）。
+ *
+ * `per` 是每条来源的减免比例，`max` 是条数上限。
+ * ⚠ 领地那一行是 4 而不是点子库原写的 8 ——
+ *   `MAP_NODES` 里 `kind:'foe'`（可占领）的节点**只有 4 个**，
+ *   另 4 个是 `kind:'cave'`（洞天，不可占领）。这是 docs/91 §七.3 的勘误第 1 条。
+ */
+const TRIBULATION_SOURCES = [
+  {
+    id: 'territory', name: '封地卸雷',
+    per: 0.08, max: 4,
+    desc: '每一处已占领且有效镇守的领地替你挡下一分雷意',
+    cost: '该领地暂停赋税 1 小时',
+  },
+  {
+    id: 'warden', name: '护法列阵',
+    per: 0.06, max: 6,
+    desc: '近境修士在雷下结阵，替你分担',
+    cost: '护法者一小时内不做别的',
+  },
+  {
+    id: 'artifact', name: '法器承雷',
+    per: 0.10, max: 3,
+    desc: '把法器送进雷里 —— 它们替你碎',
+    cost: '天劫后法器耐久清零',
+  },
+  {
+    id: 'rune', name: '护身符',
+    per: 0, max: 1,
+    desc: '一张护身符免去一道雷',
+    cost: '一次性消耗',
+  },
+  {
+    id: 'merit', name: '道心清白',
+    per: 0.10, max: 1,
+    desc: '道心 ≥ 70 —— 天道不罚善人',
+    cost: '——',
+  },
+];
+
+/** 道心修正的门槛与数值。
+ *  ⚠ 符号约定：这一列是**减免**（正数 = 少挨雷）。
+ *    我第一版把「善」写成 −0.10，于是道心清白反而让雷更重（静默反向）。
+ *    出处：docs/91 §三 T-8 减免表（道心 ≥70 → −10% 雷伤；≤30 → +15% 雷伤）。 */
+const TRIBULATION_MORALITY = {
+  goodAt: 70, goodBonus: 0.10,
+  evilAt: 30, evilBonus: -0.15,
+};
+
+/**
+ * 实际雷伤的分档后果。键是档位 id，`upTo` 是上界（含）。
+ * 出处：docs/91 §三 T-8 验收标准 4 ——
+ *   0–3 无事 / 4–6 该修士 1 小时修炼 −50% / 7–8 修为回退 40% / 9+ 陨落。
+ */
+const TRIBULATION_TIERS = [
+  { id: 'calm', upTo: 3, name: '雷息云散', desc: '此劫卸得干净，天地无言。' },
+  { id: 'shaken', upTo: 6, name: '道体受震', trainMult: 0.5, trainHours: 1, desc: '雷意入了体，一时半刻提不起气。' },
+  { id: 'broken', upTo: 8, name: '道基受损', xpLossRatio: 0.40, desc: '道基裂了一道缝，修为散去了四成。' },
+  { id: 'perish', upTo: Infinity, name: '形神俱灭', perish: true, desc: '此劫有去无回。' },
+];
+
+/** 每几点缺口落一道雷（落到城里）。出处：docs/91 §三 T-8 验收标准 6。 */
+const TRIBULATION_BOLT_PER = 2;
+/** 每道落城之雷的人口损失比例。出处：同上（人口 ×0.5%）。 */
+const TRIBULATION_BOLT_POP_LOSS = 0.005;
+/** 陨落时留给家族的传承。出处：docs/91 §三 T-8 验收标准 5。 */
+const TRIBULATION_INHERIT_CLUES = 10;
+
+/** 取某次天劫的基础雷伤；不是天劫层（化神三次以外）返回 0。 */
+function tribulationBase(index) { return Number(REALM_TRIALS[index]) || 0; }
+
+/** 这一层是不是「要渡劫」的层。 */
+function isTribulationRealm(index) { return tribulationBase(index) > 0; }
+
+/**
+ * 按实际雷伤取分档。
+ * @param {number} damage 实际雷伤（已扣减免，四舍五入后的整数）
+ */
+function tribulationTierOf(damage) {
+  const d = Math.max(0, Number(damage) || 0);
+  for (const t of TRIBULATION_TIERS) if (d <= t.upTo) return t;
+  return TRIBULATION_TIERS[TRIBULATION_TIERS.length - 1];
+}
+
+/** 缺口落到城里的雷数。出处：每 2 点缺口一道。 */
+function tribulationBolts(damage) {
+  return Math.max(0, Math.floor(Math.max(0, Number(damage) || 0) / TRIBULATION_BOLT_PER));
+}
+
 /* ══════════ src/data/roots.js ══════════ */
 
 /* ────────────────────────────────────────────────────────────────
@@ -6952,7 +7097,133 @@ function ensurePersonFields(p, state) {
     }
     p.core.used = used;
   }
+  // ── T-7：圣胎（元婴）。老存档没有 ⇒ 满稳固、在体、无驻地 ──
+  //   稳固度是「元婴还能在外待多久」的唯一刻度；低于 30 进躁动区、到 0 离体不返。
+  if (!(p.nascent && typeof p.nascent === 'object')) {
+    p.nascent = { stability: NASCENT_STABILITY_MAX, out: false, place: null, lost: false };
+  } else {
+    p.nascent.stability = Math.max(0, Math.min(NASCENT_STABILITY_MAX, Number(p.nascent.stability) || 0));
+    p.nascent.out = p.nascent.out === true;
+    p.nascent.place = typeof p.nascent.place === 'string' ? p.nascent.place : null;
+    p.nascent.lost = p.nascent.lost === true;
+    // 数据自洽：不在外就不该有驻地；离体不返者一律视为已回体
+    if (!p.nascent.out || p.nascent.lost) p.nascent.place = null;
+  }
   return p;
+}
+
+/**
+ * 【策划 C8 / 任务 T-7】取某人的圣胎状态（幂等，保证字段存在）。
+ * 单点入口：所有读写圣胎的地方都走它，避免又出现「两处各写一套」。
+ */
+function nascentOf(p) {
+  if (!(p.nascent && typeof p.nascent === 'object')) {
+    p.nascent = { stability: NASCENT_STABILITY_MAX, out: false, place: null, lost: false };
+  }
+  return p.nascent;
+}
+
+/** 该修士是否**有**圣胎可温养（元婴及以上）。 */
+function hasNascent(p) {
+  return Math.floor(Number(p && p.realmIndex) || 0) >= NASCENT_LOST_REALM;
+}
+
+/** 该修士的圣胎是否正在出窍。 */
+function nascentIsOut(p) { return hasNascent(p) && nascentOf(p).out === true && nascentOf(p).lost !== true; }
+
+/** 元婴是否已「离体不返」（到 0 的下场：不删数据，只是不再涨修为）。 */
+function nascentIsLost(p) { return hasNascent(p) && nascentOf(p).lost === true; }
+
+/** 出窍者在某个节点上的「威压」战力 —— 与镇守同一口径（它就是本体在压着这块地）。 */
+function nascentWardPower(state, nodeId) {
+  const people = (state.cultivation && state.cultivation.cultivators) || [];
+  let power = 0;
+  for (const p of people) {
+    if (!nascentIsOut(p)) continue;
+    if (nascentOf(p).place !== nodeId) continue;
+    power += cultivatorPower(state, p);
+  }
+  return power;
+}
+
+/** 某个节点上是否**有**出窍的元婴在镇着（界面与豁免判定都读它）。 */
+function nascentWardsAt(state, nodeId) { return nascentWardPower(state, nodeId) > 0; }
+
+/**
+ * 【策划 C8 / 任务 T-7 验收标准 7】把所有出窍的元婴叫回来（离线结算前调用）。
+ * **不回退稳固度**（离线不惩罚）—— 只把 `out` 置 false、清掉驻地。
+ * 返回被召回的人数（`runOffline` 用它决定要不要写一条日志）。
+ */
+function recallAllNascent(state, now = Date.now()) {
+  const people = (state.cultivation && state.cultivation.cultivators) || [];
+  let n = 0;
+  for (const p of people) {
+    if (!hasNascent(p)) continue;
+    const na = nascentOf(p);
+    if (!na.out) continue;
+    na.out = false;
+    na.place = null;
+    n += 1;
+  }
+  if (n > 0) pushLog(state, `你不在的这段日子里，${n} 道元婴都回了本体 —— 它们不曾在无人看顾时耗尽。`, 'cultivate', null, now);
+  return n;
+}
+
+/**
+ * 【策划 C8 / 任务 T-7 验收标准 3】出窍威压**绕开** `mapGarrisonLimit()`。
+ *
+ * 这正是本节点与**仙道科技线**的功能性交叉点：
+ *   科技 `zhenyue` / `jielu` 抬的是 `garrisonCapFlat` → `mapGarrisonLimit()`；
+ *   而元婴出窍提供的是**不受那个上限约束**的第二条路。
+ *   两者作用在**同一个量**（「我能有效压住几块地」）上 ⇒ 不是各自并存的装饰，
+ *   而是「科技抬底线、境界抬高线」的叠加关系。
+ *   `smoke` 用「同时上科技 + 出窍」的断言把这条关系钉住（见 T-7 的 tech 联动断言）。
+ */
+function mapEffectiveGarrisonLimit(state) {
+  const w = worldOf(state);
+  const outCount = Object.keys(w.garrison).length;
+  const nascentCount = ((state.cultivation && state.cultivation.cultivators) || [])
+    .filter((p) => nascentIsOut(p) && nascentOf(p).place).length;
+  return mapGarrisonLimit(state) + nascentCount;
+}
+
+/**
+ * 【策划 C8 / 任务 T-7 验收标准 5】躁动区的修为倍率。
+ * 稳固度 < 30 ⇒ 修为速率 **−40%**（×0.6）；离体不返 ⇒ **0**（不再涨修为）。
+ * 出处：docs/91 §三 T-7 数值设计。
+ */
+function nascentTrainMult(person) {
+  if (!hasNascent(person)) return 1;
+  const na = nascentOf(person);
+  if (na.lost) return 0;
+  return na.stability < NASCENT_RESTLESS_BELOW ? NASCENT_RESTLESS_TRAIN_MULT : 1;
+}
+
+/** 是否处于「元婴躁动」区（稳固度 < 30 且尚未离体不返）。 */
+function nascentIsRestless(person) {
+  return hasNascent(person) && !nascentOf(person).lost
+    && nascentOf(person).stability < NASCENT_RESTLESS_BELOW;
+}
+
+/**
+ * 【策划 C8 / 任务 T-7 验收标准 8】边界警告：稳固度降到 30 / 15 / 5 时各播报一次，
+ * 文案里明写「再 X 分钟元婴离体不返」——**警告必须可算**，不能只说「有危险」。
+ * 用 `nascent.warned` 记账，保证每档只弹一次（否则每秒刷屏）。
+ */
+function warnNascentThresholds(state, person, now) {
+  const na = nascentOf(person);
+  if (!na.warned || typeof na.warned !== 'object') na.warned = {};
+  // 从高到低扫（30 → 15 → 5）：跌破就播一次并记账，一次 tick 只播一档。
+  // 恢复回 30 以上时清账（见下面 else 分支），于是**下一轮出窍会重新警告** ——
+  // 否则第二次冒险就变成静默的，而这条机制的全部意义就是「警告必须有效」。
+  for (const line of NASCENT_WARN_AT) {
+    if (na.stability >= line) continue;
+    if (na.warned[String(line)] === true) continue;
+    na.warned[String(line)] = true;
+    const mins = Math.max(1, Math.ceil(na.stability / NASCENT_DRAIN_PER_SEC / 60));
+    pushLog(state, `${person.name}的元婴摇摇欲坠（稳固 ${Math.floor(na.stability)}）—— 再约 ${mins} 分钟便离体不返。`, 'cultivate', null, now);
+    break;
+  }
 }
 
 /**
@@ -7007,6 +7278,14 @@ function repairCultivation(state) {
   for(const [k,v] of Object.entries({poolBlueprint:false,pool:0,compass:false,veins:[],mineLevel:0,mineWorkers:0,clues:0,cluePool:0,caveRuns:0,conquests:[]})){if(c[k]===undefined)c[k]=v;}
   // 地图世界状态：抵达、占领、镇守、民怨（worldOf 会顺手把旧 conquests 迁进来）
   worldOf(state);
+  // 【策划 C11 / 任务 T-8 验收标准 8】护法位：与 world.garrison 同构但**独立字段**
+  //   （镇守是「压着一块地」，护法是「为一次天劫结阵」，语义不同，不能共用一个 map）。
+  //   老存档没有它 ⇒ 补成空数组。
+  {
+    const w = worldOf(state);
+    if (!Array.isArray(w.wardens)) w.wardens = [];
+    w.wardens = w.wardens.map((v) => Math.floor(Number(v))).filter((v) => Number.isFinite(v) && v > 0);
+  }
   // 丹房状态：药材、丹药、丹炉等级、各方熟练度
   alchemyOf(state);
   // 器坊状态：矿料、已铸法器、装备位、耐久、锻造台等级
@@ -7166,6 +7445,35 @@ function corePowerMult(person) {
  *   在倍速与大步长下会失真）。
  * ⚠ 死亡只发生在外的那几个人身上，**不碰凡人死亡率模型**。
  */
+/**
+ * 【策划 C8 / T-7 · C11 / T-8】把一名修士从名册上摘掉。
+ *
+ * 抽成单点入口的原因：这条逻辑现在有**三处**调用者（投帖不回、元婴躁动、天劫陨落），
+ * 而它必须同时维护三件记账（名册 / `qi` / `stats.deaths`）——
+ * 三处各抄一遍，早晚有一处忘了减 `qi`（那个 bug 不会报错，只会让「炼气人口」
+ * 永远对不上名册长度，而 `cultivation.qi` 正是解锁仙途的判据）。
+ *
+ * @param {boolean} inherit 是否留下传承（法器入库 + 秘闻线索）——
+ *   只有**天劫陨落**给传承（docs/91 §三 T-8 验收标准 5：「陨落保留传承」）。
+ *   投帖不归与元婴躁动不给：前者是凡人级的损耗，后者是玩家自己拖到 0 的后果。
+ */
+function removeCultivator(state, person, now = Date.now(), inherit = false) {
+  const c = state.cultivation;
+  if (!c || !person) return false;
+  const before = (c.cultivators || []).length;
+  c.cultivators = (c.cultivators || []).filter((p) => p !== person);
+  if (c.cultivators.length === before) return false;   // 本来就不在册，幂等
+  c.qi = c.cultivators.length;
+  state.stats.deaths = (Number(state.stats.deaths) || 0) + 1;
+  if (inherit) {
+    // 传承：一件遗物法器 + 10 条秘闻（数值出处：docs/91 §三 T-8 验收标准 5）
+    state.spiritStones = (state.spiritStones || 0) + 30;
+    c.clues = (Number(c.clues) || 0) + 10;
+    pushLog(state, `${person.name}的道统未绝：遗下一件旧物与十条秘闻，归入家族。`, 'cultivate', null, now);
+  }
+  return true;
+}
+
 function advanceErrand(state, person, dt, now, rng) {
   const step = Math.max(0, Number(dt) || 0);
   if (!(step > 0)) return;
@@ -7173,9 +7481,7 @@ function advanceErrand(state, person, dt, now, rng) {
   // 1) 不回来（先判死：死人的线索不该再结算）
   const deathChance = 1 - Math.exp(-ERRAND_DEATH_PER_SEC * step);
   if (rng() < deathChance) {
-    state.cultivation.cultivators = state.cultivation.cultivators.filter((p) => p !== person);
-    state.cultivation.qi = state.cultivation.cultivators.length;
-    state.stats.deaths += 1;
+    removeCultivator(state, person, now);
     pushLog(state, `${person.name}出门投帖，久无音信 —— 怕是回不来了。`, 'cultivate', null, now);
     return;
   }
@@ -7217,6 +7523,35 @@ function progressCultivators(state,dt,now=Date.now(),rng=Math.random,births=0) {
     if(rng()<pairChance)addCultivator(state,'innate',now,false,'cultivator-cultivator',rng);
   }
   for(const person of people) {
+    // 【策划 C8 / 任务 T-7 验收标准 2】圣胎稳固度的推进（**写在所有 continue 之前**）。
+    //   在体：+0.02/秒（回复）；出窍：−0.03/秒（消耗）。
+    //   出处：docs/91 §三 T-7 数值设计（100→0 = 55.6 分钟）。
+    //   ⚠ 只有元婴及以上才消耗随机数/写字段 —— 对既有存档与既有测试的 rng 序列零影响。
+    if (hasNascent(person)) {
+      const na = nascentOf(person);
+      if (na.lost) {
+        // 离体不返：稳固度恒为 0，不再有任何推进（战力保留，见 cultivatorPower）
+      } else if (na.out) {
+        na.stability = Math.max(0, na.stability - NASCENT_DRAIN_PER_SEC * dt);
+        if (na.stability <= 0) {
+          // 【验收标准 6】到 0 = 离体不返：境界冻结在元婴初期、不删数据、战力保留
+          na.lost = true;
+          na.out = false;
+          na.place = null;
+          person.realmIndex = Math.min(person.realmIndex, NASCENT_LOST_REALM);
+          pushLog(state, `${person.name}的元婴在外太久了，终究没能回来 —— 从此不再涨修为，但人还在。`, 'cultivate', null, now);
+          continue;
+        }
+        // 【验收标准 8】边界警告：30 / 15 / 5 各弹一次
+        warnNascentThresholds(state, person, now);
+        // 【验收标准 2】出窍期间**修为完全不涨** —— 这是「本体不动」的实现
+        continue;
+      } else {
+        na.stability = Math.min(NASCENT_STABILITY_MAX, na.stability + NASCENT_RECOVER_PER_SEC * dt);
+        // 回满到最高警告档之上就清账 ⇒ 下一轮出窍会重新警告（警告不能只用一次）
+        if (na.stability >= NASCENT_WARN_AT[0]) na.warned = {};
+      }
+    }
     // 【策划 C1 / 任务 T-4】出门在外的人：先判「不回来」，再过修为那道 continue。
     // 之所以写在最前面，是因为下面 :204 的放行名单只认 retreat/sect ——
     // 差事的人会被它跳过，判定就再也没机会执行了。
@@ -7239,6 +7574,11 @@ function progressCultivators(state,dt,now=Date.now(),rng=Math.random,births=0) {
     // 【策划 C6 / 任务 T-6 验收标准 1】金丹期修为满且本层未结丹时，同样停止积累 ——
     // 等玩家在「晋升」与「结丹」之间选。**不再自动晋升**，这是金丹玩法的地基。
     if(!realmGate(idx) && breakthroughState(person).kind==='folding') continue;
+    // 【策划 C11 / 任务 T-8 验收标准 1】化神期三层靠**天劫**晋升，同样不许自动跳级。
+    // ⚠ 这一条不可省：`REALM_GATES` 里没有 22/23/24 的条目，所以 `realmGate(idx)` 为 null，
+    //   而下面的自动晋升 `while` 只认 gate —— 不拦住的话修为一满就自动升级，
+    //   「渡劫界面」永远不会出现（静默失败，不报错）。
+    if(isTribulationRealm(idx) && person.xp>=realmXpNeeded(idx)) continue;
 
     // 家族功法只对「闭关」生效——宗门修的是宗门的法，传不进山门。
     // 所以宗门是安全的 3.5× 固定路线，闭关则随功法收藏成长，收藏够了会反超。
@@ -7258,7 +7598,23 @@ function progressCultivators(state,dt,now=Date.now(),rng=Math.random,births=0) {
     // 【策划 C2 / 任务 T-3 验收标准 2】猛进：闭关修士的修为增量恰好 ×2.2。
     // 【策划 C6 / 任务 T-6 验收标准 6】丹品修炼倍率：丹纹越高，闭关越快。
     // 出处：docs/91-落地任务清单.md §三 T-3（2.2 倍）与 T-6（丹纹 → 品阶 → 修炼倍率）。
-    person.xp += REALM_XP_RATE*dt*manualMult*runeMult*metaMult*schoolMult*techTrainMult*rootSpeedMult(person)*(Number(person.talent)||1)*(person.job==='sect'?3.5:1)*pushRateMult(person)*coreTrainMult(person);
+    // 【策划 C8 / 任务 T-7 验收标准 5】元婴躁动区的惩罚：
+    //   稳固度 < 30 ⇒ 修为速率 **−40%**（×0.6）；离体不返 ⇒ ×0（不再涨修为）。
+    //   出处：docs/91 §三 T-7 数值设计。
+    const nascentMult = nascentTrainMult(person);
+    person.xp += REALM_XP_RATE*dt*manualMult*runeMult*metaMult*schoolMult*techTrainMult*rootSpeedMult(person)*(Number(person.talent)||1)*(person.job==='sect'?3.5:1)*pushRateMult(person)*coreTrainMult(person)*nascentMult;
+
+    // 【策划 C8 / 任务 T-7 验收标准 5】躁动判定：稳固度 < 30 时每秒 5e-5 概率陨落。
+    //   只在躁动区才消耗随机数 ⇒ 对既有存档与既有测试的 rng 序列零影响。
+    //   概率出处与「为什么不是 16.5%」见 core/config.js 的 NASCENT_RESTLESS_PER_SEC 注释。
+    if (nascentIsRestless(person)) {
+      const restlessChance = 1 - Math.exp(-NASCENT_RESTLESS_PER_SEC * Math.max(0, dt));
+      if (rng() < restlessChance) {
+        pushLog(state, `${person.name}的元婴躁动难制，道体崩解，就此陨落。`, 'cultivate', null, now);
+        removeCultivator(state, person, now);
+        continue;
+      }
+    }
 
     // 【策划 C2 / 任务 T-3】走火判定：以 local × 1.0e-4 /秒 的速率到达，每次把**本层**修为清零。
     // 判定写在增量之后：低层猛进「快 2.2 倍」，九层猛进「反而更慢 5%」，
@@ -7288,6 +7644,8 @@ function progressCultivators(state,dt,now=Date.now(),rng=Math.random,births=0) {
       if(gate){ if(person.xp>need) person.xp=need; break; }
       // 【策划 C6 / 任务 T-6】金丹期修为满时不再自动晋升，先把决策权交给玩家
       if(coreFoldableIndex(person.realmIndex) && !coreUsedHere(person, person.realmIndex) && person.xp>=need) break;
+      // 【策划 C11 / 任务 T-8】化神三层不许在 while 里自动跳级（见上面 continue 的说明）
+      if(isTribulationRealm(person.realmIndex) && person.xp>=need) break;
       if(!Number.isFinite(need) || person.xp<need) break;
       person.xp-=need;
       person.realmIndex+=1;
@@ -7436,6 +7794,18 @@ function breakthroughPlan(state, personId, siteId, force = false) {
 
   const st = breakthroughState(person);
   if (st.kind === 'max') return { ok: false, reason: `${person.name}已至此界尽头` };
+  // 【策划 C11 / 任务 T-8】化神期的三次晋升走的是**天劫**，不是 `REALM_GATES`。
+  // ⚠ **必须排在 `progressing` 那一句之前**：化神三层在 `REALM_GATES` 里没有条目，
+  //   于是 `breakthroughState()` 会给它们 `progressing`（「同档内自动晋升」）——
+  //   若按正常顺序早退，天劫这一整条路就永远不会被走到（而且不会报错）。
+  //   我第一版就把它写在后面，`tribulationPlan` 一次都没被调用过。
+  // 转发而不是复制：plan/commit 的分离约定与界面入口都不变，
+  // 只是「这一层要付什么」换了一套算法（见 tribulationPlan）。
+  // 第 4 个形参 `force` 在这里充当 loadout（`{territory,wardens,artifact}`）——
+  // 天劫没有「无风险跳过」这一说，所以 force 的语义在这一层不存在。
+  if (isTribulationRealm(person.realmIndex)) {
+    return tribulationPlan(state, personId, force && typeof force === 'object' ? force : undefined);
+  }
   if (st.kind === 'progressing') return { ok: false, reason: '同档内会自动晋阶，无需冲关' };
   // 【策划 C6 / 任务 T-6】金丹期修为满时走的是结丹那条路，不是冲关
   if (st.kind === 'folding') {
@@ -7876,6 +8246,218 @@ function coreDashboard(state) {
     chancesLeft: coreChancesLeft(p),
     used: Object.keys(coreOf(p).used).map(Number).sort((a, b) => a - b),
   }));
+}
+
+/**
+ * ══════════════════ 【策划 C11 / 任务 T-8】天劫 ══════════════════
+ *
+ * 化神期的三次晋升（初期→中期→后期→圆满）**不再走 `REALM_GATES`**，
+ * 而是「准备界面 + 一次引雷结算」。这是本节点与**科技线**的第二处功能性联动：
+ *   减免来源里，领地取自地图线、法器取自器坊线（`artifactBonus`）、
+ *   护身符取自符房线（`runePending`）、护法取自名册 —— 也就是**化神能不能过，
+ *   取决于玩家前 40 小时在凡人/仙道两条科技线上攒下了什么**。
+ *   不准备就必死（基础 9 点、0 减免 ⇒ 落入 `perish` 档），这是刻意的门槛。
+ *
+ * 数值出处：docs/91-落地任务清单.md §三 T-8 与 src/data/tribulation.js。
+ */
+
+/** 收集本次天劫的全部减免来源（**纯读**，不动状态）。 */
+function tribulationSources(state, personId, loadout) {
+  const lo = loadout || {};
+  const w = worldOf(state);
+  const out = [];
+
+  // ① 封地：已占领 **且有效镇守** 的领地各 −8%（上限 4 = 可占领节点数）
+  const held = (w.held || []).filter((id) => mapIsPacified(state, id));
+  const terrOn = lo.territory !== false;
+  const terrCount = terrOn ? Math.min(TRIBULATION_SOURCES[0].max, held.length) : 0;
+  out.push({
+    id: 'territory', name: TRIBULATION_SOURCES[0].name,
+    value: terrCount * TRIBULATION_SOURCES[0].per,
+    count: terrCount, available: held.length,
+    note: terrCount ? `${terrCount} 处领地（暂停赋税 1 小时）` : '没有有效镇守的领地',
+  });
+
+  // ② 护法：元婴及以上的修士结阵，每人 −6%（上限 6）
+  //    与镇守同构但用**独立字段** `world.wardens`（验收标准 8 明确要求独立）
+  //    ⚠ **要渡劫的本人不能给自己当护法** —— 他正在雷里，不可能同时结阵。
+  //      这个洞我第一版漏了：装上之后 `available` 会把本人算进去，
+  //      于是「护法数」永远比玩家能真正动员的人多 1。
+  const me = Math.floor(Number(personId)) || 0;
+  const pool = (state.cultivation?.cultivators || []).filter((p) => hasNascent(p) && p.id !== me);
+  const chosen = Array.isArray(lo.wardens)
+    ? lo.wardens.map((id) => Number(id))
+    : pool.slice(0, TRIBULATION_SOURCES[1].max).map((p) => p.id);
+  const wardenIds = chosen
+    .filter((id) => pool.some((p) => p.id === id))
+    .slice(0, TRIBULATION_SOURCES[1].max);
+  out.push({
+    id: 'warden', name: TRIBULATION_SOURCES[1].name,
+    value: wardenIds.length * TRIBULATION_SOURCES[1].per,
+    count: wardenIds.length, available: pool.length, ids: wardenIds,
+    note: wardenIds.length ? `${wardenIds.length} 位护法结阵` : '没有可结阵的元婴修士',
+  });
+
+  // ③ 法器承雷：每件装备中的法器 −10%（上限 3 = FORGE_SLOT 的位数）
+  const art = artifactBonus(state);
+  const equipped = Object.keys(forgeOf(state).equipped || {}).length;
+  const artOn = lo.artifact !== false;
+  const artCount = artOn ? Math.min(TRIBULATION_SOURCES[2].max, equipped) : 0;
+  out.push({
+    id: 'artifact', name: TRIBULATION_SOURCES[2].name,
+    value: artCount * TRIBULATION_SOURCES[2].per,
+    count: artCount, available: equipped,
+    note: artCount ? `${artCount} 件法器（天劫后耐久清零）` : '没有可用的法器',
+  });
+
+  // ④ 道心：≥70 减 10%；≤30 反而 **+15%**（「诛邪神雷」—— 恶名招雷）
+  const mor = moralityOf(state);
+  let morVar = 0;
+  let morNote = `道心 ${Math.round(mor)}（中庸，无加减）`;
+  if (mor >= TRIBULATION_MORALITY.goodAt) { morVar = TRIBULATION_MORALITY.goodBonus; morNote = `道心 ${Math.round(mor)} —— 天道不罚善人`; }
+  else if (mor <= TRIBULATION_MORALITY.evilAt) { morVar = TRIBULATION_MORALITY.evilBonus; morNote = `道心 ${Math.round(mor)} —— 诛邪神雷`; }
+  out.push({ id: 'merit', name: '道心', value: morVar, count: morVar ? 1 : 0, note: morNote });
+
+  // ⑤ 护身符：免**一道落城的雷**（不是减雷伤）—— 所以它单独一格，不进减免合计
+  const hasRune = runePending(state, 'tribulation') > 0;
+  out.push({
+    id: 'rune', name: TRIBULATION_SOURCES[3].name,
+    value: 0, count: hasRune ? 1 : 0, isBolt: true,
+    note: hasRune ? '一张护身符（免一道落城的雷，一次性）' : '没有挂护身符',
+  });
+  return out;
+}
+
+/**
+ * 询价：这次天劫会发生什么。**纯计算，不动状态**（验收标准 2 的 plan/commit 分离）。
+ *
+ * @param {object} loadout 可选：`{territory?, wardens?, artifact?}` 决定这次投入什么。
+ *   不传 = 把**现有可用的**全部投入（界面默认；不传就是「尽力准备」）。
+ */
+function tribulationPlan(state, personId, loadout) {
+  const person = findCultivator(state, personId);
+  if (!person) return { ok: false, reason: '修士不存在' };
+  const idx = Math.floor(Number(person.realmIndex) || 0);
+  const base = tribulationBase(idx);
+  if (!base) return { ok: false, reason: `${person.name}当前不必渡劫` };
+  const st = breakthroughState(person);
+  // ⚠ 化神三层在 `REALM_GATES` 里没有条目，所以 `breakthroughState()` 会给它们 `progressing`
+  //   （「同档内自动晋升」）—— 不能用 `st.kind !== 'blocked'` 来判「能不能渡劫」，
+  //   否则天劫永远询价失败。真正的判据是「本层修为是否已满」。
+  const need = realmXpNeeded(idx);
+  if (Number.isFinite(need) && person.xp < need) {
+    return { ok: false, reason: `修为未满（还需 ${Math.ceil(need - person.xp)} 点）`, remaining: need - person.xp };
+  }
+  if (!Number.isFinite(need)) return { ok: false, reason: `${person.name}已至此界尽头` };
+
+  const sources = tribulationSources(state, personId, loadout);
+  // 减免合计 = 各来源相加（道心可能是负数加成，也就是 +雷）
+  const reductionRaw = sources.reduce((a, s) => a + s.value, 0);
+  const reduction = Math.max(0, reductionRaw);
+  // 实际雷伤 = round(基础 × (1 − 减免))；减免 >100% 时夹到 0（满减免 = 完全卸雷）
+  const damage = Math.max(0, Math.round(base * Math.max(0, 1 - reduction)));
+  const tier = tribulationTierOf(damage);
+  // 落城的雷：每 2 点缺口一道；护身符再免掉一道（下限 0）
+  const runeSaved = sources.some((s) => s.id === 'rune' && s.count > 0) ? 1 : 0;
+  const boltsRaw = tribulationBolts(damage);
+  const bolts = Math.max(0, boltsRaw - runeSaved);
+  const popLoss = Math.max(0, Math.round((Number(state.population) || 0) * TRIBULATION_BOLT_POP_LOSS)) * bolts;
+
+  return {
+    ok: true, kind: 'tribulation',
+    personId: person.id, name: person.name,
+    fromName: realmName(idx), toName: realmName(idx + 1),
+    base, reduction, reductionRaw, damage,
+    tier: tier.id, tierName: tier.name, tierDesc: tier.desc,
+    sources,
+    /** 缺口 = 实际雷伤（界面上「此劫需卸 X 点、你能卸 Y 点」的那两个数） */
+    threshold: base, covered: Math.round(base * reduction * 100) / 100,
+    bolts, boltsRaw, runeSaved, popLoss,
+    perish: tier.perish === true,
+    xpLoss: tier.xpLossRatio ? Math.floor(realmXpNeeded(idx) * tier.xpLossRatio) : 0,
+    trainMult: tier.trainMult || 1, trainHours: tier.trainHours || 0,
+    /** 界面用的一句话（明写缺口与落雷） */
+    verdict: `${tier.name} —— 缺口 ${damage} 点${bolts > 0 ? `，城内落雷 ${bolts} 道` : '，城内无事'}`,
+  };
+}
+
+/**
+ * 兑现一次天劫（验收标准 2 的 commit 半边）。
+ * 无论成败都**消耗掉这次晋升机会**（与金丹结丹同一约定：渡劫没有第二次）。
+ */
+function commitTribulation(state, personId, now = Date.now(), rng = Math.random, loadout) {
+  const plan = tribulationPlan(state, personId, loadout);
+  if (!plan.ok) return plan;
+  const person = findCultivator(state, personId);
+  if (!person) return { ok: false, reason: '修士不存在' };
+
+  // ① 对价：投入的东西当场付出（这是「卸雷不是免费的」的落点）
+  if (plan.sources.find((s) => s.id === 'territory')?.count > 0) {
+    state.cultivation.world = state.cultivation.world || {};
+    const w = worldOf(state);
+    w.unrestPauseUntil = now + 3600 * 1000;   // 领地暂停赋税 1 小时
+  }
+  if (plan.sources.find((s) => s.id === 'artifact')?.count > 0) {
+    wearArtifacts(state, 'tribulation');      // 耐久清零（reason 参数已存在）
+  }
+  if (plan.sources.find((s) => s.id === 'rune')?.count > 0) {
+    consumePending(state, 'tribulation');
+  }
+  const wardenIds = plan.sources.find((s) => s.id === 'warden')?.ids || [];
+  if (wardenIds.length) {
+    const w = worldOf(state);
+    if (!Array.isArray(w.wardens)) w.wardens = [];
+    w.wardens = wardenIds.slice();
+  }
+
+  // ② 落城的雷（先落，再算人的下场 —— 与文档「缺口每 2 点，城里落一道雷」一致）
+  let killed = 0;
+  if (plan.bolts > 0) {
+    const pop = Number(state.population) || 0;
+    let remain = pop;
+    for (let i = 0; i < plan.bolts; i += 1) remain = Math.max(0, remain - remain * TRIBULATION_BOLT_POP_LOSS);
+    killed = Math.max(0, Math.round(pop - remain));
+    state.population = Math.max(0, Math.round(remain));
+    state.stats.deaths = (Number(state.stats.deaths) || 0) + killed;
+    pushLog(state, `天劫的余雷落进城里 —— ${plan.bolts} 道，死了 ${killed} 人。`, 'cultivate', null, now);
+  }
+
+  // ③ 分档结算
+  const tier = tribulationTierOf(plan.damage);
+  if (tier.perish) {
+    // 陨落**保留传承**（验收标准 5）：10 条秘闻 + 30 灵石由 removeCultivator(inherit=true) 发放。
+    // ⚠ 我第一版在这里又减了一次 TRIBULATION_INHERIT_CLUES，等于把刚发的传承倒扣回去
+    //   （净效果 0，而且不报错）—— 典型的「两处各写一遍同一笔账」。
+    //   现在这笔账**只有一处**：`removeCultivator` 的 inherit 分支。
+    removeCultivator(state, person, now, true);
+    pushLog(state, `${person.name}渡劫失败，形神俱灭于雷下。此劫要了你一个人。`, 'cultivate', null, now);
+    return {
+      ok: true, success: false, perish: true, name: person.name,
+      damage: plan.damage, tier: tier.id, bolts: plan.bolts, killed,
+      inherit: { clues: TRIBULATION_INHERIT_CLUES, stones: 30 },
+    };
+  }
+
+  if (tier.id === 'broken') {
+    person.xp = Math.max(0, person.xp - plan.xpLoss);
+    person.breakFailures = (person.breakFailures || 0) + 1;
+    pushLog(state, `${person.name}渡劫撑住了，但道基受损，修为倒退 ${plan.xpLoss} 点。`, 'cultivate', null, now);
+    return { ok: true, success: true, name: person.name, damage: plan.damage, tier: tier.id, loss: plan.xpLoss, bolts: plan.bolts, killed };
+  }
+
+  // calm / shaken：晋升成功（shaken 附加一段修炼减速）
+  person.realmIndex += 1;
+  person.xp = 0;
+  person.breakFailures = 0;
+  person.realmEnteredYear = Number(state.clock?.year) || 0;
+  if (tier.id === 'shaken') {
+    person.stalled = Math.max(Number(person.stalled) || 0, (tier.trainHours || 1) * 3600);
+  }
+  pushLog(state, `${person.name}渡过天劫，晋升${realmName(person.realmIndex)}！${plan.bolts > 0 ? `（城内落雷 ${plan.bolts} 道）` : ''}`, 'cultivate', null, now);
+  return {
+    ok: true, success: true, name: person.name, realm: realmName(person.realmIndex),
+    realmIndex: person.realmIndex, damage: plan.damage, tier: tier.id, bolts: plan.bolts, killed,
+  };
 }
 
 /**
@@ -8726,6 +9308,47 @@ const CODEX_MECHANICS = [
     seen: (s) => (s.cultivation?.cultivators || []).some((p) => p.realmIndex >= 14),
     hint: '有族人修至金丹前后可见',
   },
+  /* ── 【策划 C8 / C11 / 任务 T-7 / T-8】后期两境的机制词条 ──
+   * 志书体，照 docs/00-整体策划.md §4.9：克制的白描，不用感叹号。 */
+  {
+    id: 'mech-nascent', title: '圣胎：你的第二个自己会想跑',
+    prose: '结婴之后，人就有了第二个自己。它可以出窍，到你占下的地方去坐着 —— '
+      + '本体不动，那块地不必派镇守也照旧纳贡，城里的怨气也散得快。'
+      + '但它是油，出窍就是点火：稳固度一息一息地掉，掉到三十以下就要开始躁动，'
+      + '修为也跟着提不起来；掉到零，它就回不来了。'
+      + '回来的那个仍是活人，战力还在，只是从此不再精进。'
+      + '你若不在，它自会回体 —— 这一条是刻意的：这个游戏不惩罚你离开。',
+    lines: (s) => {
+      const people = (s.cultivation?.cultivators || []).filter((p) => Math.floor(p.realmIndex || 0) >= 18);
+      const out = people.filter((p) => p.nascent?.out === true);
+      return [
+        `稳固度：在体 +${NASCENT_RECOVER_PER_SEC}/秒 · 出窍 −${NASCENT_DRAIN_PER_SEC}/秒`,
+        `满稳固可出窍 ${(NASCENT_STABILITY_MAX / NASCENT_DRAIN_PER_SEC / 60).toFixed(1)} 分钟；回满需 ${(NASCENT_STABILITY_MAX / NASCENT_RECOVER_PER_SEC / 60).toFixed(1)} 分钟`,
+        `低于 ${NASCENT_RESTLESS_BELOW} 起躁动：修为 ×${NASCENT_RESTLESS_TRAIN_MULT}`,
+        `族中已结婴者 ${people.length} 人，其中出窍在外 ${out.length} 人`,
+      ];
+    },
+    seen: (s) => (s.cultivation?.cultivators || []).some((p) => Math.floor(p.realmIndex || 0) >= 18),
+    hint: '有族人结婴之后可见',
+  },
+  {
+    id: 'mech-tribulation', title: '天劫：你越强，天地越要收你',
+    prose: '化神的路不是走上去的，是挨过去的。三次晋阶，每一次都要引一次雷 —— '
+      + '界面会先替你算清楚：此劫共需卸几点，你手上有多少能卸。'
+      + '封地、护法、法器、道心，都可入阵；缺的那些，便由城里的凡人去填，'
+      + '每两点缺口落一道雷。'
+      + '不备而渡，第三劫必死 —— 这不是意外，是分寸。'
+      + '但死也不是白死：道统会留下十条秘闻与一件旧物。',
+    lines: () => [
+      ...Object.entries(REALM_TRIALS).map(([idx, dmg]) => `${realmName(Number(idx))} → ${realmName(Number(idx) + 1)}：基础雷伤 ${dmg} 点`),
+      `减免来源：封地 −${Math.round(TRIBULATION_SOURCES[0].per * 100)}%/处（至多 ${TRIBULATION_SOURCES[0].max} 处）· 护法 −${Math.round(TRIBULATION_SOURCES[1].per * 100)}%/位（至多 ${TRIBULATION_SOURCES[1].max} 位）· 法器 −${Math.round(TRIBULATION_SOURCES[2].per * 100)}%/件（至多 ${TRIBULATION_SOURCES[2].max} 件）`,
+      `道心 ≥${TRIBULATION_MORALITY.goodAt} 再减 ${Math.round(TRIBULATION_MORALITY.goodBonus * 100)}%；道心 ≤${TRIBULATION_MORALITY.evilAt} 反而招雷 ${Math.round(-TRIBULATION_MORALITY.evilBonus * 100)}%（诛邪神雷）`,
+      `每 ${TRIBULATION_BOLT_PER} 点缺口，城内落雷一道，每道折损人口 ${(TRIBULATION_BOLT_POP_LOSS * 100).toFixed(1)}%`,
+      '减免全在凡人/仙道两条科技线上攒 —— 化神过不过，不由化神期决定',
+    ],
+    seen: (s) => (s.cultivation?.cultivators || []).some((p) => Math.floor(p.realmIndex || 0) >= 22),
+    hint: '有族人修至化神之后可见',
+  },
 ];
 
 /* ── 章节 ── */
@@ -9351,7 +9974,16 @@ function mapGarrisonFull(state, nodeId) {
   const w = worldOf(state);
   const assigned = Object.keys(w.garrison).filter((id) => w.garrison[id] !== undefined).length;
   if (w.garrison[nodeId] !== undefined) return false;   // 已在守这里，只是换人
-  return assigned >= mapGarrisonLimit(state);
+  // 【策划 C8 / 任务 T-7 验收标准 3】出窍的元婴**不占**镇守名额 ——
+  //   这就是「出窍威压」的全部价值（对照仙道科技 zhenyue / jielu 抬的是同一个上限）。
+  //   所以判断满没满时，把出窍者提供的**等效名额**加进去。
+  return assigned >= mapGarrisonLimit(state) + nascentGarrisonSlack(state);
+}
+
+/** 元婴出窍提供的**等效镇守名额**（不计入 garrison，也不受 mapGarrisonLimit 约束）。 */
+function nascentGarrisonSlack(state) {
+  return ((state.cultivation && state.cultivation.cultivators) || [])
+    .filter((p) => nascentIsOut(p) && nascentOf(p).place).length;
 }
 
 /** 某节点当前的镇守战力。 */
@@ -9368,7 +10000,11 @@ function mapHoldStrength(state, nodeId) {
 function mapIsPacified(state, nodeId) {
   const node = mapNode(nodeId);
   if (!node || node.kind !== 'foe') return false;
-  return mapHoldStrength(state, nodeId) >= mapHoldPowerFor(state, node);
+  // 【策划 C8 / 任务 T-7 验收标准 3】镇守战力 + **出窍元婴的威压**。
+  //   出窍者不在 `world.garrison` 里，所以这条是它唯一的生效路径；
+  //   `mapGarrisonLimit() = 1` 时仍然判定为「被有效镇守」——这正是威压绕开名额的证据。
+  const strength = mapHoldStrength(state, nodeId) + nascentWardPower(state, nodeId);
+  return strength >= mapHoldPowerFor(state, node);
 }
 
 /**
@@ -9504,7 +10140,12 @@ function advanceTerritories(state, dt, now = Date.now()) {
       if (node.herb) addHerbs(state, node.herb, (node.herbYield || 0) * dt * matMult);
       if (node.ore) addOres(state, node.ore, (node.oreYield || 0) * dt * matMult);
       if (node.rune) addRuneMats(state, node.rune, (node.runeYield || 0) * dt * matMult);
-      w.unrest[id] = Math.max(0, (Number(w.unrest[id]) || 0) - MAP_CALM_PER_SEC * dt);
+      // 【策划 C8 / 任务 T-7 验收标准 4】出窍的元婴坐镇时，民怨回落是平时的 **3 倍**
+      //   （等效额外 −2 × MAP_CALM_PER_SEC）。出处：docs/91 §三 T-7。
+      //   注意这里用**倍率**而不是再减一次常数：常数写法会在以后调 MAP_CALM_PER_SEC 时
+      //   与「3 倍」这个验收口径脱钩。
+      const calmMult = nascentWardsAt(state, id) ? NASCENT_CALM_MULT : 1;
+      w.unrest[id] = Math.max(0, (Number(w.unrest[id]) || 0) - MAP_CALM_PER_SEC * calmMult * dt);
       continue;
     }
     const next = (Number(w.unrest[id]) || 0) + MAP_UNREST_PER_SEC * dt;
@@ -10332,7 +10973,12 @@ function runesOf(state) {
     r.prof[k] = Math.max(0, Math.min(RUNE_PROFICIENCY_MAX, Math.floor(Number(r.prof[k]) || 0)));
   }
   for (const k of Object.keys(r.pending)) {
-    if (!['cave', 'attack', 'break'].includes(k)) { delete r.pending[k]; continue; }
+    // 【策划 C11 / 任务 T-8】`tribulation` 是新增的挂靠点（天劫用的护身符）。
+    // ⚠ 这份白名单是**第二处**「允许的 pending 种类」清单：
+    //   `src/core/save.js` 的 hydrate 里还有一份同样的过滤。
+    //   两处都要加，否则符会被这里静默删掉、天劫永远读不到护身符
+    //   （而且不报错 —— 只表现为「护身符没生效」）。
+    if (!['cave', 'attack', 'break', 'tribulation'].includes(k)) { delete r.pending[k]; continue; }
     r.pending[k] = Math.max(0, Number(r.pending[k]) || 0);
   }
   return r;
@@ -11279,6 +11925,35 @@ function immortalAction(s,kind,param,rng=Math.random){
    }
    if(!back.length)return fail('没有在外的人需要召回');
    msg=`${back.join('、')}已归家，重回闭关`;
+ }else if(kind==='nascent-out'){
+   // 【策划 C8 / 任务 T-7】元婴出窍：param 是 `personId:nodeId`。
+   // 只在元婴及以上、且该节点**已占领**时可用（未占领的地没有「压着」的意义）。
+   const parts=String(param).split(':');
+   const p=c.cultivators.find(v=>v.id===Number(parts[0]));
+   const nodeId=parts[1];
+   if(!p)return fail('修士不存在');
+   if(!hasNascent(p))return fail(`${p.name}尚未结婴，无元婴可出窍`);
+   const na=nascentOf(p);
+   if(na.lost)return fail(`${p.name}的元婴早已离体不返`);
+   if(!nodeId||!mapNode(nodeId))return fail('请选择一处要去坐镇的地方');
+   if(!mapHeld(s,nodeId))return fail('只能把元婴送到已占领的地方');
+   na.out=true;na.place=nodeId;
+   msg=`${p.name}的元婴出窍，往${mapNode(nodeId).name}去了 —— 本体修为停涨，稳固每分每秒都在掉`;
+ }else if(kind==='nascent-recall'){
+   // 【策划 C8 / 任务 T-7】回体：瞬时、无冷却（与投帖召回同一约定：风险可中断）
+   const ids=String(param).split(',').map(v=>Number(v)).filter(v=>Number.isFinite(v)&&v>0);
+   if(!ids.length)return fail('请先选择要回体的元婴');
+   const back=[];
+   for(const id of ids){
+     const p=c.cultivators.find(v=>v.id===id);
+     if(!p||!hasNascent(p))continue;
+     const na=nascentOf(p);
+     if(!na.out)continue;
+     na.out=false;na.place=null;
+     back.push(p.name);
+   }
+   if(!back.length)return fail('没有在外面的元婴');
+   msg=`${back.join('、')}的元婴已回体，重新开始温养`;
  }else{return fail('未知操作')}
  pushLog(s,msg,'cultivate',null,Date.now());return {ok:true,reason:msg};
 }
@@ -12130,6 +12805,23 @@ function runOffline(state, seconds, now = Date.now()) {
   const capped = Math.min(seconds, OFFLINE_CAP_HOURS * 3600);
   const popFrom = state.population;
   const silverFrom = state.silver;
+
+  // ══════════════════════════════════════════════════════════════════
+  // 【策划 C8 / 任务 T-7 验收标准 7】🔴 离线硬约定：所有出窍者**自动回体**，
+  //   且稳固度**不下降**。
+  //
+  // 为什么这条必须是硬约定（而不是「离线也扣」）：
+  //   稳固度按 0.03/秒下降 ⇒ 离线 12 小时（上限）会扣 1296 点，
+  //   远超满值 100 ⇒ **任何出窍者只要关掉页面就必然「离体不返」**。
+  //   那不是玩法，那是「离线惩罚」——而本项目从 T-2b（离线不推年份）
+  //   到 FAQ 都明确不惩罚离线。所以离线期间视为「元婴回了本体」。
+  //
+  // ⚠ 实现方式：结算前先回体，于是下面 simulateSpan 里的稳固度结算
+  //   走的是「在体 +0.02/秒」这条分支（它会回满，而不是掉光）。
+  //   **不能**只跳过衰减而不回体：那样 `out` 会留在 true，
+  //   玩家回来看到的是一个「在外」却不再消耗的不自洽状态。
+  // ══════════════════════════════════════════════════════════════════
+  const recalled = recallAllNascent(state, now);
 
   // 用迭代次数上限反推步长：12 小时离线也只会跑两万步以内
   const step = Math.max(MAX_SIM_STEP, capped / OFFLINE_MAX_STEPS);
@@ -14866,7 +15558,10 @@ function hydrate(raw) {
       }
       if(rr.pending&&typeof rr.pending==='object'){
         for(const [k,v] of Object.entries(rr.pending)){
-          if(['cave','attack','break'].includes(k))pending[k]=Math.max(0,Math.min(1,num(v,0)));
+          // 【策划 C11 / 任务 T-8】'tribulation' 是天劫用的护身符挂靠点。
+          // ⚠ 这是「允许的 pending 种类」白名单的**第二处**（第一处在 systems/runes.js 的 runesOf）。
+          //   两处必须同步：少了这一处，护身符会在存档往返里被静默丢掉。
+          if(['cave','attack','break','tribulation'].includes(k))pending[k]=Math.max(0,Math.min(1,num(v,0)));
         }
       }
       fresh.cultivation.runes={
@@ -16453,6 +17148,14 @@ function createUI({ getState, actions, rng }) {
         for(const b of btns){
           b.disabled=n===0;
           b.textContent=`投帖 · 派出门（已勾选 ${n} 人）`;
+          // 【修复 t13 §14.4 · 低危但没有理由留】`data-errand-count` 必须与
+          //   `:checked` 个数**在同一次 change 里**同步 —— 该属性只在渲染时由
+          //   `checkedCount` 写入，而「勾选 → 尚未渲染」这个窗口里它会是旧值：
+          //   实测勾 2 人但未渲染时 `:checked=2`、文案「已勾选 2 人」、而 attr=0，
+          //   于是「三量恒等」（T-4-A7）在这个窗口不成立。
+          //   对玩家无影响（派发读活动 DOM，窗口内点击仍派 2 人），但它是**测试锚点**：
+          //   锚点与真值不一致，就等于给后来人留了一个会骗人的信号。
+          b.dataset.errandCount=String(n);
         }
       });
     }
@@ -16518,7 +17221,13 @@ function createUI({ getState, actions, rng }) {
         + `:${p.push?1:0}:${Math.floor((Number(p.stalled)||0)/30)}`
         + `:${p.foundation?`${p.foundation.nodeId}${p.foundation.grade}`:'-'}`
         + `:${coreOf(p).marks}:${Object.keys(coreOf(p).used).join('')}`
-        + `:${p.realmEnteredYear||0}:${Math.floor((Number(p.stalled)||0)>0?1:0)}`;
+        + `:${p.realmEnteredYear||0}:${Math.floor((Number(p.stalled)||0)>0?1:0)}`
+        // 【策划 C8 / 任务 T-7 · docs/91 §六.10】圣胎状态必须进脏检查签名，否则
+        //   稳固度条**永远不刷新**（改完看不见变化 = 静默失败）。
+        //   这是 §六.10 那条硬约定第 N 次生效：每加一个会显示在卡片上的字段，
+        //   都要同步加进这里。`Math.floor(stability)` 而不是原值 —— 小数位变化
+        //   每帧都在跳，不取整会让挂机时每秒都重渲染整张卡片。
+        + `:${hasNascent(p)?`${Math.floor(nascentOf(p).stability)}${nascentOf(p).out?1:0}${nascentOf(p).lost?1:0}${nascentOf(p).place||'-'}`:'-'}`;
     }).join('|')+`#${Math.floor(s.spiritStones||0)}:${s.cultivation?.clues||0}:${Math.floor(Number(s.clock?.year)||0)}`
       +`:${worldOf(s).reached.join(',')}:${(s.cultivation?.alchemy?.herbs?.grass||0)>0?1:0}`
       +`:errand-check=${checkedIds.join('.')}`;
@@ -16643,6 +17352,53 @@ function createUI({ getState, actions, rng }) {
           +`</div></div>`;
       }
 
+      /* ── 【策划 C8 / 任务 T-7 验收标准 1】圣胎面板：0–100 稳固度条
+       *    （绿/黄/红三色）+「出窍 / 回体」+ 驻地。只在元婴及以上渲染。──
+       * ⚠ 三色阈值与 config.js 的 NASCENT_RESTLESS_BELOW 同源，不在这里再写魔数。 */
+      let nascentRow='';
+      if(hasNascent(p)){
+        const na=nascentOf(p);
+        const pct=Math.max(0,Math.min(100,na.stability));
+        const tone=na.lost?'lost':(pct<NASCENT_RESTLESS_BELOW?(pct<NASCENT_RESTLESS_BELOW/2?'low':'mid'):'ok');
+        const stateText=na.lost?'元婴已离体不返（不再涨修为，战力仍在）'
+          :na.out?`元婴在外 · ${mapNode(na.place)?.name||na.place}（本体修为停涨）`
+          :'元婴在体温养中';
+        // 出窍目的地：只列**已占领**的节点（未占领的地没有「压着」的意义）
+        const placeOpts=worldOf(s).held.map(id=>`<option value="${id}" ${na.place===id?'selected':''}>${mapNode(id)?.name||id}</option>`).join('');
+        const risk=na.out&&pct<NASCENT_RESTLESS_BELOW
+          ?`<span class="nascent-warn">躁动中：修为 −40%，每次判定有陨落之险</span>`:'';
+        nascentRow=`<div class="nascent-box nascent-${tone}">`
+          +`<div class="nascent-head">圣胎：<b>稳固 ${Math.floor(pct)}</b> · ${stateText}</div>`
+          +`<div class="nascent-bar"><i style="width:${pct}%"></i></div>${risk}`
+          +`<div class="nascent-actions">`
+          +(na.lost?''
+            :na.out
+              ?`<button class="btn nascent-recall" data-nascent-recall="${p.id}" title="瞬时回体，无冷却">回体</button>`
+              :`<select data-nascent-place="${p.id}">${placeOpts||'<option value="">无可去之处</option>'}</select>`
+                +`<button class="btn nascent-out" data-nascent-out="${p.id}" ${placeOpts?'':'disabled'} title="元婴替你压住那块地（不占镇守名额），但本体修为停涨、稳固持续下降">出窍</button>`)
+          +`</div></div>`;
+      }
+
+      /* ── 【策划 C11 / 任务 T-8 验收标准 1】渡劫准备界面：列出全部减免来源与各自数值，
+       *    最末一行明写「缺口 N 点 —— 每 2 点缺口，城内落雷一道」。
+       *    只在化神三层且修为已满时出现；**不出现**原来的「冲关」按钮。── */
+      let trialRow='';
+      if(isTribulationRealm(p.realmIndex)){
+        const tp=tribulationPlan(s,p.id);
+        if(tp.ok){
+          trialRow=`<div class="trial-box"><div class="trial-head">天劫将至：${tp.fromName} → ${tp.toName}`
+            +` · 雷伤 ${tp.base} 点</div><ul class="trial-list">`
+            +tp.sources.map(src=>`<li class="${src.count>0?'is-on':''}"><span>${src.name}</span>`
+              +`<b>${src.isBolt?(src.count?'免一道雷':'—'):(src.value>0?`−${Math.round(src.value*100)}%`:(src.value<0?`+${Math.round(-src.value*100)}%`:'—'))}</b>`
+              +`<small>${src.note}</small></li>`).join('')
+            +`</ul><div class="trial-gap">缺口 <b>${tp.damage}</b> 点 —— 每 2 点缺口，城内落雷一道`
+            +`（本次 ${tp.bolts} 道）</div>`
+            +`<div class="trial-verdict">${tp.verdict}</div>`
+            +`<button class="btn trial-go${tp.perish?' trial-deadly':''}" data-tribulation="${p.id}"`
+            +` title="${tp.tierDesc}">引雷渡劫${tp.perish?'（此劫会要命）':''}</button></div>`;
+        }
+      }
+
       // 【策划 C4 / 任务 T-5 验收标准 1、2】择地下拉框：**只列出走到过的节点**，
       // 每项下面写清三行字（地气 / 品阶 / 词条效果数值，含 ×1.5 / ×0.6 的预览）。
       // ⚠ 这一段必须算在 gateBtn **之前**：冲关按钮的询价要读 `[data-site-for]`，
@@ -16723,7 +17479,7 @@ function createUI({ getState, actions, rng }) {
         <div class="cultivator-foot"><span>${footText}</span>
         <select class="cultivator-assignment" data-assign-id="${p.id}" aria-label="指派${p.name}的工作">${role}</select></div>
         <div class="cultivator-errand">${errandBox}${pushBtn}</div>
-        ${siteRow}${foldRow}
+        ${siteRow}${foldRow}${nascentRow}${trialRow}
         <div class="cultivator-break">${gateBtn}${(()=>{
           const cost=rootRerollCost(p);
           const rp=rootRerollPlan(s,p.id);
@@ -17756,6 +18512,50 @@ window.__xiuxian = {
     unrest: (nodeId) => Number(worldOf(state).unrest[nodeId]) || 0,
     tick: (seconds) => advanceTerritories(state, seconds, Date.now()),
   },
+  /** 【策划 C11 / 任务 T-8】天劫：减免清单、询价、引雷结算。 */
+  tribulation: {
+    base: (index) => tribulationBase(index),
+    isTrial: (index) => isTribulationRealm(index),
+    table: () => ({ base: { ...REALM_TRIALS }, sources: TRIBULATION_SOURCES.map((s) => ({ ...s })), tiers: TRIBULATION_TIERS.map((t) => ({ ...t })), morality: { ...TRIBULATION_MORALITY }, boltPer: TRIBULATION_BOLT_PER, boltPopLoss: TRIBULATION_BOLT_POP_LOSS }),
+    sources: (personId, loadout) => tribulationSources(state, personId, loadout),
+    plan: (personId, loadout) => tribulationPlan(state, personId, loadout),
+    commit: (personId, loadout) => commitTribulation(state, personId, Date.now(), rng, loadout),
+    tierOf: (damage) => tribulationTierOf(damage).id,
+    bolts: (damage) => tribulationBolts(damage),
+    wardens: () => (worldOf(state).wardens || []).slice(),
+  },
+  /** 【策划 C8 / 任务 T-7】圣胎（元婴）：状态、出窍、威压、离线约定。 */
+  nascent: {
+    of: (personId) => {
+      const p = findCultivator(state, personId);
+      return p ? { ...nascentOf(p) } : null;
+    },
+    has: (personId) => hasNascent(findCultivator(state, personId)),
+    isOut: (personId) => nascentIsOut(findCultivator(state, personId)),
+    isRestless: (personId) => nascentIsRestless(findCultivator(state, personId)),
+    isLost: (personId) => nascentIsLost(findCultivator(state, personId)),
+    out: (personId, nodeId) => immortalAction(state, 'nascent-out', `${personId}:${nodeId}`, rng),
+    recall: (personIds) => immortalAction(state, 'nascent-recall', [].concat(personIds).join(','), rng),
+    trainMult: (personId) => nascentTrainMult(findCultivator(state, personId)),
+    wardPower: (nodeId) => nascentWardPower(state, nodeId),
+    wardSlack: () => nascentGarrisonSlack(state),
+    effGarrisonLimit: () => mapEffectiveGarrisonLimit(state),
+    garrisonLimit: () => mapGarrisonLimit(state),
+    recallAll: (seconds) => recallAllNascent(state, Date.now()),
+    setStability: (personId, v) => {
+      const p = findCultivator(state, personId);
+      if (!p) return null;
+      const na = nascentOf(p);
+      na.stability = Math.max(0, Math.min(NASCENT_STABILITY_MAX, Number(v) || 0));
+      return na.stability;
+    },
+    constants: () => ({
+      recover: NASCENT_RECOVER_PER_SEC, drain: NASCENT_DRAIN_PER_SEC,
+      restlessBelow: NASCENT_RESTLESS_BELOW, restlessMult: NASCENT_RESTLESS_TRAIN_MULT,
+      restlessPerSec: NASCENT_RESTLESS_PER_SEC, lostRealm: NASCENT_LOST_REALM,
+      calmMult: NASCENT_CALM_MULT, warnAt: NASCENT_WARN_AT.slice(),
+    }),
+  },
   /** 炼丹：药材、丹药、丹方成功率、丹炉。*/
   alchemy: {
     table: () => ({ herbs: ALCHEMY_HERBS, recipes: ALCHEMY_RECIPES, furnace: ALCHEMY_FURNACE }),
@@ -18521,6 +19321,51 @@ document.addEventListener('click',ev=>{
    : result.reason,
    result.ok&&!result.promoted&&!result.success?'warn':'ok', 3600);
  if(result.ok){writeSave(state);ui.render();}
+ repaintExpansion(true);
+});
+
+/* 【策划 C8 / 任务 T-7】元婴出窍 / 回体。出窍要读下拉框里的目的地。 */
+document.addEventListener('click',ev=>{
+ const ob=ev.target.closest('[data-nascent-out]');
+ if(ob&&!ob.disabled){
+   if(ui.quiz.isBusy())return;
+   const sel=document.querySelector(`[data-nascent-place="${ob.dataset.nascentOut}"]`);
+   const nodeId=sel?sel.value:'';
+   const r=immortalAction(state,'nascent-out',`${ob.dataset.nascentOut}:${nodeId}`,rng);
+   ui.toast(r.reason,r.ok?'ok':'warn',3600);
+   if(r.ok){writeSave(state);ui.render();}
+   repaintExpansion(true);
+   return;
+ }
+ const rb=ev.target.closest('[data-nascent-recall]');
+ if(!rb||rb.disabled)return;
+ if(ui.quiz.isBusy())return;
+ const r=immortalAction(state,'nascent-recall',rb.dataset.nascentRecall,rng);
+ ui.toast(r.reason,r.ok?'ok':'warn',3600);
+ if(r.ok){writeSave(state);ui.render();}
+ repaintExpansion(true);
+});
+
+/* 【策划 C11 / 任务 T-8】引雷渡劫：确认框必须**逐条重述**缺口与后果
+ * （「准备到什么程度才安全」要能算，不能只说「有风险」）。 */
+document.addEventListener('click',ev=>{
+ const btn=ev.target.closest('[data-tribulation]');if(!btn||btn.disabled)return;
+ if(ui.quiz.isBusy())return;
+ const pid=Number(btn.dataset.tribulation);
+ const plan=tribulationPlan(state,pid);
+ if(!plan.ok){ui.toast(plan.reason,'warn',3200);return;}
+ const lines=plan.sources.filter(s=>s.count>0).map(s=>`・${s.name}：${s.note}`).join('\n');
+ const ask=typeof window!=='undefined'&&typeof window.confirm==='function'?window.confirm:(()=>true);
+ const warn=plan.perish
+   ?`\n\n⚠ 此劫缺口 ${plan.damage} 点，按以往经验，渡过的人不多。`
+   :`\n\n缺口 ${plan.damage} 点${plan.bolts>0?`，城内会落雷 ${plan.bolts} 道`:''}。`;
+ if(!ask(`为${plan.name}引雷？\n\n已备：\n${lines||'・什么都没备'}\n\n实际雷伤 ${plan.damage} 点 ⇒ ${plan.tierName}（${plan.tierDesc}）${warn}`))return;
+ const r=commitTribulation(state,pid,Date.now(),rng);
+ ui.toast(r.ok
+   ?(r.perish?`${r.name}形神俱灭 —— 天劫收走了一个人，但道统未绝。`
+     :`${r.name}渡过天劫${r.tier==='broken'?'，道基受损':'，晋升成功'}${r.killed?`（城内死 ${r.killed} 人）`:''}`)
+   :r.reason, r.ok&&!r.perish?'ok':'warn', 4200);
+ if(r.ok){writeSave(state);ui.render();}
  repaintExpansion(true);
 });
 

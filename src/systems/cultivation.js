@@ -87,7 +87,133 @@ function ensurePersonFields(p, state) {
     }
     p.core.used = used;
   }
+  // ── T-7：圣胎（元婴）。老存档没有 ⇒ 满稳固、在体、无驻地 ──
+  //   稳固度是「元婴还能在外待多久」的唯一刻度；低于 30 进躁动区、到 0 离体不返。
+  if (!(p.nascent && typeof p.nascent === 'object')) {
+    p.nascent = { stability: NASCENT_STABILITY_MAX, out: false, place: null, lost: false };
+  } else {
+    p.nascent.stability = Math.max(0, Math.min(NASCENT_STABILITY_MAX, Number(p.nascent.stability) || 0));
+    p.nascent.out = p.nascent.out === true;
+    p.nascent.place = typeof p.nascent.place === 'string' ? p.nascent.place : null;
+    p.nascent.lost = p.nascent.lost === true;
+    // 数据自洽：不在外就不该有驻地；离体不返者一律视为已回体
+    if (!p.nascent.out || p.nascent.lost) p.nascent.place = null;
+  }
   return p;
+}
+
+/**
+ * 【策划 C8 / 任务 T-7】取某人的圣胎状态（幂等，保证字段存在）。
+ * 单点入口：所有读写圣胎的地方都走它，避免又出现「两处各写一套」。
+ */
+function nascentOf(p) {
+  if (!(p.nascent && typeof p.nascent === 'object')) {
+    p.nascent = { stability: NASCENT_STABILITY_MAX, out: false, place: null, lost: false };
+  }
+  return p.nascent;
+}
+
+/** 该修士是否**有**圣胎可温养（元婴及以上）。 */
+function hasNascent(p) {
+  return Math.floor(Number(p && p.realmIndex) || 0) >= NASCENT_LOST_REALM;
+}
+
+/** 该修士的圣胎是否正在出窍。 */
+function nascentIsOut(p) { return hasNascent(p) && nascentOf(p).out === true && nascentOf(p).lost !== true; }
+
+/** 元婴是否已「离体不返」（到 0 的下场：不删数据，只是不再涨修为）。 */
+function nascentIsLost(p) { return hasNascent(p) && nascentOf(p).lost === true; }
+
+/** 出窍者在某个节点上的「威压」战力 —— 与镇守同一口径（它就是本体在压着这块地）。 */
+function nascentWardPower(state, nodeId) {
+  const people = (state.cultivation && state.cultivation.cultivators) || [];
+  let power = 0;
+  for (const p of people) {
+    if (!nascentIsOut(p)) continue;
+    if (nascentOf(p).place !== nodeId) continue;
+    power += cultivatorPower(state, p);
+  }
+  return power;
+}
+
+/** 某个节点上是否**有**出窍的元婴在镇着（界面与豁免判定都读它）。 */
+function nascentWardsAt(state, nodeId) { return nascentWardPower(state, nodeId) > 0; }
+
+/**
+ * 【策划 C8 / 任务 T-7 验收标准 7】把所有出窍的元婴叫回来（离线结算前调用）。
+ * **不回退稳固度**（离线不惩罚）—— 只把 `out` 置 false、清掉驻地。
+ * 返回被召回的人数（`runOffline` 用它决定要不要写一条日志）。
+ */
+function recallAllNascent(state, now = Date.now()) {
+  const people = (state.cultivation && state.cultivation.cultivators) || [];
+  let n = 0;
+  for (const p of people) {
+    if (!hasNascent(p)) continue;
+    const na = nascentOf(p);
+    if (!na.out) continue;
+    na.out = false;
+    na.place = null;
+    n += 1;
+  }
+  if (n > 0) pushLog(state, `你不在的这段日子里，${n} 道元婴都回了本体 —— 它们不曾在无人看顾时耗尽。`, 'cultivate', null, now);
+  return n;
+}
+
+/**
+ * 【策划 C8 / 任务 T-7 验收标准 3】出窍威压**绕开** `mapGarrisonLimit()`。
+ *
+ * 这正是本节点与**仙道科技线**的功能性交叉点：
+ *   科技 `zhenyue` / `jielu` 抬的是 `garrisonCapFlat` → `mapGarrisonLimit()`；
+ *   而元婴出窍提供的是**不受那个上限约束**的第二条路。
+ *   两者作用在**同一个量**（「我能有效压住几块地」）上 ⇒ 不是各自并存的装饰，
+ *   而是「科技抬底线、境界抬高线」的叠加关系。
+ *   `smoke` 用「同时上科技 + 出窍」的断言把这条关系钉住（见 T-7 的 tech 联动断言）。
+ */
+function mapEffectiveGarrisonLimit(state) {
+  const w = worldOf(state);
+  const outCount = Object.keys(w.garrison).length;
+  const nascentCount = ((state.cultivation && state.cultivation.cultivators) || [])
+    .filter((p) => nascentIsOut(p) && nascentOf(p).place).length;
+  return mapGarrisonLimit(state) + nascentCount;
+}
+
+/**
+ * 【策划 C8 / 任务 T-7 验收标准 5】躁动区的修为倍率。
+ * 稳固度 < 30 ⇒ 修为速率 **−40%**（×0.6）；离体不返 ⇒ **0**（不再涨修为）。
+ * 出处：docs/91 §三 T-7 数值设计。
+ */
+function nascentTrainMult(person) {
+  if (!hasNascent(person)) return 1;
+  const na = nascentOf(person);
+  if (na.lost) return 0;
+  return na.stability < NASCENT_RESTLESS_BELOW ? NASCENT_RESTLESS_TRAIN_MULT : 1;
+}
+
+/** 是否处于「元婴躁动」区（稳固度 < 30 且尚未离体不返）。 */
+function nascentIsRestless(person) {
+  return hasNascent(person) && !nascentOf(person).lost
+    && nascentOf(person).stability < NASCENT_RESTLESS_BELOW;
+}
+
+/**
+ * 【策划 C8 / 任务 T-7 验收标准 8】边界警告：稳固度降到 30 / 15 / 5 时各播报一次，
+ * 文案里明写「再 X 分钟元婴离体不返」——**警告必须可算**，不能只说「有危险」。
+ * 用 `nascent.warned` 记账，保证每档只弹一次（否则每秒刷屏）。
+ */
+function warnNascentThresholds(state, person, now) {
+  const na = nascentOf(person);
+  if (!na.warned || typeof na.warned !== 'object') na.warned = {};
+  // 从高到低扫（30 → 15 → 5）：跌破就播一次并记账，一次 tick 只播一档。
+  // 恢复回 30 以上时清账（见下面 else 分支），于是**下一轮出窍会重新警告** ——
+  // 否则第二次冒险就变成静默的，而这条机制的全部意义就是「警告必须有效」。
+  for (const line of NASCENT_WARN_AT) {
+    if (na.stability >= line) continue;
+    if (na.warned[String(line)] === true) continue;
+    na.warned[String(line)] = true;
+    const mins = Math.max(1, Math.ceil(na.stability / NASCENT_DRAIN_PER_SEC / 60));
+    pushLog(state, `${person.name}的元婴摇摇欲坠（稳固 ${Math.floor(na.stability)}）—— 再约 ${mins} 分钟便离体不返。`, 'cultivate', null, now);
+    break;
+  }
 }
 
 /**
@@ -142,6 +268,14 @@ function repairCultivation(state) {
   for(const [k,v] of Object.entries({poolBlueprint:false,pool:0,compass:false,veins:[],mineLevel:0,mineWorkers:0,clues:0,cluePool:0,caveRuns:0,conquests:[]})){if(c[k]===undefined)c[k]=v;}
   // 地图世界状态：抵达、占领、镇守、民怨（worldOf 会顺手把旧 conquests 迁进来）
   worldOf(state);
+  // 【策划 C11 / 任务 T-8 验收标准 8】护法位：与 world.garrison 同构但**独立字段**
+  //   （镇守是「压着一块地」，护法是「为一次天劫结阵」，语义不同，不能共用一个 map）。
+  //   老存档没有它 ⇒ 补成空数组。
+  {
+    const w = worldOf(state);
+    if (!Array.isArray(w.wardens)) w.wardens = [];
+    w.wardens = w.wardens.map((v) => Math.floor(Number(v))).filter((v) => Number.isFinite(v) && v > 0);
+  }
   // 丹房状态：药材、丹药、丹炉等级、各方熟练度
   alchemyOf(state);
   // 器坊状态：矿料、已铸法器、装备位、耐久、锻造台等级
@@ -301,6 +435,35 @@ function corePowerMult(person) {
  *   在倍速与大步长下会失真）。
  * ⚠ 死亡只发生在外的那几个人身上，**不碰凡人死亡率模型**。
  */
+/**
+ * 【策划 C8 / T-7 · C11 / T-8】把一名修士从名册上摘掉。
+ *
+ * 抽成单点入口的原因：这条逻辑现在有**三处**调用者（投帖不回、元婴躁动、天劫陨落），
+ * 而它必须同时维护三件记账（名册 / `qi` / `stats.deaths`）——
+ * 三处各抄一遍，早晚有一处忘了减 `qi`（那个 bug 不会报错，只会让「炼气人口」
+ * 永远对不上名册长度，而 `cultivation.qi` 正是解锁仙途的判据）。
+ *
+ * @param {boolean} inherit 是否留下传承（法器入库 + 秘闻线索）——
+ *   只有**天劫陨落**给传承（docs/91 §三 T-8 验收标准 5：「陨落保留传承」）。
+ *   投帖不归与元婴躁动不给：前者是凡人级的损耗，后者是玩家自己拖到 0 的后果。
+ */
+function removeCultivator(state, person, now = Date.now(), inherit = false) {
+  const c = state.cultivation;
+  if (!c || !person) return false;
+  const before = (c.cultivators || []).length;
+  c.cultivators = (c.cultivators || []).filter((p) => p !== person);
+  if (c.cultivators.length === before) return false;   // 本来就不在册，幂等
+  c.qi = c.cultivators.length;
+  state.stats.deaths = (Number(state.stats.deaths) || 0) + 1;
+  if (inherit) {
+    // 传承：一件遗物法器 + 10 条秘闻（数值出处：docs/91 §三 T-8 验收标准 5）
+    state.spiritStones = (state.spiritStones || 0) + 30;
+    c.clues = (Number(c.clues) || 0) + 10;
+    pushLog(state, `${person.name}的道统未绝：遗下一件旧物与十条秘闻，归入家族。`, 'cultivate', null, now);
+  }
+  return true;
+}
+
 function advanceErrand(state, person, dt, now, rng) {
   const step = Math.max(0, Number(dt) || 0);
   if (!(step > 0)) return;
@@ -308,9 +471,7 @@ function advanceErrand(state, person, dt, now, rng) {
   // 1) 不回来（先判死：死人的线索不该再结算）
   const deathChance = 1 - Math.exp(-ERRAND_DEATH_PER_SEC * step);
   if (rng() < deathChance) {
-    state.cultivation.cultivators = state.cultivation.cultivators.filter((p) => p !== person);
-    state.cultivation.qi = state.cultivation.cultivators.length;
-    state.stats.deaths += 1;
+    removeCultivator(state, person, now);
     pushLog(state, `${person.name}出门投帖，久无音信 —— 怕是回不来了。`, 'cultivate', null, now);
     return;
   }
@@ -352,6 +513,35 @@ function progressCultivators(state,dt,now=Date.now(),rng=Math.random,births=0) {
     if(rng()<pairChance)addCultivator(state,'innate',now,false,'cultivator-cultivator',rng);
   }
   for(const person of people) {
+    // 【策划 C8 / 任务 T-7 验收标准 2】圣胎稳固度的推进（**写在所有 continue 之前**）。
+    //   在体：+0.02/秒（回复）；出窍：−0.03/秒（消耗）。
+    //   出处：docs/91 §三 T-7 数值设计（100→0 = 55.6 分钟）。
+    //   ⚠ 只有元婴及以上才消耗随机数/写字段 —— 对既有存档与既有测试的 rng 序列零影响。
+    if (hasNascent(person)) {
+      const na = nascentOf(person);
+      if (na.lost) {
+        // 离体不返：稳固度恒为 0，不再有任何推进（战力保留，见 cultivatorPower）
+      } else if (na.out) {
+        na.stability = Math.max(0, na.stability - NASCENT_DRAIN_PER_SEC * dt);
+        if (na.stability <= 0) {
+          // 【验收标准 6】到 0 = 离体不返：境界冻结在元婴初期、不删数据、战力保留
+          na.lost = true;
+          na.out = false;
+          na.place = null;
+          person.realmIndex = Math.min(person.realmIndex, NASCENT_LOST_REALM);
+          pushLog(state, `${person.name}的元婴在外太久了，终究没能回来 —— 从此不再涨修为，但人还在。`, 'cultivate', null, now);
+          continue;
+        }
+        // 【验收标准 8】边界警告：30 / 15 / 5 各弹一次
+        warnNascentThresholds(state, person, now);
+        // 【验收标准 2】出窍期间**修为完全不涨** —— 这是「本体不动」的实现
+        continue;
+      } else {
+        na.stability = Math.min(NASCENT_STABILITY_MAX, na.stability + NASCENT_RECOVER_PER_SEC * dt);
+        // 回满到最高警告档之上就清账 ⇒ 下一轮出窍会重新警告（警告不能只用一次）
+        if (na.stability >= NASCENT_WARN_AT[0]) na.warned = {};
+      }
+    }
     // 【策划 C1 / 任务 T-4】出门在外的人：先判「不回来」，再过修为那道 continue。
     // 之所以写在最前面，是因为下面 :204 的放行名单只认 retreat/sect ——
     // 差事的人会被它跳过，判定就再也没机会执行了。
@@ -374,6 +564,11 @@ function progressCultivators(state,dt,now=Date.now(),rng=Math.random,births=0) {
     // 【策划 C6 / 任务 T-6 验收标准 1】金丹期修为满且本层未结丹时，同样停止积累 ——
     // 等玩家在「晋升」与「结丹」之间选。**不再自动晋升**，这是金丹玩法的地基。
     if(!realmGate(idx) && breakthroughState(person).kind==='folding') continue;
+    // 【策划 C11 / 任务 T-8 验收标准 1】化神期三层靠**天劫**晋升，同样不许自动跳级。
+    // ⚠ 这一条不可省：`REALM_GATES` 里没有 22/23/24 的条目，所以 `realmGate(idx)` 为 null，
+    //   而下面的自动晋升 `while` 只认 gate —— 不拦住的话修为一满就自动升级，
+    //   「渡劫界面」永远不会出现（静默失败，不报错）。
+    if(isTribulationRealm(idx) && person.xp>=realmXpNeeded(idx)) continue;
 
     // 家族功法只对「闭关」生效——宗门修的是宗门的法，传不进山门。
     // 所以宗门是安全的 3.5× 固定路线，闭关则随功法收藏成长，收藏够了会反超。
@@ -393,7 +588,23 @@ function progressCultivators(state,dt,now=Date.now(),rng=Math.random,births=0) {
     // 【策划 C2 / 任务 T-3 验收标准 2】猛进：闭关修士的修为增量恰好 ×2.2。
     // 【策划 C6 / 任务 T-6 验收标准 6】丹品修炼倍率：丹纹越高，闭关越快。
     // 出处：docs/91-落地任务清单.md §三 T-3（2.2 倍）与 T-6（丹纹 → 品阶 → 修炼倍率）。
-    person.xp += REALM_XP_RATE*dt*manualMult*runeMult*metaMult*schoolMult*techTrainMult*rootSpeedMult(person)*(Number(person.talent)||1)*(person.job==='sect'?3.5:1)*pushRateMult(person)*coreTrainMult(person);
+    // 【策划 C8 / 任务 T-7 验收标准 5】元婴躁动区的惩罚：
+    //   稳固度 < 30 ⇒ 修为速率 **−40%**（×0.6）；离体不返 ⇒ ×0（不再涨修为）。
+    //   出处：docs/91 §三 T-7 数值设计。
+    const nascentMult = nascentTrainMult(person);
+    person.xp += REALM_XP_RATE*dt*manualMult*runeMult*metaMult*schoolMult*techTrainMult*rootSpeedMult(person)*(Number(person.talent)||1)*(person.job==='sect'?3.5:1)*pushRateMult(person)*coreTrainMult(person)*nascentMult;
+
+    // 【策划 C8 / 任务 T-7 验收标准 5】躁动判定：稳固度 < 30 时每秒 5e-5 概率陨落。
+    //   只在躁动区才消耗随机数 ⇒ 对既有存档与既有测试的 rng 序列零影响。
+    //   概率出处与「为什么不是 16.5%」见 core/config.js 的 NASCENT_RESTLESS_PER_SEC 注释。
+    if (nascentIsRestless(person)) {
+      const restlessChance = 1 - Math.exp(-NASCENT_RESTLESS_PER_SEC * Math.max(0, dt));
+      if (rng() < restlessChance) {
+        pushLog(state, `${person.name}的元婴躁动难制，道体崩解，就此陨落。`, 'cultivate', null, now);
+        removeCultivator(state, person, now);
+        continue;
+      }
+    }
 
     // 【策划 C2 / 任务 T-3】走火判定：以 local × 1.0e-4 /秒 的速率到达，每次把**本层**修为清零。
     // 判定写在增量之后：低层猛进「快 2.2 倍」，九层猛进「反而更慢 5%」，
@@ -423,6 +634,8 @@ function progressCultivators(state,dt,now=Date.now(),rng=Math.random,births=0) {
       if(gate){ if(person.xp>need) person.xp=need; break; }
       // 【策划 C6 / 任务 T-6】金丹期修为满时不再自动晋升，先把决策权交给玩家
       if(coreFoldableIndex(person.realmIndex) && !coreUsedHere(person, person.realmIndex) && person.xp>=need) break;
+      // 【策划 C11 / 任务 T-8】化神三层不许在 while 里自动跳级（见上面 continue 的说明）
+      if(isTribulationRealm(person.realmIndex) && person.xp>=need) break;
       if(!Number.isFinite(need) || person.xp<need) break;
       person.xp-=need;
       person.realmIndex+=1;

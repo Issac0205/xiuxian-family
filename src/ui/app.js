@@ -1190,6 +1190,14 @@ function createUI({ getState, actions, rng }) {
         for(const b of btns){
           b.disabled=n===0;
           b.textContent=`投帖 · 派出门（已勾选 ${n} 人）`;
+          // 【修复 t13 §14.4 · 低危但没有理由留】`data-errand-count` 必须与
+          //   `:checked` 个数**在同一次 change 里**同步 —— 该属性只在渲染时由
+          //   `checkedCount` 写入，而「勾选 → 尚未渲染」这个窗口里它会是旧值：
+          //   实测勾 2 人但未渲染时 `:checked=2`、文案「已勾选 2 人」、而 attr=0，
+          //   于是「三量恒等」（T-4-A7）在这个窗口不成立。
+          //   对玩家无影响（派发读活动 DOM，窗口内点击仍派 2 人），但它是**测试锚点**：
+          //   锚点与真值不一致，就等于给后来人留了一个会骗人的信号。
+          b.dataset.errandCount=String(n);
         }
       });
     }
@@ -1255,7 +1263,13 @@ function createUI({ getState, actions, rng }) {
         + `:${p.push?1:0}:${Math.floor((Number(p.stalled)||0)/30)}`
         + `:${p.foundation?`${p.foundation.nodeId}${p.foundation.grade}`:'-'}`
         + `:${coreOf(p).marks}:${Object.keys(coreOf(p).used).join('')}`
-        + `:${p.realmEnteredYear||0}:${Math.floor((Number(p.stalled)||0)>0?1:0)}`;
+        + `:${p.realmEnteredYear||0}:${Math.floor((Number(p.stalled)||0)>0?1:0)}`
+        // 【策划 C8 / 任务 T-7 · docs/91 §六.10】圣胎状态必须进脏检查签名，否则
+        //   稳固度条**永远不刷新**（改完看不见变化 = 静默失败）。
+        //   这是 §六.10 那条硬约定第 N 次生效：每加一个会显示在卡片上的字段，
+        //   都要同步加进这里。`Math.floor(stability)` 而不是原值 —— 小数位变化
+        //   每帧都在跳，不取整会让挂机时每秒都重渲染整张卡片。
+        + `:${hasNascent(p)?`${Math.floor(nascentOf(p).stability)}${nascentOf(p).out?1:0}${nascentOf(p).lost?1:0}${nascentOf(p).place||'-'}`:'-'}`;
     }).join('|')+`#${Math.floor(s.spiritStones||0)}:${s.cultivation?.clues||0}:${Math.floor(Number(s.clock?.year)||0)}`
       +`:${worldOf(s).reached.join(',')}:${(s.cultivation?.alchemy?.herbs?.grass||0)>0?1:0}`
       +`:errand-check=${checkedIds.join('.')}`;
@@ -1380,6 +1394,53 @@ function createUI({ getState, actions, rng }) {
           +`</div></div>`;
       }
 
+      /* ── 【策划 C8 / 任务 T-7 验收标准 1】圣胎面板：0–100 稳固度条
+       *    （绿/黄/红三色）+「出窍 / 回体」+ 驻地。只在元婴及以上渲染。──
+       * ⚠ 三色阈值与 config.js 的 NASCENT_RESTLESS_BELOW 同源，不在这里再写魔数。 */
+      let nascentRow='';
+      if(hasNascent(p)){
+        const na=nascentOf(p);
+        const pct=Math.max(0,Math.min(100,na.stability));
+        const tone=na.lost?'lost':(pct<NASCENT_RESTLESS_BELOW?(pct<NASCENT_RESTLESS_BELOW/2?'low':'mid'):'ok');
+        const stateText=na.lost?'元婴已离体不返（不再涨修为，战力仍在）'
+          :na.out?`元婴在外 · ${mapNode(na.place)?.name||na.place}（本体修为停涨）`
+          :'元婴在体温养中';
+        // 出窍目的地：只列**已占领**的节点（未占领的地没有「压着」的意义）
+        const placeOpts=worldOf(s).held.map(id=>`<option value="${id}" ${na.place===id?'selected':''}>${mapNode(id)?.name||id}</option>`).join('');
+        const risk=na.out&&pct<NASCENT_RESTLESS_BELOW
+          ?`<span class="nascent-warn">躁动中：修为 −40%，每次判定有陨落之险</span>`:'';
+        nascentRow=`<div class="nascent-box nascent-${tone}">`
+          +`<div class="nascent-head">圣胎：<b>稳固 ${Math.floor(pct)}</b> · ${stateText}</div>`
+          +`<div class="nascent-bar"><i style="width:${pct}%"></i></div>${risk}`
+          +`<div class="nascent-actions">`
+          +(na.lost?''
+            :na.out
+              ?`<button class="btn nascent-recall" data-nascent-recall="${p.id}" title="瞬时回体，无冷却">回体</button>`
+              :`<select data-nascent-place="${p.id}">${placeOpts||'<option value="">无可去之处</option>'}</select>`
+                +`<button class="btn nascent-out" data-nascent-out="${p.id}" ${placeOpts?'':'disabled'} title="元婴替你压住那块地（不占镇守名额），但本体修为停涨、稳固持续下降">出窍</button>`)
+          +`</div></div>`;
+      }
+
+      /* ── 【策划 C11 / 任务 T-8 验收标准 1】渡劫准备界面：列出全部减免来源与各自数值，
+       *    最末一行明写「缺口 N 点 —— 每 2 点缺口，城内落雷一道」。
+       *    只在化神三层且修为已满时出现；**不出现**原来的「冲关」按钮。── */
+      let trialRow='';
+      if(isTribulationRealm(p.realmIndex)){
+        const tp=tribulationPlan(s,p.id);
+        if(tp.ok){
+          trialRow=`<div class="trial-box"><div class="trial-head">天劫将至：${tp.fromName} → ${tp.toName}`
+            +` · 雷伤 ${tp.base} 点</div><ul class="trial-list">`
+            +tp.sources.map(src=>`<li class="${src.count>0?'is-on':''}"><span>${src.name}</span>`
+              +`<b>${src.isBolt?(src.count?'免一道雷':'—'):(src.value>0?`−${Math.round(src.value*100)}%`:(src.value<0?`+${Math.round(-src.value*100)}%`:'—'))}</b>`
+              +`<small>${src.note}</small></li>`).join('')
+            +`</ul><div class="trial-gap">缺口 <b>${tp.damage}</b> 点 —— 每 2 点缺口，城内落雷一道`
+            +`（本次 ${tp.bolts} 道）</div>`
+            +`<div class="trial-verdict">${tp.verdict}</div>`
+            +`<button class="btn trial-go${tp.perish?' trial-deadly':''}" data-tribulation="${p.id}"`
+            +` title="${tp.tierDesc}">引雷渡劫${tp.perish?'（此劫会要命）':''}</button></div>`;
+        }
+      }
+
       // 【策划 C4 / 任务 T-5 验收标准 1、2】择地下拉框：**只列出走到过的节点**，
       // 每项下面写清三行字（地气 / 品阶 / 词条效果数值，含 ×1.5 / ×0.6 的预览）。
       // ⚠ 这一段必须算在 gateBtn **之前**：冲关按钮的询价要读 `[data-site-for]`，
@@ -1460,7 +1521,7 @@ function createUI({ getState, actions, rng }) {
         <div class="cultivator-foot"><span>${footText}</span>
         <select class="cultivator-assignment" data-assign-id="${p.id}" aria-label="指派${p.name}的工作">${role}</select></div>
         <div class="cultivator-errand">${errandBox}${pushBtn}</div>
-        ${siteRow}${foldRow}
+        ${siteRow}${foldRow}${nascentRow}${trialRow}
         <div class="cultivator-break">${gateBtn}${(()=>{
           const cost=rootRerollCost(p);
           const rp=rootRerollPlan(s,p.id);

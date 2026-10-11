@@ -524,6 +524,50 @@ window.__xiuxian = {
     unrest: (nodeId) => Number(worldOf(state).unrest[nodeId]) || 0,
     tick: (seconds) => advanceTerritories(state, seconds, Date.now()),
   },
+  /** 【策划 C11 / 任务 T-8】天劫：减免清单、询价、引雷结算。 */
+  tribulation: {
+    base: (index) => tribulationBase(index),
+    isTrial: (index) => isTribulationRealm(index),
+    table: () => ({ base: { ...REALM_TRIALS }, sources: TRIBULATION_SOURCES.map((s) => ({ ...s })), tiers: TRIBULATION_TIERS.map((t) => ({ ...t })), morality: { ...TRIBULATION_MORALITY }, boltPer: TRIBULATION_BOLT_PER, boltPopLoss: TRIBULATION_BOLT_POP_LOSS }),
+    sources: (personId, loadout) => tribulationSources(state, personId, loadout),
+    plan: (personId, loadout) => tribulationPlan(state, personId, loadout),
+    commit: (personId, loadout) => commitTribulation(state, personId, Date.now(), rng, loadout),
+    tierOf: (damage) => tribulationTierOf(damage).id,
+    bolts: (damage) => tribulationBolts(damage),
+    wardens: () => (worldOf(state).wardens || []).slice(),
+  },
+  /** 【策划 C8 / 任务 T-7】圣胎（元婴）：状态、出窍、威压、离线约定。 */
+  nascent: {
+    of: (personId) => {
+      const p = findCultivator(state, personId);
+      return p ? { ...nascentOf(p) } : null;
+    },
+    has: (personId) => hasNascent(findCultivator(state, personId)),
+    isOut: (personId) => nascentIsOut(findCultivator(state, personId)),
+    isRestless: (personId) => nascentIsRestless(findCultivator(state, personId)),
+    isLost: (personId) => nascentIsLost(findCultivator(state, personId)),
+    out: (personId, nodeId) => immortalAction(state, 'nascent-out', `${personId}:${nodeId}`, rng),
+    recall: (personIds) => immortalAction(state, 'nascent-recall', [].concat(personIds).join(','), rng),
+    trainMult: (personId) => nascentTrainMult(findCultivator(state, personId)),
+    wardPower: (nodeId) => nascentWardPower(state, nodeId),
+    wardSlack: () => nascentGarrisonSlack(state),
+    effGarrisonLimit: () => mapEffectiveGarrisonLimit(state),
+    garrisonLimit: () => mapGarrisonLimit(state),
+    recallAll: (seconds) => recallAllNascent(state, Date.now()),
+    setStability: (personId, v) => {
+      const p = findCultivator(state, personId);
+      if (!p) return null;
+      const na = nascentOf(p);
+      na.stability = Math.max(0, Math.min(NASCENT_STABILITY_MAX, Number(v) || 0));
+      return na.stability;
+    },
+    constants: () => ({
+      recover: NASCENT_RECOVER_PER_SEC, drain: NASCENT_DRAIN_PER_SEC,
+      restlessBelow: NASCENT_RESTLESS_BELOW, restlessMult: NASCENT_RESTLESS_TRAIN_MULT,
+      restlessPerSec: NASCENT_RESTLESS_PER_SEC, lostRealm: NASCENT_LOST_REALM,
+      calmMult: NASCENT_CALM_MULT, warnAt: NASCENT_WARN_AT.slice(),
+    }),
+  },
   /** 炼丹：药材、丹药、丹方成功率、丹炉。*/
   alchemy: {
     table: () => ({ herbs: ALCHEMY_HERBS, recipes: ALCHEMY_RECIPES, furnace: ALCHEMY_FURNACE }),
@@ -1289,6 +1333,51 @@ document.addEventListener('click',ev=>{
    : result.reason,
    result.ok&&!result.promoted&&!result.success?'warn':'ok', 3600);
  if(result.ok){writeSave(state);ui.render();}
+ repaintExpansion(true);
+});
+
+/* 【策划 C8 / 任务 T-7】元婴出窍 / 回体。出窍要读下拉框里的目的地。 */
+document.addEventListener('click',ev=>{
+ const ob=ev.target.closest('[data-nascent-out]');
+ if(ob&&!ob.disabled){
+   if(ui.quiz.isBusy())return;
+   const sel=document.querySelector(`[data-nascent-place="${ob.dataset.nascentOut}"]`);
+   const nodeId=sel?sel.value:'';
+   const r=immortalAction(state,'nascent-out',`${ob.dataset.nascentOut}:${nodeId}`,rng);
+   ui.toast(r.reason,r.ok?'ok':'warn',3600);
+   if(r.ok){writeSave(state);ui.render();}
+   repaintExpansion(true);
+   return;
+ }
+ const rb=ev.target.closest('[data-nascent-recall]');
+ if(!rb||rb.disabled)return;
+ if(ui.quiz.isBusy())return;
+ const r=immortalAction(state,'nascent-recall',rb.dataset.nascentRecall,rng);
+ ui.toast(r.reason,r.ok?'ok':'warn',3600);
+ if(r.ok){writeSave(state);ui.render();}
+ repaintExpansion(true);
+});
+
+/* 【策划 C11 / 任务 T-8】引雷渡劫：确认框必须**逐条重述**缺口与后果
+ * （「准备到什么程度才安全」要能算，不能只说「有风险」）。 */
+document.addEventListener('click',ev=>{
+ const btn=ev.target.closest('[data-tribulation]');if(!btn||btn.disabled)return;
+ if(ui.quiz.isBusy())return;
+ const pid=Number(btn.dataset.tribulation);
+ const plan=tribulationPlan(state,pid);
+ if(!plan.ok){ui.toast(plan.reason,'warn',3200);return;}
+ const lines=plan.sources.filter(s=>s.count>0).map(s=>`・${s.name}：${s.note}`).join('\n');
+ const ask=typeof window!=='undefined'&&typeof window.confirm==='function'?window.confirm:(()=>true);
+ const warn=plan.perish
+   ?`\n\n⚠ 此劫缺口 ${plan.damage} 点，按以往经验，渡过的人不多。`
+   :`\n\n缺口 ${plan.damage} 点${plan.bolts>0?`，城内会落雷 ${plan.bolts} 道`:''}。`;
+ if(!ask(`为${plan.name}引雷？\n\n已备：\n${lines||'・什么都没备'}\n\n实际雷伤 ${plan.damage} 点 ⇒ ${plan.tierName}（${plan.tierDesc}）${warn}`))return;
+ const r=commitTribulation(state,pid,Date.now(),rng);
+ ui.toast(r.ok
+   ?(r.perish?`${r.name}形神俱灭 —— 天劫收走了一个人，但道统未绝。`
+     :`${r.name}渡过天劫${r.tier==='broken'?'，道基受损':'，晋升成功'}${r.killed?`（城内死 ${r.killed} 人）`:''}`)
+   :r.reason, r.ok&&!r.perish?'ok':'warn', 4200);
+ if(r.ok){writeSave(state);ui.render();}
  repaintExpansion(true);
 });
 

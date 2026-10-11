@@ -845,6 +845,23 @@ function runOffline(state, seconds, now = Date.now()) {
   const popFrom = state.population;
   const silverFrom = state.silver;
 
+  // ══════════════════════════════════════════════════════════════════
+  // 【策划 C8 / 任务 T-7 验收标准 7】🔴 离线硬约定：所有出窍者**自动回体**，
+  //   且稳固度**不下降**。
+  //
+  // 为什么这条必须是硬约定（而不是「离线也扣」）：
+  //   稳固度按 0.03/秒下降 ⇒ 离线 12 小时（上限）会扣 1296 点，
+  //   远超满值 100 ⇒ **任何出窍者只要关掉页面就必然「离体不返」**。
+  //   那不是玩法，那是「离线惩罚」——而本项目从 T-2b（离线不推年份）
+  //   到 FAQ 都明确不惩罚离线。所以离线期间视为「元婴回了本体」。
+  //
+  // ⚠ 实现方式：结算前先回体，于是下面 simulateSpan 里的稳固度结算
+  //   走的是「在体 +0.02/秒」这条分支（它会回满，而不是掉光）。
+  //   **不能**只跳过衰减而不回体：那样 `out` 会留在 true，
+  //   玩家回来看到的是一个「在外」却不再消耗的不自洽状态。
+  // ══════════════════════════════════════════════════════════════════
+  const recalled = recallAllNascent(state, now);
+
   // 用迭代次数上限反推步长：12 小时离线也只会跑两万步以内
   const step = Math.max(MAX_SIM_STEP, capped / OFFLINE_MAX_STEPS);
   simulateSpan(state, capped, step, Math.random, now);

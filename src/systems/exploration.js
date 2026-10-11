@@ -126,7 +126,16 @@ function mapGarrisonFull(state, nodeId) {
   const w = worldOf(state);
   const assigned = Object.keys(w.garrison).filter((id) => w.garrison[id] !== undefined).length;
   if (w.garrison[nodeId] !== undefined) return false;   // 已在守这里，只是换人
-  return assigned >= mapGarrisonLimit(state);
+  // 【策划 C8 / 任务 T-7 验收标准 3】出窍的元婴**不占**镇守名额 ——
+  //   这就是「出窍威压」的全部价值（对照仙道科技 zhenyue / jielu 抬的是同一个上限）。
+  //   所以判断满没满时，把出窍者提供的**等效名额**加进去。
+  return assigned >= mapGarrisonLimit(state) + nascentGarrisonSlack(state);
+}
+
+/** 元婴出窍提供的**等效镇守名额**（不计入 garrison，也不受 mapGarrisonLimit 约束）。 */
+function nascentGarrisonSlack(state) {
+  return ((state.cultivation && state.cultivation.cultivators) || [])
+    .filter((p) => nascentIsOut(p) && nascentOf(p).place).length;
 }
 
 /** 某节点当前的镇守战力。 */
@@ -143,7 +152,11 @@ function mapHoldStrength(state, nodeId) {
 function mapIsPacified(state, nodeId) {
   const node = mapNode(nodeId);
   if (!node || node.kind !== 'foe') return false;
-  return mapHoldStrength(state, nodeId) >= mapHoldPowerFor(state, node);
+  // 【策划 C8 / 任务 T-7 验收标准 3】镇守战力 + **出窍元婴的威压**。
+  //   出窍者不在 `world.garrison` 里，所以这条是它唯一的生效路径；
+  //   `mapGarrisonLimit() = 1` 时仍然判定为「被有效镇守」——这正是威压绕开名额的证据。
+  const strength = mapHoldStrength(state, nodeId) + nascentWardPower(state, nodeId);
+  return strength >= mapHoldPowerFor(state, node);
 }
 
 /**
@@ -279,7 +292,12 @@ function advanceTerritories(state, dt, now = Date.now()) {
       if (node.herb) addHerbs(state, node.herb, (node.herbYield || 0) * dt * matMult);
       if (node.ore) addOres(state, node.ore, (node.oreYield || 0) * dt * matMult);
       if (node.rune) addRuneMats(state, node.rune, (node.runeYield || 0) * dt * matMult);
-      w.unrest[id] = Math.max(0, (Number(w.unrest[id]) || 0) - MAP_CALM_PER_SEC * dt);
+      // 【策划 C8 / 任务 T-7 验收标准 4】出窍的元婴坐镇时，民怨回落是平时的 **3 倍**
+      //   （等效额外 −2 × MAP_CALM_PER_SEC）。出处：docs/91 §三 T-7。
+      //   注意这里用**倍率**而不是再减一次常数：常数写法会在以后调 MAP_CALM_PER_SEC 时
+      //   与「3 倍」这个验收口径脱钩。
+      const calmMult = nascentWardsAt(state, id) ? NASCENT_CALM_MULT : 1;
+      w.unrest[id] = Math.max(0, (Number(w.unrest[id]) || 0) - MAP_CALM_PER_SEC * calmMult * dt);
       continue;
     }
     const next = (Number(w.unrest[id]) || 0) + MAP_UNREST_PER_SEC * dt;

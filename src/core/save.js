@@ -316,7 +316,10 @@ function hydrate(raw) {
       }
       if(rr.pending&&typeof rr.pending==='object'){
         for(const [k,v] of Object.entries(rr.pending)){
-          if(['cave','attack','break'].includes(k))pending[k]=Math.max(0,Math.min(1,num(v,0)));
+          // 【策划 C11 / 任务 T-8】'tribulation' 是天劫用的护身符挂靠点。
+          // ⚠ 这是「允许的 pending 种类」白名单的**第二处**（第一处在 systems/runes.js 的 runesOf）。
+          //   两处必须同步：少了这一处，护身符会在存档往返里被静默丢掉。
+          if(['cave','attack','break','tribulation'].includes(k))pending[k]=Math.max(0,Math.min(1,num(v,0)));
         }
       }
       fresh.cultivation.runes={

@@ -103,6 +103,18 @@ function breakthroughPlan(state, personId, siteId, force = false) {
 
   const st = breakthroughState(person);
   if (st.kind === 'max') return { ok: false, reason: `${person.name}已至此界尽头` };
+  // 【策划 C11 / 任务 T-8】化神期的三次晋升走的是**天劫**，不是 `REALM_GATES`。
+  // ⚠ **必须排在 `progressing` 那一句之前**：化神三层在 `REALM_GATES` 里没有条目，
+  //   于是 `breakthroughState()` 会给它们 `progressing`（「同档内自动晋升」）——
+  //   若按正常顺序早退，天劫这一整条路就永远不会被走到（而且不会报错）。
+  //   我第一版就把它写在后面，`tribulationPlan` 一次都没被调用过。
+  // 转发而不是复制：plan/commit 的分离约定与界面入口都不变，
+  // 只是「这一层要付什么」换了一套算法（见 tribulationPlan）。
+  // 第 4 个形参 `force` 在这里充当 loadout（`{territory,wardens,artifact}`）——
+  // 天劫没有「无风险跳过」这一说，所以 force 的语义在这一层不存在。
+  if (isTribulationRealm(person.realmIndex)) {
+    return tribulationPlan(state, personId, force && typeof force === 'object' ? force : undefined);
+  }
   if (st.kind === 'progressing') return { ok: false, reason: '同档内会自动晋阶，无需冲关' };
   // 【策划 C6 / 任务 T-6】金丹期修为满时走的是结丹那条路，不是冲关
   if (st.kind === 'folding') {
@@ -543,6 +555,218 @@ function coreDashboard(state) {
     chancesLeft: coreChancesLeft(p),
     used: Object.keys(coreOf(p).used).map(Number).sort((a, b) => a - b),
   }));
+}
+
+/**
+ * ══════════════════ 【策划 C11 / 任务 T-8】天劫 ══════════════════
+ *
+ * 化神期的三次晋升（初期→中期→后期→圆满）**不再走 `REALM_GATES`**，
+ * 而是「准备界面 + 一次引雷结算」。这是本节点与**科技线**的第二处功能性联动：
+ *   减免来源里，领地取自地图线、法器取自器坊线（`artifactBonus`）、
+ *   护身符取自符房线（`runePending`）、护法取自名册 —— 也就是**化神能不能过，
+ *   取决于玩家前 40 小时在凡人/仙道两条科技线上攒下了什么**。
+ *   不准备就必死（基础 9 点、0 减免 ⇒ 落入 `perish` 档），这是刻意的门槛。
+ *
+ * 数值出处：docs/91-落地任务清单.md §三 T-8 与 src/data/tribulation.js。
+ */
+
+/** 收集本次天劫的全部减免来源（**纯读**，不动状态）。 */
+function tribulationSources(state, personId, loadout) {
+  const lo = loadout || {};
+  const w = worldOf(state);
+  const out = [];
+
+  // ① 封地：已占领 **且有效镇守** 的领地各 −8%（上限 4 = 可占领节点数）
+  const held = (w.held || []).filter((id) => mapIsPacified(state, id));
+  const terrOn = lo.territory !== false;
+  const terrCount = terrOn ? Math.min(TRIBULATION_SOURCES[0].max, held.length) : 0;
+  out.push({
+    id: 'territory', name: TRIBULATION_SOURCES[0].name,
+    value: terrCount * TRIBULATION_SOURCES[0].per,
+    count: terrCount, available: held.length,
+    note: terrCount ? `${terrCount} 处领地（暂停赋税 1 小时）` : '没有有效镇守的领地',
+  });
+
+  // ② 护法：元婴及以上的修士结阵，每人 −6%（上限 6）
+  //    与镇守同构但用**独立字段** `world.wardens`（验收标准 8 明确要求独立）
+  //    ⚠ **要渡劫的本人不能给自己当护法** —— 他正在雷里，不可能同时结阵。
+  //      这个洞我第一版漏了：装上之后 `available` 会把本人算进去，
+  //      于是「护法数」永远比玩家能真正动员的人多 1。
+  const me = Math.floor(Number(personId)) || 0;
+  const pool = (state.cultivation?.cultivators || []).filter((p) => hasNascent(p) && p.id !== me);
+  const chosen = Array.isArray(lo.wardens)
+    ? lo.wardens.map((id) => Number(id))
+    : pool.slice(0, TRIBULATION_SOURCES[1].max).map((p) => p.id);
+  const wardenIds = chosen
+    .filter((id) => pool.some((p) => p.id === id))
+    .slice(0, TRIBULATION_SOURCES[1].max);
+  out.push({
+    id: 'warden', name: TRIBULATION_SOURCES[1].name,
+    value: wardenIds.length * TRIBULATION_SOURCES[1].per,
+    count: wardenIds.length, available: pool.length, ids: wardenIds,
+    note: wardenIds.length ? `${wardenIds.length} 位护法结阵` : '没有可结阵的元婴修士',
+  });
+
+  // ③ 法器承雷：每件装备中的法器 −10%（上限 3 = FORGE_SLOT 的位数）
+  const art = artifactBonus(state);
+  const equipped = Object.keys(forgeOf(state).equipped || {}).length;
+  const artOn = lo.artifact !== false;
+  const artCount = artOn ? Math.min(TRIBULATION_SOURCES[2].max, equipped) : 0;
+  out.push({
+    id: 'artifact', name: TRIBULATION_SOURCES[2].name,
+    value: artCount * TRIBULATION_SOURCES[2].per,
+    count: artCount, available: equipped,
+    note: artCount ? `${artCount} 件法器（天劫后耐久清零）` : '没有可用的法器',
+  });
+
+  // ④ 道心：≥70 减 10%；≤30 反而 **+15%**（「诛邪神雷」—— 恶名招雷）
+  const mor = moralityOf(state);
+  let morVar = 0;
+  let morNote = `道心 ${Math.round(mor)}（中庸，无加减）`;
+  if (mor >= TRIBULATION_MORALITY.goodAt) { morVar = TRIBULATION_MORALITY.goodBonus; morNote = `道心 ${Math.round(mor)} —— 天道不罚善人`; }
+  else if (mor <= TRIBULATION_MORALITY.evilAt) { morVar = TRIBULATION_MORALITY.evilBonus; morNote = `道心 ${Math.round(mor)} —— 诛邪神雷`; }
+  out.push({ id: 'merit', name: '道心', value: morVar, count: morVar ? 1 : 0, note: morNote });
+
+  // ⑤ 护身符：免**一道落城的雷**（不是减雷伤）—— 所以它单独一格，不进减免合计
+  const hasRune = runePending(state, 'tribulation') > 0;
+  out.push({
+    id: 'rune', name: TRIBULATION_SOURCES[3].name,
+    value: 0, count: hasRune ? 1 : 0, isBolt: true,
+    note: hasRune ? '一张护身符（免一道落城的雷，一次性）' : '没有挂护身符',
+  });
+  return out;
+}
+
+/**
+ * 询价：这次天劫会发生什么。**纯计算，不动状态**（验收标准 2 的 plan/commit 分离）。
+ *
+ * @param {object} loadout 可选：`{territory?, wardens?, artifact?}` 决定这次投入什么。
+ *   不传 = 把**现有可用的**全部投入（界面默认；不传就是「尽力准备」）。
+ */
+function tribulationPlan(state, personId, loadout) {
+  const person = findCultivator(state, personId);
+  if (!person) return { ok: false, reason: '修士不存在' };
+  const idx = Math.floor(Number(person.realmIndex) || 0);
+  const base = tribulationBase(idx);
+  if (!base) return { ok: false, reason: `${person.name}当前不必渡劫` };
+  const st = breakthroughState(person);
+  // ⚠ 化神三层在 `REALM_GATES` 里没有条目，所以 `breakthroughState()` 会给它们 `progressing`
+  //   （「同档内自动晋升」）—— 不能用 `st.kind !== 'blocked'` 来判「能不能渡劫」，
+  //   否则天劫永远询价失败。真正的判据是「本层修为是否已满」。
+  const need = realmXpNeeded(idx);
+  if (Number.isFinite(need) && person.xp < need) {
+    return { ok: false, reason: `修为未满（还需 ${Math.ceil(need - person.xp)} 点）`, remaining: need - person.xp };
+  }
+  if (!Number.isFinite(need)) return { ok: false, reason: `${person.name}已至此界尽头` };
+
+  const sources = tribulationSources(state, personId, loadout);
+  // 减免合计 = 各来源相加（道心可能是负数加成，也就是 +雷）
+  const reductionRaw = sources.reduce((a, s) => a + s.value, 0);
+  const reduction = Math.max(0, reductionRaw);
+  // 实际雷伤 = round(基础 × (1 − 减免))；减免 >100% 时夹到 0（满减免 = 完全卸雷）
+  const damage = Math.max(0, Math.round(base * Math.max(0, 1 - reduction)));
+  const tier = tribulationTierOf(damage);
+  // 落城的雷：每 2 点缺口一道；护身符再免掉一道（下限 0）
+  const runeSaved = sources.some((s) => s.id === 'rune' && s.count > 0) ? 1 : 0;
+  const boltsRaw = tribulationBolts(damage);
+  const bolts = Math.max(0, boltsRaw - runeSaved);
+  const popLoss = Math.max(0, Math.round((Number(state.population) || 0) * TRIBULATION_BOLT_POP_LOSS)) * bolts;
+
+  return {
+    ok: true, kind: 'tribulation',
+    personId: person.id, name: person.name,
+    fromName: realmName(idx), toName: realmName(idx + 1),
+    base, reduction, reductionRaw, damage,
+    tier: tier.id, tierName: tier.name, tierDesc: tier.desc,
+    sources,
+    /** 缺口 = 实际雷伤（界面上「此劫需卸 X 点、你能卸 Y 点」的那两个数） */
+    threshold: base, covered: Math.round(base * reduction * 100) / 100,
+    bolts, boltsRaw, runeSaved, popLoss,
+    perish: tier.perish === true,
+    xpLoss: tier.xpLossRatio ? Math.floor(realmXpNeeded(idx) * tier.xpLossRatio) : 0,
+    trainMult: tier.trainMult || 1, trainHours: tier.trainHours || 0,
+    /** 界面用的一句话（明写缺口与落雷） */
+    verdict: `${tier.name} —— 缺口 ${damage} 点${bolts > 0 ? `，城内落雷 ${bolts} 道` : '，城内无事'}`,
+  };
+}
+
+/**
+ * 兑现一次天劫（验收标准 2 的 commit 半边）。
+ * 无论成败都**消耗掉这次晋升机会**（与金丹结丹同一约定：渡劫没有第二次）。
+ */
+function commitTribulation(state, personId, now = Date.now(), rng = Math.random, loadout) {
+  const plan = tribulationPlan(state, personId, loadout);
+  if (!plan.ok) return plan;
+  const person = findCultivator(state, personId);
+  if (!person) return { ok: false, reason: '修士不存在' };
+
+  // ① 对价：投入的东西当场付出（这是「卸雷不是免费的」的落点）
+  if (plan.sources.find((s) => s.id === 'territory')?.count > 0) {
+    state.cultivation.world = state.cultivation.world || {};
+    const w = worldOf(state);
+    w.unrestPauseUntil = now + 3600 * 1000;   // 领地暂停赋税 1 小时
+  }
+  if (plan.sources.find((s) => s.id === 'artifact')?.count > 0) {
+    wearArtifacts(state, 'tribulation');      // 耐久清零（reason 参数已存在）
+  }
+  if (plan.sources.find((s) => s.id === 'rune')?.count > 0) {
+    consumePending(state, 'tribulation');
+  }
+  const wardenIds = plan.sources.find((s) => s.id === 'warden')?.ids || [];
+  if (wardenIds.length) {
+    const w = worldOf(state);
+    if (!Array.isArray(w.wardens)) w.wardens = [];
+    w.wardens = wardenIds.slice();
+  }
+
+  // ② 落城的雷（先落，再算人的下场 —— 与文档「缺口每 2 点，城里落一道雷」一致）
+  let killed = 0;
+  if (plan.bolts > 0) {
+    const pop = Number(state.population) || 0;
+    let remain = pop;
+    for (let i = 0; i < plan.bolts; i += 1) remain = Math.max(0, remain - remain * TRIBULATION_BOLT_POP_LOSS);
+    killed = Math.max(0, Math.round(pop - remain));
+    state.population = Math.max(0, Math.round(remain));
+    state.stats.deaths = (Number(state.stats.deaths) || 0) + killed;
+    pushLog(state, `天劫的余雷落进城里 —— ${plan.bolts} 道，死了 ${killed} 人。`, 'cultivate', null, now);
+  }
+
+  // ③ 分档结算
+  const tier = tribulationTierOf(plan.damage);
+  if (tier.perish) {
+    // 陨落**保留传承**（验收标准 5）：10 条秘闻 + 30 灵石由 removeCultivator(inherit=true) 发放。
+    // ⚠ 我第一版在这里又减了一次 TRIBULATION_INHERIT_CLUES，等于把刚发的传承倒扣回去
+    //   （净效果 0，而且不报错）—— 典型的「两处各写一遍同一笔账」。
+    //   现在这笔账**只有一处**：`removeCultivator` 的 inherit 分支。
+    removeCultivator(state, person, now, true);
+    pushLog(state, `${person.name}渡劫失败，形神俱灭于雷下。此劫要了你一个人。`, 'cultivate', null, now);
+    return {
+      ok: true, success: false, perish: true, name: person.name,
+      damage: plan.damage, tier: tier.id, bolts: plan.bolts, killed,
+      inherit: { clues: TRIBULATION_INHERIT_CLUES, stones: 30 },
+    };
+  }
+
+  if (tier.id === 'broken') {
+    person.xp = Math.max(0, person.xp - plan.xpLoss);
+    person.breakFailures = (person.breakFailures || 0) + 1;
+    pushLog(state, `${person.name}渡劫撑住了，但道基受损，修为倒退 ${plan.xpLoss} 点。`, 'cultivate', null, now);
+    return { ok: true, success: true, name: person.name, damage: plan.damage, tier: tier.id, loss: plan.xpLoss, bolts: plan.bolts, killed };
+  }
+
+  // calm / shaken：晋升成功（shaken 附加一段修炼减速）
+  person.realmIndex += 1;
+  person.xp = 0;
+  person.breakFailures = 0;
+  person.realmEnteredYear = Number(state.clock?.year) || 0;
+  if (tier.id === 'shaken') {
+    person.stalled = Math.max(Number(person.stalled) || 0, (tier.trainHours || 1) * 3600);
+  }
+  pushLog(state, `${person.name}渡过天劫，晋升${realmName(person.realmIndex)}！${plan.bolts > 0 ? `（城内落雷 ${plan.bolts} 道）` : ''}`, 'cultivate', null, now);
+  return {
+    ok: true, success: true, name: person.name, realm: realmName(person.realmIndex),
+    realmIndex: person.realmIndex, damage: plan.damage, tier: tier.id, bolts: plan.bolts, killed,
+  };
 }
 
 /**

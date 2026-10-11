@@ -2892,6 +2892,23 @@ section('T-4 投帖问路（拿族人的命换线索）');
       boxes[0].checked = true;
       boxes[1].checked = true;
       for (const fn of (listQ()._listeners?.change || [])) fn({ target: boxes[0] });
+
+      /* ★【修复 t13 §14.4】断言必须**在渲染之前**读一次：
+       *   `data-errand-count` 原先只在渲染时由 `checkedCount` 写入，而 change 处理器
+       *   只更新 `disabled`/文案 ⇒ **「勾选 → 尚未渲染」窗口里 attr 是旧值**：
+       *   实测 `:checked=2`、文案「已勾选 2 人」、而 attr=0，三量恒等在这个窗口不成立。
+       *   为什么原来的 A7 抓不到：它读取前先 `X.ui.render()`，**按构造只看得见渲染后的自洽状态**。
+       *   教训（与 `test-blindspots.md` 同源）：断言要覆盖**状态的每一个窗口**，
+       *   而不只是「稳定态」—— 稳定态自洽不能推出中间态自洽。
+       *   对玩家无影响（派发读活动 DOM），但锚点与真值不一致就是会骗人的信号。 */
+      check('T-4-A7′：**未渲染**窗口里 data-errand-count 也已同步（不再滞后）', (() => {
+        const btn = listQ().querySelector('[data-errand]');
+        const declared = Number(btn.dataset.errandCount);
+        const checkedNow = listQ().querySelectorAll('[data-errand-check]:checked').length;
+        return declared === checkedNow && declared === 2;
+      })(), (() => { const b = listQ().querySelector('[data-errand]');
+        return `attr=${b.dataset.errandCount} checked=${listQ().querySelectorAll('[data-errand-check]:checked').length}`; })());
+
       X.ui.render();
 
       // A7：三者恒等（机读 data-errand-count，不解析中文文案）
@@ -3238,8 +3255,493 @@ section('T-5 择地筑基（地块变成永久 build）');
 }
 
 /* ══════════════════════ 15.11 T-6 结丹 ══════════════════════ */
-section('T-6 结丹（每一次修为满，都是一次下注）');
+/* ══════════════════════ 15.12 T-7 元婴圣胎温养 ══════════════════════ */
+section('T-7 元婴圣胎温养（你的第二个自己会想跑）');
 {
+  const NC = X.nascent.constants();
+  // ⚠ 每个 section 都要自己定义：`listQ` 是 T-4 那个块的**局部**常量，
+  //   跨块引用会 ReferenceError（而它会让整个 smoke 中途崩掉、PASS 数骤降但 FAIL 为 0 —— 
+  //   一个很容易被误读成「全绿」的失败形态，所以崩溃时先看尾部而不是只看计数）。
+  const listQ = () => document.getElementById('cultivator-list');
+  /** 造一个元婴期修士 + 一块已占领的领地。population=0 防止自然出生干扰名册。 */
+  const atYuanying = (over = {}) => {
+    setPeople(person({ id: 1, realmIndex: 18, xp: 0, job: 'retreat', talent: 1, ...over }));
+    state.population = 0;
+    state.spiritStones = 1000000;
+    state.cultivation.immortalTechs = [];
+    state.cultivation.world = { reached: ['mosscave', 'valley'], held: ['valley'], garrison: {}, unrest: {} };
+    X.setRng();
+  };
+  const p0 = () => state.cultivation.cultivators[0];
+
+  // ① 常量与派生时间尺度（数值出处：docs/91 §三 T-7）
+  check('T-7①：稳固度常量与文档逐位一致（+0.02 / −0.03 / 躁动 <30 / 5e-5）',
+    NC.recover === 0.02 && NC.drain === 0.03 && NC.restlessBelow === 30 && NC.restlessPerSec === 5e-5,
+    `${NC.recover}/${NC.drain}/${NC.restlessBelow}/${NC.restlessPerSec}`);
+  check('T-7①：派生时间尺度 —— 100→0 需 55.6 分钟（±0.1）',
+    near(100 / NC.drain / 60, 55.6, 0.1), `${(100 / NC.drain / 60).toFixed(1)} 分`);
+  check('T-7①：派生时间尺度 —— 0→100 需 83.3 分钟（±0.1）',
+    near(100 / NC.recover / 60, 83.3, 0.1), `${(100 / NC.recover / 60).toFixed(1)} 分`);
+
+  // ② 在体 +0.02/秒；出窍 −0.03/秒；出窍期间修为完全不涨
+  atYuanying();
+  check('T-7②：在体时稳固度按 +0.02/秒 回复（100 秒 → +2）', (() => {
+    X.nascent.setStability(1, 50);
+    X.tick(100);
+    return near(X.nascent.of(1).stability, 52, 1e-6);
+  })(), String(X.nascent.of(1).stability));
+
+  atYuanying();
+  check('T-7②：出窍时稳固度按 −0.03/秒 消耗（100 秒 → −3）', (() => {
+    X.nascent.setStability(1, 60);
+    X.nascent.out(1, 'valley');
+    X.tick(100);
+    return near(X.nascent.of(1).stability, 57, 1e-6);
+  })(), String(X.nascent.of(1).stability));
+
+  atYuanying();
+  check('T-7②：出窍时该修士修为**完全不涨**（本体不动）', (() => {
+    X.nascent.setStability(1, 100);
+    X.nascent.out(1, 'valley');
+    const before = p0().xp;
+    X.tick(600);
+    return p0().xp === before;
+  })(), `xp=${p0().xp}`);
+
+  // ③ 出窍威压绕开 mapGarrisonLimit（一个镇守都没派时仍判定「被有效镇守」）
+  atYuanying();
+  check('T-7③：不派镇守、仅靠出窍威压也能判定领地「被有效镇守」', (() => {
+    const pacifiedNo = X.map.isPacified('valley');
+    X.nascent.out(1, 'valley');
+    const pacifiedYes = X.map.isPacified('valley');
+    return pacifiedNo === false && pacifiedYes === true;
+  })(), `holdPower=${X.map.node('valley').power} ward=${X.nascent.wardPower('valley')}`);
+
+  // ④ 出窍者所在节点民怨回落 3 倍
+  check('T-7④：出窍者所在节点的民怨回落是平时的 3 倍', (() => {
+    // ⚠ 民怨**只在节点被有效镇守时才回落**（否则按 MAP_UNREST_PER_SEC 上升）。
+    //   所以基线组必须真的有一个镇守者 —— 我第一版没派镇守，基线是「上升」，
+    //   比值自然算不出来。这也是「测一个倍率前先确认基线本身在动」的教训。
+    atYuanying();
+    setPeople(
+      person({ id: 1, realmIndex: 18, job: 'garrison', talent: 1 }),
+      person({ id: 2, realmIndex: 18, job: 'retreat', talent: 1 }),
+    );
+    state.population = 0;
+    state.cultivation.world = { reached: ['mosscave', 'valley'], held: ['valley'], garrison: { valley: 1 }, unrest: { valley: 0.9 } };
+    X.map.tick(30);
+    const dropWithout = 0.9 - X.map.unrest('valley');
+    // 实验组：多一个**出窍的元婴**坐镇同一个节点
+    state.cultivation.world.unrest = { valley: 0.9 };
+    X.nascent.out(2, 'valley');
+    X.map.tick(30);
+    const dropWith = 0.9 - X.map.unrest('valley');
+    return dropWithout > 0 && near(dropWith / dropWithout, 3, 1e-6);
+  })());
+
+  // ⑤ 稳固度 < 30：修为 ×0.6；骰子两侧
+  atYuanying();
+  check('T-7⑤：稳固度 29（<30）时修为倍率 = 0.6（−40%）',
+    (() => { X.nascent.setStability(1, 29); return near(X.nascent.trainMult(1), 0.6, 1e-12); })(),
+    String(X.nascent.trainMult(1)));
+  check('T-7⑤：稳固度恰为 30 时倍率 = 1（阈值是严格小于）',
+    (() => { X.nascent.setStability(1, 30); return X.nascent.trainMult(1) === 1; })());
+  check('T-7⑤：躁动骰子必触发 → 该修士陨落（名册摘掉、deaths+1、qi 同步）', (() => {
+    atYuanying();
+    X.nascent.setStability(1, 29);
+    const before = state.stats.deaths;
+    X.setRng(() => 0);
+    X.tick(1);
+    X.setRng();
+    return state.cultivation.cultivators.length === 0 && state.stats.deaths === before + 1
+      && state.cultivation.qi === 0;
+  })(), `n=${state.cultivation.cultivators.length} deaths=${state.stats.deaths} qi=${state.cultivation.qi}`);
+  check('T-7⑤：躁动骰子必不触发 → 不陨落（两侧）', (() => {
+    atYuanying();
+    X.nascent.setStability(1, 29);
+    X.setRng(() => 0.999999);
+    X.tick(1);
+    X.setRng();
+    return state.cultivation.cultivators.length === 1;
+  })());
+
+  // ⑥ 稳固度到 0：境界冻结在元婴初期、战力保留
+  atYuanying();
+  check('T-7⑥：稳固度归 0 → 标记 lost、元婴回体、境界冻结在元婴初期', (() => {
+    X.nascent.setStability(1, 0.01);
+    X.nascent.out(1, 'valley');
+    X.tick(10);
+    const na = X.nascent.of(1);
+    return na.lost === true && na.out === false && p0().realmIndex === 18;
+  })(), JSON.stringify(X.nascent.of(1)));
+  check('T-7⑥：离体不返后**战力保留**（镇守战力与失陷前一致，没被归零）', (() => {
+    atYuanying();
+    state.cultivation.world.garrison = { valley: 1 };
+    const powerBefore = X.map.holdStrength('valley');
+    X.nascent.setStability(1, 0.01);
+    X.nascent.out(1, 'valley');
+    X.tick(10);
+    const powerAfter = X.map.holdStrength('valley');
+    return X.nascent.isLost(1) === true && powerBefore > 0 && powerAfter === powerBefore;
+  })(), `before=${X.map.holdStrength('valley')}`);
+  check('T-7⑥：离体不返后不再涨修为（倍率 0）',
+    (() => { X.nascent.setStability(1, 0); return X.nascent.trainMult(1) === 0; })());
+
+  // ⑦ 🔴 离线硬约定：真跑 runOffline
+  atYuanying();
+  check('T-7⑦：离线 12 小时后，出窍者已回体且稳固度不低于离线前', (() => {
+    X.nascent.setStability(1, 40);
+    X.nascent.out(1, 'valley');
+    const before = X.nascent.of(1).stability;
+    X.offline(12 * 3600);
+    const na = X.nascent.of(1);
+    return na.out === false && na.place === null && na.stability >= before;
+  })(), JSON.stringify(X.nascent.of(1)));
+
+  // ⑧ 边界警告
+  atYuanying();
+  check('T-7⑧：稳固度跌破 30 时播报一次，文案含「离体不返」与分钟数', (() => {
+    X.nascent.setStability(1, 30.5);
+    X.nascent.out(1, 'valley');
+    state.log = [];
+    X.tick(100);   // 30.5 → 27.5，跨过 30
+    const hit = state.log.find((e) => /离体不返/.test(e.text));
+    return Boolean(hit) && /分钟/.test(hit.text) && X.nascent.of(1).stability < 30;
+  })(), (state.log[0] && state.log[0].text) || '(无日志)');
+
+  // ⑨ 旧存档兼容
+  check('T-7⑨：老存档里没有 nascent 字段的修士，载入后被补成「满稳固 / 在体」', (() => {
+    atYuanying();
+    delete state.cultivation.cultivators[0].nascent;
+    X.step(0);   // 触发一次 repair
+    const na = X.nascent.of(1);
+    return na.stability === 100 && na.out === false && na.place === null && na.lost === false;
+  })());
+
+  // ⑩ UI：稳固度条 + 出窍/回体入口（验收标准 1）
+  atYuanying();
+  X.ui.render();
+  check('T-7⑩：元婴修士卡片上有稳固度条与「出窍」入口',
+    listQ().querySelectorAll('.nascent-bar').length === 1
+    && listQ().querySelectorAll('[data-nascent-out]').length === 1,
+    `bar=${listQ().querySelectorAll('.nascent-bar').length} btn=${listQ().querySelectorAll('[data-nascent-out]').length}`);
+  check('T-7⑩：非元婴修士**不渲染**圣胎面板（未解锁的机制不进 DOM，而不是渲染成空）', (() => {
+    setPeople(person({ id: 1, realmIndex: 14, job: 'retreat', talent: 1 }));
+    state.population = 0;
+    X.ui.render();
+    return listQ().querySelectorAll('.nascent-bar').length === 0
+      && listQ().querySelectorAll('[data-nascent-out]').length === 0;
+  })());
+  check('T-7⑩：出窍中的人卡片上给的是「回体」，且文案点明「修为停涨」', (() => {
+    atYuanying();
+    X.nascent.out(1, 'valley');
+    X.ui.render();
+    const box = listQ().querySelector('.nascent-box');
+    return listQ().querySelectorAll('[data-nascent-recall]').length === 1
+      && /停涨/.test(box.textContent);
+  })());
+  check('T-7⑩：稳固度三档配色（>30 正常 / <30 且 ≥15 黄 / <15 红）', (() => {
+    const toneAt = (v) => { atYuanying(); X.nascent.setStability(1, v); X.ui.render();
+      const b = listQ().querySelector('.nascent-box'); return b ? b.className : ''; };
+    return /nascent-ok/.test(toneAt(90)) && /nascent-mid/.test(toneAt(25)) && /nascent-low/.test(toneAt(10));
+  })());
+
+  /* ── 与**科技线**的功能性联动（t5 验收条款：至少一处真实联动，不是并存）──
+   * 仙道科技 `zhenyue` / `jielu` 抬的是 `garrisonCapFlat` → `mapGarrisonLimit()`；
+   * 元婴出窍给的是**不受那个上限约束**的第二条路。两者作用在**同一个量**
+   * （「我能有效压住几块地」）上：科技抬**底线**、境界抬**上限**，且量可加。
+   * 这条断言把叠加关系钉住 —— 若有人把出窍威压也接进 `mapGarrisonLimit()`，
+   * 或让科技与威压互斥，这里会立刻红。 */
+  check('T-7·科技联动：科技 zhenyue 抬底线、出窍威压抬上限 —— 可叠加且量可加', (() => {
+    atYuanying();
+    setPeople(
+      person({ id: 1, realmIndex: 18, job: 'retreat', talent: 1 }),
+      person({ id: 2, realmIndex: 18, job: 'retreat', talent: 1 }),
+    );
+    state.population = 0;
+    // ⚠ `immortalTechs` 是**顶层** state 字段（不是 cultivation 里的）——
+    //   这正是 T-1 修的那个白名单漏字段；写错位置会让 techEffects 完全读不到，
+    //   表现为「科技好像没生效」，极易误判成产品缺陷。
+    state.immortalTechs = [];
+    const base = X.nascent.garrisonLimit();
+    const slack0 = X.nascent.wardSlack();
+    X.nascent.out(1, 'valley');
+    const slack1 = X.nascent.wardSlack();
+    // 科技 zhenyue 给 garrisonCapFlat: 2（src/data/immortal-techs.js）
+    state.immortalTechs = ['zhenyue'];
+    const withTech = X.nascent.garrisonLimit();
+    const eff = X.nascent.effGarrisonLimit();
+    state.immortalTechs = [];
+    return slack0 === 0 && slack1 === 1 && withTech === base + 2 && near(eff, withTech + slack1, 1e-12);
+  })(), `base=${X.nascent.garrisonLimit()} slack=${X.nascent.wardSlack()} eff=${X.nascent.effGarrisonLimit()}`);
+}
+
+/* ══════════════════════ 15.13 T-8 化神天劫 ══════════════════════ */
+section('T-8 天劫（你越强，天地越要收你）');
+{
+  const TC = X.tribulation.table();
+  const listQ = () => document.getElementById('cultivator-list');
+  /** 元婴/化神名册 + 一块已占领领地；wardens 由测试按需给。 */
+  const atHuashen = (over = {}) => {
+    setPeople(person({ id: 1, realmIndex: 22, xp: X.realm.xpNeeded(22), job: 'retreat', talent: 1, ...over }));
+    state.population = 2000;
+    state.spiritStones = 1000000;
+    state.immortalTechs = [];
+    state.morality = 50;
+    state.cultivation.world = { reached: ['mosscave', 'valley'], held: ['valley'], garrison: {}, unrest: {}, wardens: [] };
+    X.setRng();
+  };
+  const p0 = () => state.cultivation.cultivators[0];
+
+  // ① 三次天劫的基础雷伤与文档一致（6 / 7 / 9）
+  check('T-8①：三次天劫基础雷伤 = 6 / 7 / 9（键是晋升前的 realmIndex 22/23/24）',
+    TC.base[22] === 6 && TC.base[23] === 7 && TC.base[24] === 9,
+    JSON.stringify(TC.base));
+  check('T-8①：化神三层才是天劫层，22 以下不是',
+    X.tribulation.isTrial(22) && X.tribulation.isTrial(23) && X.tribulation.isTrial(24)
+    && !X.tribulation.isTrial(21) && !X.tribulation.isTrial(17));
+
+  // ② plan/commit 分离：tribulationPlan **不动状态**
+  atHuashen();
+  check('T-8②：调 tribulationPlan 后 state 逐字段不变（plan/commit 分离）', (() => {
+    // ⚠ 先「热身」一次：`worldOf()` 是**读时修补**（会把旧的 conquests 迁进 world），
+    //   所以第一次读会合法地改一次 state。这与「plan 不结算」是两件事 ——
+    //   不热身的话这条断言测到的是那个惰性迁移，而不是 plan 的纯净性。
+    X.step(0);   // 跑一次 repair，把 worldOf/forgeOf/runesOf/artifactBonus 的惰性初始化先做掉
+    const before = JSON.stringify(state);
+    X.tribulation.plan(1);
+    return JSON.stringify(state) === before;
+  })());
+
+  // ④ 分档：先断言**纯映射**（这张表是唯一真相源），再用真实 plan 走端到端
+  check('T-8④：分档纯映射 —— 3→calm / 6→shaken / 7→broken / 9→perish',
+    X.tribulation.tierOf(3) === 'calm' && X.tribulation.tierOf(6) === 'shaken'
+    && X.tribulation.tierOf(7) === 'broken' && X.tribulation.tierOf(9) === 'perish'
+    && X.tribulation.tierOf(0) === 'calm',
+    [0, 3, 6, 7, 9].map((d) => X.tribulation.tierOf(d)).join('/'));
+  check('T-8④：实际雷伤 0–3 → 无事（calm）—— 堆满 6 位护法 + 道心清白 = 46% 减免', (() => {
+    setPeople(
+      person({ id: 1, realmIndex: 22, xp: X.realm.xpNeeded(22), job: 'retreat', talent: 1 }),
+      ...[2, 3, 4, 5, 6, 7].map((id) => person({ id, realmIndex: 18, job: 'retreat', talent: 1 })),
+    );
+    state.population = 0;
+    state.morality = 75;
+    state.cultivation.world = { reached: [], held: [], garrison: {}, unrest: {}, wardens: [] };
+    const pl = X.tribulation.plan(1, { territory: false, artifact: false });
+    return pl.damage === 3 && pl.tier === 'calm';
+  })(), (() => { const p = X.tribulation.plan(1, { territory: false, artifact: false }); return `damage=${p.damage} tier=${p.tier} r=${p.reduction}`; })());
+  check('T-8④：实际雷伤 4–6 → 该修士修炼受震（shaken，修炼 −50% 一小时）', (() => {
+    atHuashen();
+    state.morality = 50;
+    const pl = X.tribulation.plan(1, { territory: false, wardens: [], artifact: false });
+    return pl.damage === 6 && pl.tier === 'shaken' && pl.trainMult === 0.5 && pl.trainHours === 1;
+  })(), (() => { atHuashen(); state.morality = 50; const p = X.tribulation.plan(1, { territory: false, wardens: [], artifact: false }); return `damage=${p.damage} tier=${p.tier}`; })());
+  check('T-8③：减免来源表含封地/护法/法器/道心/护身符五条，且数值与文档一致', (() => {
+    const byId = Object.fromEntries(TC.sources.map((s) => [s.id, s]));
+    return byId.territory.per === 0.08 && byId.territory.max === 4
+      && byId.warden.per === 0.06 && byId.warden.max === 6
+      && byId.artifact.per === 0.10 && byId.artifact.max === 3
+      && byId.merit.per === 0.10
+      && byId.rune.max === 1;
+  })());
+  check('T-8③：道心 ≥70 给 −10%（天道不罚善人）', (() => {
+    atHuashen();
+    state.morality = 75;
+    const s = X.tribulation.sources(1).find((x) => x.id === 'merit');
+    return near(s.value, 0.10, 1e-12);
+  })());
+  check('T-8③：道心 ≤30 反而 **+15%**（诛邪神雷 —— 恶名招雷）', (() => {
+    atHuashen();
+    state.morality = 20;
+    const s = X.tribulation.sources(1).find((x) => x.id === 'merit');
+    return near(s.value, -0.15, 1e-12);
+  })());
+  check('T-8③：护法条数由**元婴及以上**名册决定（元婴以下不算）', (() => {
+    atHuashen();
+    setPeople(
+      person({ id: 1, realmIndex: 22, xp: X.realm.xpNeeded(22), job: 'retreat', talent: 1 }),
+      person({ id: 2, realmIndex: 18, job: 'retreat', talent: 1 }),   // 元婴 → 可当护法
+      person({ id: 3, realmIndex: 14, job: 'retreat', talent: 1 }),   // 金丹 → 不算
+    );
+    state.population = 0;
+    const s = X.tribulation.sources(1).find((x) => x.id === 'warden');
+    return s.available === 1;   // 只有 id2（元婴）算；id3 是金丹；本人排除
+  })());
+
+  // ④ 分档四条（端到端：用 0 减免与堆满减免两种构造）
+  check('T-8④：实际雷伤 7–8 → 修为回退 40%（broken）', (() => {
+    setPeople(person({ id: 1, realmIndex: 23, xp: X.realm.xpNeeded(23), job: 'retreat', talent: 1 }));
+    state.population = 0;
+    state.cultivation.world = { reached: [], held: [], garrison: {}, unrest: {}, wardens: [] };
+    const pl = X.tribulation.plan(1, { territory: false, wardens: [], artifact: false });
+    return pl.damage === 7 && pl.tier === 'broken' && pl.xpLoss > 0;
+  })());
+  check('T-8④：实际雷伤 9+ → 陨落（perish）', (() => {
+    setPeople(person({ id: 1, realmIndex: 24, xp: X.realm.xpNeeded(24), job: 'retreat', talent: 1 }));
+    state.population = 0;
+    state.cultivation.world = { reached: [], held: [], garrison: {}, unrest: {}, wardens: [] };
+    const pl = X.tribulation.plan(1, { territory: false, wardens: [], artifact: false });
+    return pl.damage === 9 && pl.perish === true;
+  })());
+  check('T-8④：**不准备就渡劫** → 第三次（基础 9、0 减免）必落入陨落档 —— 这是刻意的门槛', (() => {
+    setPeople(person({ id: 1, realmIndex: 24, xp: X.realm.xpNeeded(24), job: 'retreat', talent: 1 }));
+    state.population = 0;
+    state.cultivation.world = { reached: [], held: [], garrison: {}, unrest: {}, wardens: [] };
+    const pl = X.tribulation.plan(1, { territory: false, wardens: [], artifact: false });
+    return pl.perish === true && pl.damage === 9;
+  })());
+
+  // ⑤ 陨落保留传承（遗物 + 10 条秘闻）
+  check('T-8⑤：陨落时保留传承 —— 10 条秘闻归入家族，且名册摘掉该修士', (() => {
+    setPeople(person({ id: 1, realmIndex: 24, xp: X.realm.xpNeeded(24), job: 'retreat', talent: 1 }));
+    state.population = 0;
+    state.morality = 50;
+    state.cultivation.clues = 0;
+    state.cultivation.world = { reached: [], held: [], garrison: {}, unrest: {}, wardens: [] };
+    const r = X.tribulation.commit(1, { territory: false, wardens: [], artifact: false });
+    return r.perish === true && state.cultivation.cultivators.length === 0
+      && state.cultivation.clues >= 10 && state.cultivation.qi === 0;
+  })(), `clues=${state.cultivation.clues}`);
+  check('T-8⑤：陨落也计入 deaths', (() => {
+    setPeople(person({ id: 1, realmIndex: 24, xp: X.realm.xpNeeded(24), job: 'retreat', talent: 1 }));
+    state.population = 0;
+    state.cultivation.world = { reached: [], held: [], garrison: {}, unrest: {}, wardens: [] };
+    const before = state.stats.deaths;
+    X.tribulation.commit(1, { territory: false, wardens: [], artifact: false });
+    return state.stats.deaths === before + 1;
+  })());
+
+  // ⑥ 落城的雷：缺口 0 → 人口不变；缺口 3 → 恰好 1 道
+  check('T-8⑥：落雷规则 —— 每 2 点缺口一道（0→0、3→1、9→4）',
+    X.tribulation.bolts(0) === 0 && X.tribulation.bolts(3) === 1
+    && X.tribulation.bolts(9) === 4 && X.tribulation.bolts(5) === 2,
+    `${X.tribulation.bolts(0)}/${X.tribulation.bolts(3)}/${X.tribulation.bolts(9)}/${X.tribulation.bolts(5)}`);
+  check('T-8⑥：缺口 0 时人口不变 —— 用**护身符**把最后一道雷也免掉（符房线的产物）', (() => {
+    // 构造「缺口 3 点 ⇒ 1 道落城的雷」，再用护身符免掉它 ⇒ 人口应当不变。
+    // 顺带把符房线的产物（护身符）也真正接进断言，而不是只查它「有没有被读到」。
+    setPeople(
+      person({ id: 1, realmIndex: 22, xp: X.realm.xpNeeded(22), job: 'retreat', talent: 1 }),
+      ...[2, 3, 4, 5, 6, 7].map((id) => person({ id, realmIndex: 18, job: 'retreat', talent: 1 })),
+    );
+    state.population = 2000;
+    state.morality = 75;
+    state.cultivation.world = { reached: [], held: [], garrison: {}, unrest: {}, wardens: [] };
+    // 挂一张护身符（`runesOf(state).pending` 就是符房存挂加成的字段）
+    state.cultivation.runes = state.cultivation.runes || {};
+    state.cultivation.runes.pending = { tribulation: 1 };
+    const pl = X.tribulation.plan(1, { territory: false, artifact: false });
+    const before = state.population;
+    X.tribulation.commit(1, { territory: false, artifact: false });
+    return pl.damage === 3 && pl.boltsRaw === 1 && pl.runeSaved === 1 && pl.bolts === 0
+      && state.population === before;
+  })(), (() => { const p = X.tribulation.plan(1, { territory: false, artifact: false });
+    return `damage=${p.damage} boltsRaw=${p.boltsRaw} runeSaved=${p.runeSaved} bolts=${p.bolts} pop=${state.population}`; })());
+  check('T-8⑥：缺口 > 0 时人口按每道 ×(1−0.5%) 下降（逐道复利）', (() => {
+    setPeople(person({ id: 1, realmIndex: 24, xp: X.realm.xpNeeded(24), job: 'retreat', talent: 1 }));
+    state.population = 2000;
+    state.cultivation.world = { reached: [], held: [], garrison: {}, unrest: {}, wardens: [] };
+    const before = state.population;
+    const r = X.tribulation.commit(1, { territory: false, wardens: [], artifact: false });
+    // 9 点缺口 → 4 道 → 2000 × 0.995⁴ ≈ 1960.1 → 死 40
+    return r.bolts === 4 && state.population < before && state.population >= 1955;
+  })(), `pop=${state.population}`);
+
+  // ⑦ 化神期晋升真的走天劫（转发链通）
+  atHuashen();
+  check('T-8⑦：`breakthroughPlan` 在化神期转发到天劫（返回 kind=tribulation，不是冲关）', (() => {
+    const pl = X.realm.plan(1);
+    return pl.ok === true && pl.kind === 'tribulation' && typeof pl.damage === 'number';
+  })(), JSON.stringify({ ok: X.realm.plan(1).ok, kind: X.realm.plan(1).kind }));
+  check('T-8⑦：化神期**修为满不会自动跳级**（否则渡劫界面永不出现）', (() => {
+    atHuashen();
+    X.tick(600);
+    return p0().realmIndex === 22;
+  })(), `realmIndex=${p0().realmIndex}`);
+  check('T-8⑦：渡劫成功后 realmIndex +1 且修为清零', (() => {
+    atHuashen();
+    state.morality = 75;   // 攒足减免 ⇒ 落入 calm
+    const r = X.tribulation.commit(1, { territory: false });
+    return r.ok === true && r.success === true && p0().realmIndex === 23 && p0().xp === 0;
+  })(), `realmIndex=${p0() ? p0().realmIndex : '-'}`);
+
+  // ⑨ UI：渡劫准备界面（验收标准 1 —— 必须出现「缺口」+数字，且**不出现**冲关按钮）
+  atHuashen();
+  X.ui.render();
+  check('T-8⑨：化神期修为满时卡片上出现渡劫界面，且文本含「缺口」与数字',
+    (() => {
+      const box = listQ().querySelector('.trial-box');
+      return Boolean(box) && /缺口/.test(box.textContent) && /\d/.test(box.textContent);
+    })(), (() => { const b = listQ().querySelector('.trial-box'); return b ? b.textContent.replace(/\s+/g, ' ').slice(0, 120) : '(没有渡劫界面)'; })());
+  check('T-8⑨：渡劫界面列出全部减免来源（五条）与各自的数值',
+    listQ().querySelectorAll('.trial-list li').length === 5,
+    `${listQ().querySelectorAll('.trial-list li').length} 条`);
+  check('T-8⑨：渡劫层**不出现**原来的「冲关」按钮（走天劫而不是 REALM_GATES）',
+    listQ().querySelectorAll('.trial-box [data-breakthrough]').length === 0);
+  check('T-8⑨：界面明写落雷规则「每 2 点缺口，城内落雷一道」',
+    (() => { const b = listQ().querySelector('.trial-gap');
+      return Boolean(b) && /每 2 点缺口/.test(b.textContent); })());
+  check('T-8⑨：不准备时按钮标出「此劫会要命」（缺口 9 ⇒ 陨落档，必须极清晰预告）', (() => {
+    setPeople(person({ id: 1, realmIndex: 24, xp: X.realm.xpNeeded(24), job: 'retreat', talent: 1 }));
+    state.population = 0;
+    state.morality = 50;
+    state.cultivation.world = { reached: [], held: [], garrison: {}, unrest: {}, wardens: [] };
+    // ⚠ 必须把法器也清空：前面 T-5/器坊的用例留下过一件**已装备的法器**，
+    //   它会以 −10% 悄悄混进减免（9 × 0.9 = 8.1 → round 8），于是「不准备」
+    //   这个前提根本不成立。`artifactBonus` 读的是 `forge.equipped`，
+    //   只清 world 是不够的 —— 这是「构造前置状态要清干净所有入口」的又一例。
+    state.cultivation.forge = state.cultivation.forge || {};
+    state.cultivation.forge.equipped = {};
+    X.ui.render();
+    const btn = listQ().querySelector('[data-tribulation]');
+    return Boolean(btn) && /要命/.test(btn.textContent);
+  })(), (() => {
+    const b = listQ().querySelector('[data-tribulation]');
+    const pl = X.tribulation.plan(1);
+    return `btn=${b ? b.textContent.trim() : 'NONE'} | damage=${pl.damage} perish=${pl.perish} realm=${state.cultivation.cultivators[0]?.realmIndex}`;
+  })());
+
+  // ⑧ 旧存档：world.wardens 补 []
+  check('T-8⑧：老存档载入后 world.wardens 被补成空数组（护法位是独立字段）', (() => {
+    atHuashen();
+    delete state.cultivation.world.wardens;
+    X.step(0);
+    return Array.isArray(state.cultivation.world.wardens) && state.cultivation.world.wardens.length === 0;
+  })());
+
+  /* ── 与**科技线/生产链**的第二处功能性联动（t5 验收条款）──────────
+   * 天劫的减免来源**全部**取自前两个节点建起来的生产链：
+   *   领地 → 地图线（占领 + 镇守）；法器 → 器坊线；护身符 → 符房线。
+   * 也就是说「化神能不能过」不由化神期决定，而由玩家前 40 小时
+   * 在凡人/仙道两条科技线上攒下了什么决定 —— 这是「相互关联」而非并存。
+   * 这条断言把「投入的减免物真的会改变结算结果」钉住。 */
+  check('T-8·科技联动：减免的三个来源**真的从生产链读**，且投入会改变结算结果', (() => {
+    // ① 护法：来自名册（元婴+）—— 投 3 位护法应让雷伤下降 18%
+    setPeople(
+      person({ id: 1, realmIndex: 22, xp: X.realm.xpNeeded(22), job: 'retreat', talent: 1 }),
+      person({ id: 2, realmIndex: 18, job: 'retreat', talent: 1 }),
+      person({ id: 3, realmIndex: 18, job: 'retreat', talent: 1 }),
+      person({ id: 4, realmIndex: 18, job: 'retreat', talent: 1 }),
+    );
+    state.population = 0;
+    state.morality = 50;
+    state.cultivation.world = { reached: [], held: [], garrison: {}, unrest: {}, wardens: [] };
+    const bare = X.tribulation.plan(1, { territory: false, wardens: [], artifact: false });
+    const warded = X.tribulation.plan(1, { territory: false, artifact: false });
+    const wardenRow = X.tribulation.sources(1).find((s) => s.id === 'warden');
+    // 3 位护法 × 6% = 18% ⇒ round(6×0.82) = 5，比不投入低
+    // ② 法器：从器坊读（`artifactBonus` 与 equipped 位）—— 这里断言 available 与真实装备位同源
+    const artRow = X.tribulation.sources(1).find((s) => s.id === 'artifact');
+    const equippedCount = Object.keys(state.cultivation.forge?.equipped || {}).length;
+    // ③ 封地：从地图读（已占领 **且有效镇守** 才计入）
+    const terrRow = X.tribulation.sources(1).find((s) => s.id === 'territory');
+    return bare.damage === 6 && wardenRow.available === 3 && warded.damage < bare.damage
+      && artRow.available === equippedCount && terrRow.available === 0;
+  })(), (() => { const b = X.tribulation.plan(1, { territory: false, wardens: [], artifact: false });
+    const w = X.tribulation.plan(1, { territory: false, artifact: false });
+    return `bare=${b.damage} warded=${w.damage}`; })());
+}
+
+section('T-6 结丹（每一次修为满，都是一次下注）');{
   const atJindan = () => {
     setPeople(person({ id: 1, realmIndex: 14, xp: X.realm.xpNeeded(14), job: 'retreat', talent: 1 }));
     state.spiritStones = 1000000;
