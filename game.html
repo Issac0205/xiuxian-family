@@ -138,6 +138,16 @@ body {
 .res-stone.is-full { border-color: rgba(143, 214, 255, 0.35); }
 .res[hidden] { display: none; }
 
+/* 【缺陷修复 · 全局】让 hidden 属性永远生效。
+   作者样式里的 display 会盖过 UA 样式表的 [hidden]{display:none}，
+   而且同特异度下「后写的赢」—— 所以 .manual-slots{display:grid} 这类规则
+   会让 JS 加的 hidden 彻底失效（实测：空槽位一直显示；uicheck 报出 2 处）。
+   必须 !important 才能压过任何后写的普通 display 声明。
+   这条同时兜住整类缺陷：任何「用 hidden 控制显隐、而 class 里写了 display」的元素。
+   注意：它放在 .res[hidden] 之后、其余样式之前 —— !important 使位置不影响胜负，
+   但如果将来某处确实需要「hidden 但仍显示」，那条规则必须自己写 !important 显式覆盖。 */
+[hidden] { display: none !important; }
+
 .res.is-full { border-color: rgba(226, 112, 108, 0.45); }
 
 .topbar-actions { display: flex; gap: 8px; flex-shrink: 0; align-items: center; flex-wrap: wrap; }
