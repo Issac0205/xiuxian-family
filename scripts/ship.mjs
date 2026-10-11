@@ -177,7 +177,13 @@ step('提交你显式列出的文件（提交到本地，不推送）');
       console.error(`  处理：git restore --staged <文件> 后再重跑，或把它们也列进 PATHS（若确属你的）。${C.off}`);
       process.exit(1);
     }
-    run('git', ['commit', '-m', message]);
+    // ⚠ 路径受限提交（今天两条真实事故的教训，方向相反、判据同一个）：
+    //   ① 策划者用**裸 `git commit`** ⇒ 把主策 staged 的 ship.mjs 一起卷走；
+    //   ② t8 的 `8709174` ⇒ 把游戏设计师**未提交**的在制 docs/90 / docs/91
+    //      一起收走（"我这次提交会把哪些别人的文件收走"）。
+    //   上面的 `staged ⊄ PATHS` 检查已经能拦这两种；这里再加 `-- ...PATHS`
+    //   做第二层：**即使检查被改坏，提交范围也不会溢出**。
+    run('git', ['commit', '-m', message, '--', ...PATHS]);
     console.log(`${C.green}✓ 已提交到本地${C.off}`);
   }
 }
