@@ -3,3 +3,5 @@ node_modules/
 *.tmp
 # 平衡仿真器的一次性 stdout 产物（node scripts/balance.mjs ... > _bal-xxx.txt 2>&1）
 _bal-*.txt
+# smoke.mjs 的一次性对比产物（node scripts/smoke.mjs > _smoke-before.txt 2>&1）
+_smoke-*.txt
