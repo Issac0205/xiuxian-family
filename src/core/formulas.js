@@ -1,21 +1,66 @@
 /* ────────────────────────── 科技 ────────────────────────── */
 
-/** 把已研习科技的效果累加起来。 */
+/**
+ * 凡人侧科技的全部合法 effect 键。
+ *
+ * ⚠ **加新键必须同时改三处**，缺一处就是静默失败：
+ *   1. 这里的累加器（否则数值根本不生效）
+ *   2. data/techs.js 的 EFFECT_LABELS（否则界面显示不出这一项收益）
+ *   3. 真正消费它的地方（formulas.derive / cultivationEffects / systems/*）
+ * scripts/smoke.mjs 里有断言逐项检查这三处是否对齐。
+ */
+const MORTAL_EFFECT_KEYS = [
+  'estateDiscount', 'birthFlat', 'incomeMult', 'tradeSpeed', 'fieldBonus',
+  'tradeIncome', 'deathFlat', 'secretChance', 'explorePerSecFlat', 'vaultMult',
+];
+
+/**
+ * 仙道侧科技的全部合法 effect 键。
+ * 与凡人侧分开列，是因为两者的结算位置不同：凡人侧基本都进 derive()，
+ * 仙道侧有一部分进 cultivationEffects()（镇守、洞天、冲关）。
+ */
+const IMMORTAL_EFFECT_KEYS = [
+  'immortalCapFlat', 'innateBirthMult', 'mineDeathMult', 'mineYieldMult',
+  'territoryYieldMult', 'territoryHoldMult', 'garrisonCapFlat',
+  'exploreSurviveBonus', 'breakBonusFlat', 'tradeStoneMult',
+  'cityMaterialMult', 'runeBenchFree', 'alchemyRateBonus', 'trainMult',
+  'familyPowerMult',
+];
+
+const ALL_EFFECT_KEYS = [...MORTAL_EFFECT_KEYS, ...IMMORTAL_EFFECT_KEYS];
+
+/**
+ * 把已研习科技的效果累加起来。
+ *
+ * 两条线**共用一个累加器**：凡人科技读 state.techs，仙道科技读 state.immortalTechs。
+ * 之所以不分成两个函数，是因为下游（derive / cultivationEffects）本来就希望
+ * 「不管是哪条线给的，都在这儿一起算」—— 分开只会让每个消费点写两遍。
+ */
 function techEffects(state) {
-  const acc = {
-    estateDiscount: 0,
-    birthFlat: 0,
-    incomeMult: 0,
-    tradeSpeed: 0,
-    fieldBonus: 0,
-    tradeIncome: 0,
-    deathFlat: 0,
-    secretChance: 0,
+  const acc = {};
+  for (const k of ALL_EFFECT_KEYS) acc[k] = 0;
+  const eat = (list, map) => {
+    for (const id of list || []) {
+      const tech = map[id];
+      if (!tech || !tech.effect) continue;
+      for (const key of ALL_EFFECT_KEYS) {
+        if (typeof tech.effect[key] === 'number') acc[key] += tech.effect[key];
+      }
+    }
   };
+  eat(state.techs, TECH_MAP);
+  eat(state.immortalTechs, IMMORTAL_TECH_MAP);
+  return acc;
+}
+
+/** 只取凡人侧的效果（少数地方需要区分来源，例如「撑大坊市胃口」的计数）。 */
+function mortalTechEffects(state) {
+  const acc = {};
+  for (const k of ALL_EFFECT_KEYS) acc[k] = 0;
   for (const id of state.techs || []) {
     const tech = TECH_MAP[id];
     if (!tech || !tech.effect) continue;
-    for (const key of Object.keys(acc)) {
+    for (const key of ALL_EFFECT_KEYS) {
       if (typeof tech.effect[key] === 'number') acc[key] += tech.effect[key];
     }
   }
@@ -52,20 +97,45 @@ function tradeSecretChance(state, route) {
   return Math.min(1, Math.max(0, (route.secretChance || 0) + fx.secretChance + cultivationBonuses(state).exploreTradeBonus));
 }
 
-/** 科技是否已研习。 */
+/** 科技是否已研习（凡人侧）。 */
 function isResearched(state, techId) {
   return (state.techs || []).includes(techId);
 }
 
-/** 科技的前置是否全部满足。 */
-function isTechUnlocked(state, tech) {
-  return tech.requires.every((r) => isResearched(state, r));
+/** 仙道科技是否已研习。老存档没有这个字段，所以必须 || []。 */
+function isImmortalTechResearched(state, techId) {
+  return (state.immortalTechs || []).includes(techId);
 }
 
 /**
- * 科技当前状态：
+ * 凡人科技的前置是否全部满足。
+ *
+ * 凡人侧科技可以被仙道侧 gate 住（tech.requiresImmortal）——
+ * 例如「祛障」要求仙道侧的「引灵」。这是仙凡咬合的一半，见 docs/15-科技线.md。
+ *
+ * ⚠ 用 (tech.requiresImmortal || []) 而不是直接读：老存档与数据缺失
+ *   都要退化成「无前置」，而不是静默锁死一项科技。
+ */
+function isTechUnlocked(state, tech) {
+  if (!(tech.requires || []).every((r) => isResearched(state, r))) return false;
+  return (tech.requiresImmortal || []).every((r) => isImmortalTechResearched(state, r));
+}
+
+/**
+ * 仙道科技的前置是否满足。
+ * 仙道科技的 requires 里**可以混凡人科技的 id** —— 这就是跨树咬合的另一半
+ * （例：灵田 requires ['tuntian', 'yinling']）。所以这里逐项判断该 id 属于哪条线。
+ */
+function isImmortalTechUnlocked(state, tech) {
+  return (tech.requires || []).every((r) => (IMMORTAL_TECH_MAP[r]
+    ? isImmortalTechResearched(state, r)
+    : isResearched(state, r)));
+}
+
+/**
+ * 凡人科技当前状态：
  *  done   已研习
- *  locked 前置未满足（缺前置科技，或缺秘闻）
+ *  locked 前置未满足（缺前置科技，或缺秘闻，或缺跨树的仙道前置）
  *  open   可研习但银两不够
  *  ready  银两充足，可以研习
  */
@@ -79,18 +149,173 @@ function techStatus(state, tech) {
   return state.silver >= tech.cost ? 'ready' : 'open';
 }
 
-/** 建筑是否已解锁。 */
-function isBuildingUnlocked(state, def) {
-  return !def.tech || isResearched(state, def.tech);
+/**
+ * 仙道科技当前状态。与 techStatus 同构，区别是**灵石与银两双付**。
+ *
+ * 灵石是主门槛（银两只是「城里拿得出这笔钱」的资格线），
+ * 所以缺哪一样就报哪一样，界面直接拿去显示。
+ */
+function immortalTechStatus(state, tech) {
+  if (!tech) return 'locked';
+  if (isImmortalTechResearched(state, tech.id)) return 'done';
+  if (!isImmortalTechUnlocked(state, tech)) return 'locked';
+  const silverOk = state.silver >= (tech.cost || 0);
+  const stoneOk = (state.spiritStones || 0) >= (tech.stones || 0);
+  return silverOk && stoneOk ? 'ready' : 'open';
 }
 
-/** 可研习（前置满足且未研习）的科技数量。 */
+/** 仙道科技的缺口说明（界面与日志共用，保证「写的」与「扣的」一致）。 */
+function immortalTechMissing(state, tech) {
+  const out = [];
+  if (!isImmortalTechUnlocked(state, tech)) {
+    const names = (tech.requires || []).map((r) => IMMORTAL_TECH_MAP[r]?.name || TECH_MAP[r]?.name || r);
+    out.push(`须先研习 ${names.join('、')}`);
+  }
+  if (state.silver < (tech.cost || 0)) out.push(`银两不足，需 ${Math.round(tech.cost || 0)} 两`);
+  if ((state.spiritStones || 0) < (tech.stones || 0)) out.push(`灵石不足，需 ${tech.stones || 0} 枚`);
+  return out;
+}
+
+/** 建筑是否已解锁。def.tech 可能是凡人侧 id，也可能是仙道侧 id。 */
+function isBuildingUnlocked(state, def) {
+  if (!def.tech) return true;
+  if (IMMORTAL_TECH_MAP[def.tech]) return isImmortalTechResearched(state, def.tech);
+  return isResearched(state, def.tech);
+}
+
+/** 可研习（前置满足且买得起）的凡人科技数量。 */
 function researchableCount(state) {
   let n = 0;
   for (const id of Object.keys(TECH_MAP)) {
     const tech = TECH_MAP[id];
     if (techStatus(state, tech) === 'ready') n += 1;
   }
+  return n;
+}
+
+/** 可研习的仙道科技数量。 */
+function researchableImmortalCount(state) {
+  let n = 0;
+  for (const id of Object.keys(IMMORTAL_TECH_MAP)) {
+    if (immortalTechStatus(state, IMMORTAL_TECH_MAP[id]) === 'ready') n += 1;
+  }
+  return n;
+}
+
+/* ────────────────────────── 城中作坊（仙凡经济的城市一侧） ────────────────────────── */
+
+/** 全部作坊的**用工需求**（不受人口限制的名义需求）。 */
+const CITY_WORKSHOP_IDS = ['herbhouse', 'minestop', 'papermill', 'immortalmarket'];
+
+/** 名义用工需求：座数 × 每座用工。这是「想派多少人」，不是「派得出多少人」。 */
+function cityWorkshopDemand(state) {
+  const b = state.buildings || {};
+  let demand = 0;
+  for (const k of CITY_WORKSHOP_IDS) demand += (b[k] || 0) * CITY_WORKSHOP_WORKERS;
+  return demand;
+}
+
+/**
+ * 全市作坊实际派上的用工人数 = min(人口, 名义需求)。
+ *
+ * ⚠ **人是共用的一份**：同一批凡人不会同时在药圃和矿寮做工。
+ *   这个数是「有多少人在做工」，所以它决定了做工的死亡率
+ *   （见 derive 里的 laborDeath）——人是被抽走的，抽走就有折损。
+ */
+function cityWorkshopWorkers(state) {
+  return Math.min(Math.max(0, state.population || 0), cityWorkshopDemand(state));
+}
+
+/**
+ * 某一类作坊实际分到的用工人数。
+ *
+ *   人够（人口 ≥ 全部需求）：每座满员。
+ *   人不够：按需求的格局分摊 —— 各让一步，谁也别想独占人手。
+ *
+ * 这就是「抽走劳力 → 别的产出下降」那条张力的实现：
+ * 作坊铺得越多，每一座分到的人就越少，产量按比例摊薄，而人口也就那么多。
+ */
+function cityWorkersOf(state, buildingId) {
+  const b = state.buildings || {};
+  const n = b[buildingId] || 0;
+  if (n <= 0) return 0;
+  const pop = Math.max(0, state.population || 0);
+  const demand = cityWorkshopDemand(state);
+  if (demand <= 0) return 0;
+  const mine = n * CITY_WORKSHOP_WORKERS;
+  if (pop >= demand) return mine;                 // 人够，每座满员
+  return pop * (mine / demand);                   // 人不够，按需求分摊
+}
+
+/**
+ * 某一类作坊的每秒产出当量 = 实际用工 × 单产。
+ *
+ * ⚠ 「座数」通过 cityWorkersOf 进入公式，所以**作坊多而人少会摊薄**。
+ */
+function cityWorkshopRate(state, buildingId, perSec) {
+  return cityWorkersOf(state, buildingId) * perSec;
+}
+
+/**
+ * 坊市用工：这类建筑不产原料，只把银钱做硬。
+ * 口径与作坊一致（同样按人口分摊），只是它有自己的一份用工上限。
+ */
+function cityMarketWorkers(state) {
+  const b = state.buildings || {};
+  const n = b.immortalmarket || 0;
+  if (n <= 0) return 0;
+  const pop = Math.max(0, state.population || 0);
+  const demand = CITY_WORKSHOP_IDS.reduce(
+    (acc, k) => acc + (b[k] || 0) * (k === 'immortalmarket' ? CITY_MARKET_WORKERS_MAX : CITY_WORKSHOP_WORKERS),
+    0,
+  );
+  if (demand <= 0) return 0;
+  const mine = n * CITY_MARKET_WORKERS_MAX;
+  return pop >= demand ? mine : pop * (mine / demand);
+}
+
+/**
+ * 云深谷坊市的**第 n 次**兑换报价（n 从 0 起）。
+ *
+ * 银两按 COST_GROWTH 递增、灵石按 YIELD_GROWTH 递增，两者同速，
+ * 所以「兑率」本身不变，变的是**这一笔的规模**——想换更多就得先攒更多。
+ * tradeStoneMult 直接乘在灵石那一侧，这就是城市科技对兑率的杠杆。
+ */
+function marketExchangeQuote(state, n = marketExchangeCount(state)) {
+  const i = Math.max(0, Math.floor(Number(n) || 0));
+  const fx = techEffects(state);
+  const costGrowth = Math.pow(MARKET_EXCHANGE_COST_GROWTH, i);
+  const yieldGrowth = Math.pow(MARKET_EXCHANGE_YIELD_GROWTH, i);
+  return {
+    index: i,
+    silver: Math.round(MARKET_EXCHANGE_BASE_SILVER * costGrowth),
+    stones: +(MARKET_EXCHANGE_BASE_STONES * yieldGrowth * (1 + fx.tradeStoneMult)).toFixed(4),
+  };
+}
+
+/** 已兑换次数（老存档没有这个字段，所以 || 0）。 */
+function marketExchangeCount(state) {
+  return Math.max(0, Math.floor(Number(state.exchangeCount) || 0));
+}
+
+/**
+ * 坊市一共还能吃下几笔银钱。
+ *
+ * 基础量 MARKET_EXCHANGE_MAX，再按「撑胃口的科技」增加：
+ *   · tradeStoneMult > 0 的科技（坊市扩建、仙凡互市、界墟、结庐）
+ *   · 每项 +MARKET_EXCHANGE_BONUS_PER_TECH 笔
+ * 这样「把城做大」会实打实地延长这条动脉，而不是只把单价压低。
+ */
+function marketExchangeLimit(state) {
+  let n = MARKET_EXCHANGE_MAX;
+  const count = (list, map) => {
+    for (const id of list || []) {
+      const t = map[id];
+      if (t && t.effect && typeof t.effect.tradeStoneMult === 'number' && t.effect.tradeStoneMult > 0) n += MARKET_EXCHANGE_BONUS_PER_TECH;
+    }
+  };
+  count(state.techs, TECH_MAP);
+  count(state.immortalTechs, IMMORTAL_TECH_MAP);
   return n;
 }
 
@@ -124,19 +349,45 @@ function derive(state) {
     * schoolBirthMult(state);
 
   /**
-   * 死亡率 = 基础 + 拥挤 + 对外扩张的代价。
-   * 演武台与商队驿站各按座数计——走出去的人回不来，人口基就薄一层。
+   * 死亡率 = 基础 + 拥挤 + 对外扩张的代价 + **城市做工的代价**。
+   * 演武台与商队驿站各按座数计——走出去的人回不来，人口基就薄一层；
+   * 药圃/矿寮/纸坊/坊市则是「留在城里做工的人也会折损」，
+   * 这是仙凡咬合里**凡人对仙道的付出**那一半。
    * 最后再乘一层「流派倍率」——血煞魔功养功要拿人填。
    */
   const expandDeath = (b.arena || 0) * ARENA_DEATH + (b.caravan || 0) * CARAVAN_DEATH;
   const crowdDeath = CROWD.k * crowdOver * crowdOver;
-  const deathRate = (BASE.deathRate + crowdDeath + expandDeath + fx.deathFlat) * schoolDeathMult(state);
+  const laborWorkers = cityWorkshopWorkers(state);
+  const laborDeath = laborWorkers * CITY_LABOR_DEATH;
+  const deathRate = (BASE.deathRate + crowdDeath + expandDeath + laborDeath + fx.deathFlat) * schoolDeathMult(state);
   const netRate = birthRate - deathRate;
 
   // ── 银两 ──────────────────────────────────────────────────
-  const silverCap = BASE.silverCap + (b.bank || 0) * BANK_CAPACITY;
+  /**
+   * 库房：钱庄之外的第二条「抬高银两上限」的路。
+   *
+   * 上限 = (基础 + 钱庄×容量) × (1 + 库房)。
+   * 乘数放在括号外：库房是「把同一批仓库管得更好」，所以它对
+   * 「已经堆了多少间钱庄」是放大的 —— 多盖与研习两条路互相加强。
+   *
+   * ⚠ 上限不只是个显示数字：云深谷坊市的第 n 笔报价一旦超过上限，
+   *   那一笔就**永远换不了**。所以 vaultMult 是仙道进度的一部分。
+   */
+  const vaultMult = Math.max(0, fx.vaultMult || 0);
+  const silverCap = Math.round(
+    (BASE.silverCap + (b.bank || 0) * BANK_CAPACITY) * (1 + vaultMult),
+  );
   const cultivateFx = cultivationBonuses(state);
-  const silverPerSec = state.population * BASE.silverPerPop * (1 + fx.incomeMult) * (1 + cultivateFx.laborMult);
+  // 坊市用工：人多的一方在兑率上占便宜 —— 城里做工的凡人直接加银两产出
+  const marketWorkerBonus = cityMarketWorkers(state) * CITY_MARKET_YIELD_PER_WORKER;
+  const silverPerSec = state.population * BASE.silverPerPop
+    * (1 + fx.incomeMult + marketWorkerBonus) * (1 + cultivateFx.laborMult);
+
+  // ── 城中作坊：把人口换成仙道生产线的原料 ───────────────────
+  const cityMaterialMult = 1 + fx.cityMaterialMult;
+  const cityHerbPerSec = cityWorkshopRate(state, 'herbhouse', CITY_HERB_PER_SEC) * cityMaterialMult;
+  const cityOrePerSec = cityWorkshopRate(state, 'minestop', CITY_ORE_PER_SEC) * cityMaterialMult;
+  const cityRunePerSec = cityWorkshopRate(state, 'papermill', CITY_RUNE_PER_SEC) * cityMaterialMult;
 
   // ── 造价 ──────────────────────────────────────────────────
   /** 全局通胀：房产愈多，地产以外的营造愈贵。 */
@@ -174,6 +425,9 @@ function derive(state) {
     secretCount,
     secretGoal,
     marketUnlocked,
+    marketExchangeCount: marketExchangeCount(state),
+    marketExchangeLimit: marketExchangeLimit(state),
+    marketExchange: marketExchangeQuote(state),
     stones,
     qi,
     cultivateFx,
@@ -192,11 +446,22 @@ function derive(state) {
     deathRate,
     crowdDeath,
     expandDeath,
+    laborDeath,
+    laborWorkers,
     netRate,
     netPerSec: state.population * netRate,
 
     silverCap,
     silverPerSec,
+    marketWorkerBonus,
+
+    cityMaterialMult,
+    cityHerbPerSec,
+    cityOrePerSec,
+    cityRunePerSec,
+
+    immortalTechs: (state.immortalTechs || []).slice(),
+    immortalCapBonus: fx.immortalCapFlat,
 
     inflation,
     estateDiscount,

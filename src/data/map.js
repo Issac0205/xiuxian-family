@@ -105,8 +105,19 @@ const MAP_CALM_PER_SEC = 1 / 300;
 
 function mapNode(id) { return MAP_NODE_MAP[id] || null; }
 
-/** 该节点需要的镇守战力。 */
-function mapHoldPower(node) { return Math.round((node?.power || 0) * MAP_HOLD_RATIO); }
+/**
+ * ⚠ 这里原来有一个 mapHoldPower()。
+ *   加了「镇岳 / 结庐」这类下调镇守门槛的仙道科技之后，镇守门槛有了
+ *   两个版本（基础值 / 含修正值），两个都必须住在 systems/exploration.js
+ *   里才不会走偏 —— 所以它搬走了。
+ *
+ *   搬走还有一个更硬的理由：同名函数分居两个区块时，
+ *   `new Function` 拼装（仿真器走的路径）能以「后者覆盖前者」跑过去，
+ *   但浏览器里的 ES module 会直接抛
+ *   「Identifier 'mapHoldPower' has already been declared」，
+ *   于是整段脚本不执行、界面变成空壳，而冒烟测试**照样全绿**。
+ *   这个坑已经踩过一次，所以 smoke.mjs 现在有一条顶层重名检查。
+ */
 
 /**
  * 相邻节点：上下左右（不越界）。

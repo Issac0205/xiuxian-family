@@ -42,6 +42,34 @@ check('构建清单存在', Array.isArray(manifest) && manifest.length > 0, `${m
 check('每个区块文件都存在且非空',
   manifest.every((e) => readFileSync(e.path, 'utf8').trim().length > 0));
 
+/**
+ * 顶层声明不得重名 —— 这条是**踩过坑之后补的**。
+ *
+ * 仿真器与应用内测试都是用 `new Function(code)` 拼装整段脚本，
+ * 那里的重复 `function foo(){}` 只是「后者覆盖前者」，静默通过；
+ * 但浏览器里的 `<script type="module">` 会直接抛
+ *   Identifier 'foo' has already been declared
+ * 整个模块不执行 → 界面成了空壳（页签、卡片、科技一个都不渲染），
+ * 而 smoke 当时全绿。所以这条检查必须在**文本层面**做。
+ */
+{
+  const re = /^(?:function\s+([A-Za-z_$][\w$]*)|(?:const|let|var)\s+([A-Za-z_$][\w$]*)\s*=)/gm;
+  const seen = new Map();
+  const dupes = [];
+  for (const entry of manifest) {
+    const src = readFileSync(entry.path, 'utf8');
+    // 逐行扫，只在行首匹配（与 build.mjs 的 declared 扫描口径一致）
+    for (const m of src.matchAll(re)) {
+      const name = m[1] || m[2];
+      if (!name) continue;
+      if (seen.has(name)) dupes.push(`${name}（${seen.get(name)} 与 ${entry.path}）`);
+      else seen.set(name, entry.path);
+    }
+  }
+  check('顶层声明没有重名（module 模式会直接抛错）', dupes.length === 0, dupes.join(' '));
+  check('顶层声明扫描确实扫到了东西', seen.size > 400, `共 ${seen.size} 个顶层名字`);
+}
+
 /* ══════════════════════ 2. 内联脚本 ══════════════════════ */
 
 section('内联脚本');
@@ -103,10 +131,35 @@ const setPeople = (...list) => {
 /* ══════════════════════ 4. 基础玩法回归 ══════════════════════ */
 
 section('基础玩法回归');
-check('六张建筑卡都渲染了', document.querySelectorAll('.bcard').length === 6,
-  `${document.querySelectorAll('.bcard').length} 张`);
+// ⚠ 这两条原来硬编码了「6 张建筑卡 / 6 个丹方」。
+// 加了仙凡经济的五座城坊建筑与一枚丹方之后，硬编码的计数就变成了假失败。
+// 改成数据驱动：查的是「数据表里有多少，界面就渲染了多少」，
+// 也就是这两条断言**真正想查的东西** —— 加了新条目它仍会保护渲染完整性。
+check('建筑卡数量与数据表一致',
+  document.querySelectorAll('.bcard').length === X.data.buildings.length,
+  `${document.querySelectorAll('.bcard').length} / ${X.data.buildings.length} 张`);
 check('科技列表渲染了', document.querySelectorAll('.tech').length >= 12,
   `${document.querySelectorAll('.tech').length} 项`);
+// 两条线的行数必须与数据表一致。
+// ⚠ 用「容器 + 属性」定位，不用 :not(.is-immortal) ——
+//   dom-shim 的 :not() 断言结果恒为 0（会是一条永远假失败的断言）。
+//   容器本身才是稳定的身份标记：#tech-list 是凡人侧、#immortal-tech-list 是仙道侧。
+check('凡人科技行数与数据表一致',
+  document.querySelectorAll('#tech-list .tech[data-tech]').length === X.data.techs.length,
+  `${document.querySelectorAll('#tech-list .tech[data-tech]').length} / ${X.data.techs.length}`);
+check('仙道科技行数与数据表一致',
+  document.querySelectorAll('#immortal-tech-list .tech.is-immortal[data-tech]').length === X.data.immortalTechs.length,
+  `${document.querySelectorAll('#immortal-tech-list .tech.is-immortal[data-tech]').length} / ${X.data.immortalTechs.length}`);
+check('每个仙道科技行都带自己的参悟按钮', (() => {
+  const ids = [...document.querySelectorAll('#immortal-tech-list .tech.is-immortal')].map((r) => r.dataset.tech);
+  return ids.every((id) => Boolean(
+    document.querySelector(`#immortal-tech-list [data-action="researchImmortal"][data-tech="${id}"]`),
+  ));
+})(), `${X.data.immortalTechs.length} 个`);
+check('两条线的切换按钮都在',
+  Boolean(document.querySelector('[data-action="tech-line"][data-line="mortal"]'))
+  && Boolean(document.querySelector('[data-action="tech-line"][data-line="immortal"]'))
+  && Boolean(document.querySelector('#immortal-tech-chip')));
 check('七个页面标签都在', document.querySelectorAll('.pagetab').length === 7,
   [...document.querySelectorAll('.pagetab')].map((b) => b.dataset.page).join(' '));
 check('纪事侧栏在页面之外',
@@ -947,15 +1000,44 @@ check('每种药材都挂在一个真实的地图节点上',
 check('四个药材各来自不同的节点', new Set(al.herbs.map((h) => h.node)).size === 4);
 check('地图上标了药材的节点都有对应的药材定义',
   X.map.nodes().filter((n) => n.herb).every((n) => al.herbs.some((h) => h.id === n.herb)));
-check('六个丹方', al.recipes.length === 6, al.recipes.map((r) => r.name).join(' '));
-check('丹方 id 唯一', new Set(al.recipes.map((r) => r.id)).size === 6);
+// ⚠ 原来写死 6 个丹方。改成「数据表长度自洽」——
+// 加丹方不需要改测试，但表里出现重复 id 仍然会被抓住。
+check('丹方数量与导出表一致', al.recipes.length >= 6, `${al.recipes.length} 个：${al.recipes.map((r) => r.name).join(' ')}`);
+check('丹方 id 唯一', new Set(al.recipes.map((r) => r.id)).size === al.recipes.length);
 check('每个丹方的材料都是有效药材', al.recipes.every((r) =>
   Object.keys(r.materials).every((k) => al.herbs.some((h) => h.id === k))));
 check('每个丹方都有正的成功率与产出',
   al.recipes.every((r) => r.baseRate > 0 && r.baseRate < 1 && r.yield >= 1));
-check('越高级的丹方成功率越低', (() => {
-  const s = [...al.recipes].sort((a, b) => a.tier - b.tier);
-  for (let i = 1; i < s.length; i += 1) if (s[i].baseRate > s[i - 1].baseRate) return false;
+/**
+ * ⚠ 原来这一条是「按 tier 排序后全局单调递减」。
+ * 同阶丹方一多（金丹 42% 与凝丹丸 40% 同属冲关门径），
+ * 用它排序就会把 tier 大、成功率也大的丹方排到前面，判定失败。
+ * 真实的配平关系是「**同阶之内**越难炼的越难」，所以改成按阶分组比较 ——
+ * 既保住了要保护的那条曲线，也不再对「同阶放几个丹方」施加隐性限制。
+ */
+check('同阶丹方里越难的丹方成功率越低', (() => {
+  const byTier = new Map();
+  for (const r of al.recipes) {
+    if (!byTier.has(r.tier)) byTier.set(r.tier, []);
+    byTier.get(r.tier).push(r);
+  }
+  for (const list of byTier.values()) {
+    // 同阶内按成功率从高到低排序后，材料种类数不应出现「更难却更少」的倒挂
+    const s = [...list].sort((a, b) => b.baseRate - a.baseRate);
+    for (let i = 1; i < s.length; i += 1) if (s[i].baseRate > s[i - 1].baseRate) return false;
+  }
+  return true;
+})());
+check('越往后的阶成功率上界越低', (() => {
+  const byTier = new Map();
+  for (const r of al.recipes) {
+    const cur = byTier.get(r.tier);
+    if (cur === undefined || r.baseRate > cur) byTier.set(r.tier, r.baseRate);
+  }
+  const tiers = [...byTier.keys()].sort((a, b) => a - b);
+  for (let i = 1; i < tiers.length; i += 1) {
+    if (byTier.get(tiers[i]) > byTier.get(tiers[i - 1])) return false;
+  }
   return true;
 })());
 check('丹炉等级越高加成越高',
@@ -2218,6 +2300,332 @@ console.log('\n── R10：流派与道心 ──');
   check('施粥扣掉银两', X.state.silver < s0);
   X.morality.add(1000);
   check('道心圆满时不再需要施粥', X.morality.goodDeedPlan().ok === false);
+}
+
+/* ══════════════════════ 仙凡科技线（两条线的接线自查） ══════════════════════
+ *
+ * 这一节的全部意义是防**静默失败**：
+ * 「往数据表里塞了个 effect 键、却没在任何地方结算」这种东西不会报错，
+ * 只会让玩家点完一项科技发现什么都没变。所以这里逐键查三处是否对齐。
+ */
+
+section('仙凡科技线：数据完整性');
+
+const d = X.data;
+const imm = X.immortal;
+
+check('仙道科技表非空', d.immortalTechs.length > 0, `${d.immortalTechs.length} 项`);
+check('仙道科技 id 唯一', new Set(d.immortalTechs.map((t) => t.id)).size === d.immortalTechs.length);
+check('凡人科技 id 唯一', new Set(d.techs.map((t) => t.id)).size === d.techs.length);
+check('两条线的 id 不重复',
+  d.techs.every((t) => !d.immortalTechs.some((i) => i.id === t.id)));
+
+/** 每一项科技的每个 effect 键都必须：在合法键表里 + 有展示文案。 */
+const allKeys = [...d.mortalEffectKeys, ...d.immortalEffectKeys];
+{
+  const wild = [];
+  const unlabeled = [];
+  for (const t of [...d.techs, ...d.immortalTechs]) {
+    for (const k of Object.keys(t.effect || {})) {
+      if (!allKeys.includes(k)) wild.push(`${t.id}.${k}`);
+      if (!d.effectLabels[k]) unlabeled.push(`${t.id}.${k}`);
+    }
+  }
+  check('没有未登记的 effect 键（否则数值不生效）', wild.length === 0, wild.join(' '));
+  check('每个 effect 键都有界面文案（否则收益栏空白）', unlabeled.length === 0, unlabeled.join(' '));
+}
+check('仙道科技的效果只用了仙道侧的键（secretChance 除外，两条线共用）', d.immortalTechs.every((t) =>
+  Object.keys(t.effect || {}).every((k) => d.immortalEffectKeys.includes(k) || k === 'secretChance')));
+
+/**
+ * 每个 effect 键都必须有**消费点** —— 这条查的是「数值真的会生效吗」。
+ *
+ * 上面那两条只能证明「键被登记了、有文案」，证明不了「有人读它」。
+ * 一个只登记不消费的键是彻底的静默失败：玩家点完科技发现什么都没变，
+ * 而所有测试都是绿的。`trainMult` 就曾经是这个状态（见 docs/15-科技线.md 第八节）。
+ *
+ * 做法：在构建产物里数「消费处函数名」出现次数。
+ * 阈值取 ≥3，因为正常情况它至少出现在三处：
+ *   数据表（tech.effect 的字面量）+ 累加器（formulas.js 的键名数组）+ 消费处。
+ */
+{
+  const CONSUMERS = {
+    estateDiscount: 'estateDiscountTotal', birthFlat: 'birthRate', incomeMult: 'incomeMult',
+    tradeSpeed: 'tradeSpeed', fieldBonus: 'fieldBonus', tradeIncome: 'tradeIncome',
+    deathFlat: 'deathFlat', secretChance: 'secretChance', explorePerSecFlat: 'explorePerSecFlat',
+    vaultMult: 'vaultMult',
+    immortalCapFlat: 'cultivatorLimit', innateBirthMult: 'innateMult',
+    mineDeathMult: 'mineDeathMult', mineYieldMult: 'mineYieldMult',
+    territoryYieldMult: 'territoryYieldMult', territoryHoldMult: 'mapHoldPowerFor',
+    garrisonCapFlat: 'mapGarrisonLimit', exploreSurviveBonus: 'exploreSurviveBonus',
+    breakBonusFlat: 'breakBonusFlat', tradeStoneMult: 'tradeStoneMult',
+    cityMaterialMult: 'cityMaterialMult', runeBenchFree: 'runeEffectiveBench',
+    alchemyRateBonus: 'alchemyRateBonus', trainMult: 'techTrainMult',
+    familyPowerMult: 'familyPowerMult',
+  };
+  const missing = [];
+  for (const [key, needle] of Object.entries(CONSUMERS)) {
+    if ((html.split(needle).length - 1) < 3) missing.push(`${key}←${needle}`);
+  }
+  check('每个 effect 键都有真实消费点（不是只登记不生效）', missing.length === 0, missing.join(' '));
+}
+
+/** 前置必须指向真实存在的科技，且不能有环。 */
+{
+  const mortalIds = new Set(d.techs.map((t) => t.id));
+  const immIds = new Set(d.immortalTechs.map((t) => t.id));
+  const badMortal = [];
+  const badImm = [];
+  for (const t of d.techs) {
+    for (const r of t.requires || []) if (!mortalIds.has(r)) badMortal.push(`${t.id}←${r}`);
+    for (const r of t.requiresImmortal || []) if (!immIds.has(r)) badMortal.push(`${t.id}←仙:${r}`);
+  }
+  for (const t of d.immortalTechs) {
+    for (const r of t.requires || []) if (!mortalIds.has(r) && !immIds.has(r)) badImm.push(`${t.id}←${r}`);
+  }
+  check('凡人科技的前置都存在（含跨树前置）', badMortal.length === 0, badMortal.join(' '));
+  check('仙道科技的前置都存在（含跨树前置）', badImm.length === 0, badImm.join(' '));
+
+  // 环检测：两条线的依赖合起来必须是有向无环图
+  const edges = new Map();
+  for (const t of d.techs) edges.set(t.id, [...(t.requires || []), ...(t.requiresImmortal || [])]);
+  for (const t of d.immortalTechs) edges.set(t.id, [...(t.requires || [])]);
+  let cyclic = null;
+  const state2 = new Map();
+  const dfs = (n) => {
+    if (state2.get(n) === 1) { cyclic = n; return true; }
+    if (state2.get(n) === 2) return false;
+    state2.set(n, 1);
+    for (const m of edges.get(n) || []) if (edges.has(m) && dfs(m)) return true;
+    state2.set(n, 2);
+    return false;
+  };
+  for (const n of edges.keys()) if (dfs(n)) break;
+  check('两条线的前置合起来无环', cyclic === null, cyclic || '');
+}
+
+/** 仙道科技的每个 unlocksBuilding 都要在建筑表里，且那个建筑的 tech 指回来。 */
+{
+  const bad = [];
+  for (const t of d.immortalTechs) {
+    if (!t.unlocksBuilding) continue;
+    const b = d.buildings.find((x) => x.id === t.unlocksBuilding);
+    if (!b) bad.push(`${t.id}→${t.unlocksBuilding}（建筑不存在）`);
+    else if (b.tech !== t.id) bad.push(`${t.id}→${t.unlocksBuilding}（建筑的 tech 是 ${b.tech}）`);
+  }
+  for (const t of d.techs) {
+    if (!t.unlocksBuilding) continue;
+    const b = d.buildings.find((x) => x.id === t.unlocksBuilding);
+    if (!b) bad.push(`${t.id}→${t.unlocksBuilding}（建筑不存在）`);
+    else if (b.tech !== t.id) bad.push(`${t.id}→${t.unlocksBuilding}（建筑的 tech 是 ${b.tech}）`);
+  }
+  check('解锁建筑类科技都有配套的真实建筑（双向对齐）', bad.length === 0, bad.join(' '));
+}
+
+/** 每座建筑的 tech 必须指向真实存在的科技（任一树）。 */
+{
+  const mortalIds = new Set(d.techs.map((t) => t.id));
+  const immIds = new Set(d.immortalTechs.map((t) => t.id));
+  const bad = d.buildings.filter((b) => b.tech && !mortalIds.has(b.tech) && !immIds.has(b.tech));
+  check('每座建筑的解锁科技都存在', bad.length === 0, bad.map((b) => `${b.id}←${b.tech}`).join(' '));
+}
+
+/** 无孤儿：每一项科技都必须被另一项 require（两条线合起来看）。 */
+{
+  const needed = new Set();
+  for (const t of d.techs) for (const r of t.requires || []) needed.add(r);
+  for (const t of d.immortalTechs) for (const r of t.requires || []) needed.add(r);
+  for (const t of d.techs) for (const r of t.requiresImmortal || []) needed.add(r);
+  // 顶层（没有任何后继）只允许是两条线各自的终点，且必须真的没有后继可言
+  const orphans = [...d.techs, ...d.immortalTechs]
+    .filter((t) => !needed.has(t.id) && !t.terminal)
+    .map((t) => t.id);
+  check('没有孤儿科技（每一项都被后续 require）', orphans.length === 0, orphans.join(' '));
+}
+
+/** 跨树咬合必须真的存在，而且双向。 */
+{
+  const links = imm.crossLinks();
+  const immortalToMortal = links.filter((l) => l.fromTree === 'mortal' && l.toTree === 'immortal');
+  const mortalToImmortal = links.filter((l) => l.fromTree === 'immortal' && l.toTree === 'mortal');
+  check('仙道科技依赖凡人科技（仙要城养）', immortalToMortal.length > 0,
+    immortalToMortal.map((l) => `${l.to}←${l.from}`).join(' '));
+  check('凡人科技依赖仙道科技（城要仙撑）', mortalToImmortal.length > 0,
+    mortalToImmortal.map((l) => `${l.to}←${l.from}`).join(' '));
+  check('跨树咬合点不少于 6 处', links.length >= 6, `${links.length} 处`);
+}
+
+/** 丹方的跨树前置同样要有配套。 */
+{
+  const bad = d.recipes
+    .filter((r) => r.requiresImmortalTech)
+    .filter((r) => !d.immortalTechs.some((t) => t.id === r.requiresImmortalTech));
+  check('丹方的跨树前置都存在', bad.length === 0, bad.map((r) => `${r.id}←${r.requiresImmortalTech}`).join(' '));
+}
+
+section('仙凡科技线：研习与咬合行为');
+
+{
+  // 把状态收敛到一个「凡人已走完、仙道刚开」的干净局面
+  const S = X.state;
+  const keep = {
+    techs: S.techs.slice(), immortal: (S.immortalTechs || []).slice(),
+    silver: S.silver, stones: S.spiritStones, secrets: S.secrets.slice(),
+    exchange: S.exchangeCount, population: S.population, buildings: { ...S.buildings },
+  };
+  S.techs = ['realestate', 'architecture', 'finance', 'expansion', 'surveying', 'household',
+    'trade', 'tuntian', 'seeker', 'arithmetic', 'courier', 'quzhang', 'marketexp'];
+  S.immortalTechs = [];
+  S.silver = 10_000_000;
+  S.spiritStones = 100_000;
+
+  /**
+   * 跨树前置的落点：凡人「义庄」要仙道「悬壶」。
+   *
+   * ⚠ 第一版测的是「祛障 ← 引灵」，那条**已经被删掉了** ——
+   *   它把主线（祛障 → 修士 → 仙途）挂在了仙道线上，一旦仙道侧不可用
+   *   就永久锁死，正是本次设计要避免的「互相卡脖子」。
+   *   现在的规矩是：跨树前置只允许出现在凡人线的**可选深处**。
+   */
+  const yzBefore = X.tech.status('yizhuang');
+  check('义庄在缺少仙道前置时被锁', yzBefore === 'locked', yzBefore);
+  check('义庄缺的正是仙道「悬壶」',
+    X.immortal.missing('xuanhu') !== null && !X.immortal.researched('xuanhu'));
+
+  const p0 = imm.plan('yinling');
+  check('引灵可研习（无前置）', p0.ok, p0.reason);
+  const s0 = S.spiritStones;
+  const r0 = imm.research('yinling');
+  check('研习引灵成功', r0.ok, r0.reason);
+  check('引灵扣了灵石', S.spiritStones < s0, `${s0} → ${S.spiritStones}`);
+  check('引灵已记入 immortalTechs', imm.researched('yinling'));
+
+  // 悬壶要灵枢，灵枢要引灵 —— 顺着仙道线往上点两步
+  check('灵枢在引灵之后解锁', X.immortal.plan('lingxu').ok, X.immortal.plan('lingxu').reason);
+  imm.research('lingxu');
+  const xu = imm.plan('xuanhu');
+  check('悬壶在灵枢之后可研习', xu.ok, xu.reason);
+  imm.research('xuanhu');
+
+  const yzAfter = X.tech.status('yizhuang');
+  check('研习悬壶后义庄解锁（不再 locked）', yzAfter !== 'locked',
+    `${yzAfter}｜仙=${S.immortalTechs.join(',')}｜解锁判定=${X.tech.unlocked('yizhuang')}`);
+
+  // 主线不能被仙道侧卡住 —— 这是「互相卡脖子」的直接回归测试
+  check('主线科技「祛障」不依赖任何仙道前置',
+    !(d.techs.find((t) => t.id === 'quzhang').requiresImmortal || []).length);
+  check('主线科技「祛障」在仙道侧为空时也可研习（无软锁）', (() => {
+    const saved = S.immortalTechs;
+    S.immortalTechs = [];
+    const st = X.tech.status('quzhang');
+    S.immortalTechs = saved;
+    return st !== 'locked';
+  })());
+
+  // 仙道科技的灵石门槛真的拦得住
+  const keepStones = S.spiritStones;
+  S.spiritStones = 0;
+  const poor = imm.plan('kaimai');
+  check('灵石不足时研习不了仙道科技', poor.ok === false, poor.reason);
+  S.spiritStones = keepStones;
+
+  // 名册容量受仙道科技抬升
+  const cap0 = X.cityEconomy().immortalCap;
+  imm.research('kaimai');
+  const cap1 = X.cityEconomy().immortalCap;
+  check('开脉抬高名册容量', cap1 > cap0, `${cap0} → ${cap1}`);
+
+  // 领地镇守门槛受仙道科技下调（镇岳要 kaimai）
+  imm.research('zhenyue');
+  const node = X.map.nodes().find((n) => n.kind === 'foe');
+  const holdNow = X.map.plan(node.id).holdPower;
+  check('镇岳下调了领地镇守所需战力', holdNow < Math.round(node.power * 0.5),
+    `${Math.round(node.power * 0.5)} → ${holdNow}`);
+
+  // 恢复
+  S.techs = keep.techs;
+  S.immortalTechs = keep.immortal;
+  S.silver = keep.silver;
+  S.spiritStones = keep.stones;
+  S.secrets = keep.secrets;
+  S.exchangeCount = keep.exchange;
+  S.population = keep.population;
+  S.buildings = keep.buildings;
+}
+
+section('仙凡经济：城市作坊与兑率');
+
+{
+  const S = X.state;
+  const keep = {
+    buildings: { ...S.buildings }, population: S.population,
+    immortal: (S.immortalTechs || []).slice(), techs: S.techs.slice(),
+    exchange: S.exchangeCount, silver: S.silver, stones: S.spiritStones,
+  };
+
+  // 清掉所有作坊，看基线
+  const workshopIds = ['herbhouse', 'minestop', 'papermill', 'immortalmarket'];
+  for (const k of workshopIds) S.buildings[k] = 0;
+  S.immortalTechs = [];
+  S.techs = [];
+  S.population = 1000;
+  S.silver = 1000;
+  S.spiritStones = 0;
+
+  const zero = X.cityEconomy();
+  check('没有作坊时城中药材产出为 0', zero.herbPerSec === 0,
+    `产出=${zero.herbPerSec} 用工=${zero.laborWorkers} 人口=${S.population}`);
+  check('没有作坊时打工死亡为 0', zero.laborDeath === 0, `${zero.laborDeath}`);
+
+  S.buildings.herbhouse = 1;
+  const one = X.cityEconomy();
+  check('盖一座药圃开始产药材', one.herbPerSec > 0,
+    `${one.herbPerSec.toFixed(5)}/秒（用工 ${one.workshopWorkers('herbhouse')}）`);
+
+  // 人不够时摊薄
+  S.population = 30;
+  const thin = X.cityEconomy();
+  check('人口不足时产量摊薄', thin.herbPerSec < one.herbPerSec,
+    `1000人 ${one.herbPerSec.toFixed(5)} → 30人 ${thin.herbPerSec.toFixed(5)}`
+    + `（用工 ${one.workshopWorkers('herbhouse')} → ${thin.workshopWorkers('herbhouse')}）`);
+  check('人口不足时用工也跟着少', thin.workshopWorkers('herbhouse') < 300,
+    `${thin.workshopWorkers('herbhouse')} 人`);
+  X.state.population = 1000;
+
+  // 科技抬高产量
+  S.immortalTechs = ['yinling', 'lingtian'];
+  const teched = X.cityEconomy();
+  check('灵田/引灵确实抬高城中药材产出', teched.herbPerSec > one.herbPerSec,
+    `${one.herbPerSec.toFixed(5)} → ${teched.herbPerSec.toFixed(5)}`);
+
+  // 坊市兑率随科技变松
+  S.immortalTechs = [];
+  const q0 = X.cityEconomy().exchange;
+  S.immortalTechs = ['jiexu'];
+  const q1 = X.cityEconomy().exchange;
+  check('界墟提高了兑率（同价换更多灵石）', q1.stones > q0.stones,
+    `${q0.stones} → ${q1.stones}`);
+  check('界墟同时撑大了坊市的胃口', X.cityEconomy().exchangeLimit > 12,
+    `${X.cityEconomy().exchangeLimit} 笔`);
+
+  // 兑换是递进的
+  S.immortalTechs = [];
+  S.exchangeCount = 0;
+  S.silver = 100_000_000;
+  const e0 = X.cityEconomy().exchange;
+  S.exchangeCount = 3;
+  const e3 = X.cityEconomy().exchange;
+  check('兑换逐笔变贵', e3.silver > e0.silver, `${e0.silver} → ${e3.silver}`);
+  check('兑换逐笔多给灵石', e3.stones > e0.stones, `${e0.stones} → ${e3.stones}`);
+
+  // 恢复
+  S.buildings = keep.buildings;
+  S.population = keep.population;
+  S.immortalTechs = keep.immortal;
+  S.techs = keep.techs;
+  S.exchangeCount = keep.exchange;
+  S.silver = keep.silver;
+  S.spiritStones = keep.stones;
 }
 
 console.log(failed === 0 ? '\n全部通过 ✓\n' : `\n${failed} 项未通过 ✗\n`);

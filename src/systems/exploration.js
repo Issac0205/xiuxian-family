@@ -85,6 +85,48 @@ function cultivatorPower(state, person) {
   return cultivateBasePower(idx) * (1 + manualBonusFor(state, person).power);
 }
 
+/**
+ * 镇守某节点所需的**基础**战力（不含任何科技修正）。
+ *
+ * ⚠ 这个函数原来住在 data/map.js 里。搬到本文件是因为它下游多了一个
+ *   带修正的版本（mapHoldPowerFor），两者必须放在一起才不会走偏。
+ *   —— 顺带修掉一个真 bug：两处同名声明在 `new Function` 下能跑
+ *   （后者覆盖前者），但在真正的 ES module 里直接抛
+ *   「Identifier 'mapHoldPower' has already been declared」，
+ *   整段脚本不执行、界面成了空壳。冒烟测试当时查不出来，
+ *   所以现在 smoke.mjs 里加了一条「顶层声明不得重名」的断言。
+ */
+function mapHoldPower(node) {
+  return Math.round((node?.power || 0) * MAP_HOLD_RATIO);
+}
+
+/**
+ * 镇守所需战力的**实际**门槛（已计入仙道科技与城中凡人的供养）。
+ *
+ * territoryHoldMult 是负的减负系数（「镇岳」「结庐」给），
+ * 所以科技越靠后，守同一块地要的人越强得少 —— 这是「治下有人」的兑现：
+ * 凡人肯替你看着这片山，修士就不必以力压人。
+ */
+function mapHoldPowerFor(state, node) {
+  const fx = techEffects(state);
+  const mult = Math.max(0.1, 1 + (fx.territoryHoldMult || 0));
+  return Math.max(1, Math.round(mapHoldPower(node) * mult));
+}
+
+/** 可同时镇守的领地数（ garrisonCapFlat 抬高它）。 */
+function mapGarrisonLimit(state) {
+  const fx = techEffects(state);
+  return Math.max(1, 3 + Math.max(0, Math.round(fx.garrisonCapFlat || 0)));
+}
+
+/** 当前是否已达镇守数上限。 */
+function mapGarrisonFull(state, nodeId) {
+  const w = worldOf(state);
+  const assigned = Object.keys(w.garrison).filter((id) => w.garrison[id] !== undefined).length;
+  if (w.garrison[nodeId] !== undefined) return false;   // 已在守这里，只是换人
+  return assigned >= mapGarrisonLimit(state);
+}
+
 /** 某节点当前的镇守战力。 */
 function mapHoldStrength(state, nodeId) {
   const w = worldOf(state);
@@ -99,19 +141,35 @@ function mapHoldStrength(state, nodeId) {
 function mapIsPacified(state, nodeId) {
   const node = mapNode(nodeId);
   if (!node || node.kind !== 'foe') return false;
-  return mapHoldStrength(state, nodeId) >= mapHoldPower(node);
+  return mapHoldStrength(state, nodeId) >= mapHoldPowerFor(state, node);
 }
 
-/** 所有已占领节点的产出合计（灵石/秒）。镇守不足的不产出。 */
+/**
+ * 所有已占领节点的产出合计（灵石/秒）。镇守不足的不产出。
+ * 已含仙道科技的 territoryYieldMult —— 见 mapYieldOf。
+ */
 function mapYieldPerSec(state) {
   const w = worldOf(state);
   const tax = moralityTaxMult(state);
   let total = 0;
   for (const id of w.held) {
     if (!mapIsPacified(state, id)) continue;
-    total += (mapNode(id)?.yield || 0) * tax;
+    total += mapYieldOf(state, id) * tax;
   }
   return total;
+}
+
+/**
+ * 单块领地每秒的赋税灵石（已含 territoryYieldMult）。
+ *
+ * 「周天搬运」「结庐」这类科技加的正是这一项 ——
+ * 所以打下来的地会**随仙道进度一起变肥**，而不是越到后面越不值钱。
+ */
+function mapYieldOf(state, nodeId) {
+  const node = mapNode(nodeId);
+  if (!node) return 0;
+  const fx = techEffects(state);
+  return (node.yield || 0) * (1 + (fx.territoryYieldMult || 0));
 }
 
 /* ── 镇守指派 ── */
@@ -123,6 +181,10 @@ function mapGarrisonCandidates(state) {
 
 /**
  * 派人镇守某节点。会自动把他从原来的位置调过来（原先镇守别处则解除）。
+ *
+ * 两处受仙道科技影响，都写在 reason 里，保证「界面上写的」与「实际算的」一致：
+ *   · 所需战力（mapHoldPowerFor）——「镇岳」「结庐」减负
+ *   · 可同时镇守的处数（mapGarrisonLimit）——「镇岳」加位
  */
 function mapAssignGarrison(state, nodeId, personId) {
   const node = mapNode(nodeId);
@@ -132,13 +194,16 @@ function mapAssignGarrison(state, nodeId, personId) {
   const p = findCultivator(state, personId);
   if (!p) return { ok: false, reason: '修士不存在' };
   if (p.job === 'sect') return { ok: false, reason: '宗门修士不可调回' };
+  if (mapGarrisonFull(state, nodeId)) {
+    return { ok: false, reason: `至多同时镇守 ${mapGarrisonLimit(state)} 处（仙道「镇岳」可加位）` };
+  }
   // 一个人只能镇守一处
   for (const id of Object.keys(w.garrison)) {
     if (w.garrison[id] === p.id) delete w.garrison[id];
   }
   w.garrison[nodeId] = p.id;
   p.job = 'garrison';
-  return { ok: true, reason: `${p.name}前往${node.name}镇守（战力 ${Math.round(cultivatorPower(state, p))} / 需 ${mapHoldPower(node)}）` };
+  return { ok: true, reason: `${p.name}前往${node.name}镇守（战力 ${Math.round(cultivatorPower(state, p))} / 需 ${mapHoldPowerFor(state, node)}）` };
 }
 
 /** 撤掉某节点的镇守。 */
@@ -161,15 +226,21 @@ function mapClearGarrison(state, nodeId) {
 function advanceTerritories(state, dt, now = Date.now()) {
   const w = worldOf(state);
   if (!w.held.length || !(dt > 0)) return;
+  const fx = techEffects(state);
+  // 领地整体产出倍率：仙道科技「周天搬运」「结庐」等给。
+  // 赋税与草药/矿料/符料**同倍率**，因为它们是同一件事的四种形态：
+  // 这块地现在归本家管，它出什么就都厚一层。
+  const yieldMult = 1 + (fx.territoryYieldMult || 0);
   for (const id of w.held.slice()) {
     const node = mapNode(id);
     if (!node) continue;
     if (mapIsPacified(state, id)) {
       // 金手指：掌天瓶翻材料、气运加身砍灵石；再乘一层道心的民心倍率
       // —— 魔道能打，但治下的人不肯交粮
-      state.spiritStones = (state.spiritStones || 0) + (node.yield || 0) * dt * metaStoneMult(state) * moralityTaxMult(state);
+      state.spiritStones = (state.spiritStones || 0)
+        + (node.yield || 0) * yieldMult * dt * metaStoneMult(state) * moralityTaxMult(state);
       // 药材、矿料、符文跟赋税同规则：只有当有效镇守时才产出
-      const matMult = metaMaterialMult(state);
+      const matMult = metaMaterialMult(state) * yieldMult;
       if (node.herb) addHerbs(state, node.herb, (node.herbYield || 0) * dt * matMult);
       if (node.ore) addOres(state, node.ore, (node.oreYield || 0) * dt * matMult);
       if (node.rune) addRuneMats(state, node.rune, (node.runeYield || 0) * dt * matMult);
@@ -239,7 +310,10 @@ function mapPlan(state, nodeId) {
     name: node.name, tier: node.tier,
     enemyPower: node.power, rate, runeBonus: rune,
     power, stones: node.stones,
-    holdPower: mapHoldPower(node), yield: node.yield,
+    holdPower: mapHoldPowerFor(state, node),
+    holdPowerBase: mapHoldPower(node),
+    garrisonLimit: mapGarrisonLimit(state),
+    yield: mapYieldOf(state, node),
     cost: 0, currency: 'none',
   };
 }

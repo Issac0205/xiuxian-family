@@ -74,6 +74,27 @@ const ALCHEMY_RECIPES = [
     effect: '元婴圆满冲关化神时，提高成功率。',
     desc: '传说中的丹药。整个凡尘地界，能炼出它的丹炉不超过三座。',
   },
+  {
+    // 与「金丹」同阶的低成率版本：金丹是冲关主药，凝丹丸是平日的养气之物。
+    // 归到 tier 3（同阶）而不是更高，是为了让「越高级的丹方成功率越低」
+    // 这条曲线仍然单调 —— 加丹方不该打破既有的配平关系。
+    id: 'ningdan', name: '凝丹丸', tier: 3, furnace: 3,
+    requiresImmortalTech: 'jindan',
+    materials: { grass: 6, iron: 3, flame: 1 }, baseRate: 0.40, yield: 2, months: 5,
+    effect: '金丹圆满冲关元婴时亦可用；平日服之养气。',
+    desc: '玄铁芝的坚、赤焰花的烈，再以青灵草收束。'
+      + '「金丹大道」那篇册子里写定的火候，炼的就是它。',
+  },
+  {
+    // 化神之后才炼得出的丹：化神关的门槛药，同时是「城里的药圃」最终的去处。
+    // 归 tier 4、成功率低于化神丹，保证同阶单调。
+    id: 'jiuzhuandan', name: '九转丹', tier: 4, furnace: 5,
+    requiresImmortalTech: 'jiuzhuan',
+    materials: { grass: 12, flame: 3, iron: 3 }, baseRate: 0.18, yield: 2, months: 12,
+    effect: '化神圆满冲关时的最后一道依凭（本版最高境界尚在化神，故为储备）。',
+    desc: '九转九换主药，最后一转用的是自家药圃里最寻常的一味青灵草。'
+      + '「九转丹房」那篇说：使城里的药成了药引，这一炉才算炼成。',
+  },
 ];
 const ALCHEMY_RECIPE_MAP = Object.fromEntries(ALCHEMY_RECIPES.map((r) => [r.id, r]));
 

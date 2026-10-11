@@ -81,6 +81,14 @@ ui = createUI({
       return requestOperation('research', techId);
     },
 
+    /**
+     * 参悟仙道科技。与 research 同构，但代价是**灵石 + 银两双付**，
+     * 所以走自己的 plan/commit 一对（见 core/engine.js 的 planImmortalResearch）。
+     */
+    researchImmortal(techId) {
+      return requestOperation('immortalResearch', techId);
+    },
+
     trade(routeId) {
       return requestOperation('trade', routeId);
     },
@@ -109,6 +117,11 @@ ui = createUI({
       ui.syncPage();
       ui.render();
       window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
+    },
+
+    /** 格物页的两条线：'mortal' 或 'immortal'。 */
+    setTechLine(line) {
+      ui.setTechLine(line);
     },
 
     /** 格物页：隐藏 / 显示已研习的科技。*/
@@ -409,6 +422,64 @@ window.__xiuxian = {
   seedRng: (seed) => { rng = createRng(seed); return rng; },
   /** 造一个新的可播种随机源（不改全局的），测试里用来做大样本。*/
   makeRng: (seed) => createRng(seed),
+  /** 凡人科技：与人脑里那张「格物」表一一对应。 */
+  tech: {
+    tiers: () => TECH_TIERS,
+    catalog: () => TECHS,
+    status: (id) => techStatus(state, TECH_MAP[id]),
+    researched: (id) => isResearched(state, id),
+    unlocked: (id) => isTechUnlocked(state, TECH_MAP[id]),
+    researchable: () => researchableCount(state),
+    /** 界面上的收益文案（与 commitResearch 记进纪事的那一份是同一个函数）。 */
+    gains: (id) => techGainText(TECH_MAP[id], BUILDING_MAP[TECH_MAP[id]?.unlocksBuilding]?.name),
+  },
+  /** 仙道科技：两条线咬合的另一半。查询与研习都从这里走。*/
+  immortal: {
+    tiers: () => IMMORTAL_TECH_TIERS,
+    catalog: () => IMMORTAL_TECHS,
+    map: () => IMMORTAL_TECH_MAP,
+    owned: () => (state.immortalTechs || []).slice(),
+    researched: (id) => isImmortalTechResearched(state, id),
+    status: (id) => immortalTechStatus(state, IMMORTAL_TECH_MAP[id]),
+    plan: (id) => planImmortalResearch(state, id),
+    missing: (id) => immortalTechMissing(state, IMMORTAL_TECH_MAP[id]),
+    research: (id) => researchImmortal(state, id),
+    /** 两条线的全部咬合点：谁 require 了谁。文档与审计都读这个。*/
+    crossLinks: () => {
+      const mortalIds = new Set(TECHS.map((t) => t.id));
+      const out = [];
+      for (const t of IMMORTAL_TECHS) {
+        for (const r of t.requires || []) {
+          if (mortalIds.has(r)) out.push({ from: r, fromTree: 'mortal', to: t.id, toTree: 'immortal' });
+        }
+      }
+      for (const t of TECHS) {
+        for (const r of t.requiresImmortal || []) {
+          out.push({ from: r, fromTree: 'immortal', to: t.id, toTree: 'mortal' });
+        }
+      }
+      return out;
+    },
+  },
+  /** 仙凡经济：城里的作坊、坊市的兑率、矿场。一条命令看全咬合面。*/
+  cityEconomy: () => {
+    const d = derive(state);
+    return {
+      laborWorkers: d.laborWorkers,
+      laborDeath: d.laborDeath,
+      marketWorkerBonus: d.marketWorkerBonus,
+      cityMaterialMult: d.cityMaterialMult,
+      herbPerSec: d.cityHerbPerSec,
+      orePerSec: d.cityOrePerSec,
+      runePerSec: d.cityRunePerSec,
+      workshopWorkers: (id) => cityWorkersOf(state, id),
+      exchange: marketExchangeQuote(state),
+      exchangeCount: marketExchangeCount(state),
+      exchangeLimit: marketExchangeLimit(state),
+      immortalCap: cultivatorLimit(state),
+      innatePoolBonus: innatePoolBonus(state),
+    };
+  },
   /** 秘籍：目录、当前加成、掉落、换装、参悟。控制台与测试都用它。*/
   manual: {
     catalog: () => CULTIVATION_MANUALS,
@@ -542,6 +613,13 @@ window.__xiuxian = {
   /** 各数据表。调试与测试。—。也方便在控制台里直接核对数值—*/
   data: {
     buildings: BUILDINGS, techs: TECHS, map: MAP_NODES,
+    /** 仙道科技：两条线咬合的那一半。 */
+    immortalTechs: IMMORTAL_TECHS, immortalTechTiers: IMMORTAL_TECH_TIERS,
+    /** 效果键 → 展示文案。测试用来自查「每个键都登记了文案」。 */
+    effectLabels: EFFECT_LABELS,
+    /** 合法的 effect 键清单（凡人侧 / 仙道侧）。测试用来自查「数据表里没有野键」。 */
+    mortalEffectKeys: MORTAL_EFFECT_KEYS,
+    immortalEffectKeys: IMMORTAL_EFFECT_KEYS,
     realms: REALM_TIERS, gates: REALM_GATES, roots: ROOT_GRADES,
     herbs: ALCHEMY_HERBS, recipes: ALCHEMY_RECIPES, furnace: ALCHEMY_FURNACE,
     ores: FORGE_ORES, artifacts: FORGE_ITEMS, smithLevels: FORGE_LEVELS,

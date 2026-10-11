@@ -7,6 +7,10 @@
  *   node scripts/balance.mjs --snap greedy         # 打印时间序列快照
  *   node scripts/balance.mjs --baseline            # 只做静态盘点（秒出，不跑仿真）
  *
+ * 本文件也可以被 import：脚本尾部整段入口代码被 `import.meta.main` 守着，
+ * 所以 import 时只拿到 boot / run / auditTechs 等函数，不会顺带跑一局仿真。
+ * 诊断探针 scripts/diagnose.mjs 就是这么复用它、而不是另写一套 AI 的。
+ *
  * 为什么要有这个文件
  * ──────────────────
  * 「44.6 小时通关」只是一个总数，它看不出**钱在哪一段变成废纸**、
@@ -39,7 +43,7 @@ const H = 3600;
 
 /* ────────────────────────── 装载游戏 ────────────────────────── */
 
-const html = readFileSync('game.html', 'utf8');
+const html = readFileSync(new URL('../game.html', import.meta.url), 'utf8');
 const code = html.match(/<script type="module">\r?\n([\s\S]*?)\r?\n<\/script>/)[1];
 
 /**
@@ -63,7 +67,14 @@ const NEEDED = [
   'CULTIVATOR_MARKET', 'PILL_STONE_COST', 'SECRET_UNLOCK', 'ROUTE_MAP',
   'ESTATE_SLOTS', 'HOUSE_CAPACITY', 'ARENA_DISCOUNT_MAX', 'ARENA_DISCOUNT_HALF',
   'ARENA_DEATH', 'CARAVAN_DEATH', 'CARAVAN_SLOTS_PER', 'TOTAL_DISCOUNT_MAX',
-  'FIELD_BIRTH',
+  'FIELD_BIRTH', 'TECH_TIERS', 'IMMORTAL_TECHS', 'IMMORTAL_TECH_TIERS',
+  // 仙道侧的研习与查询（before/after 对比要靠它们）
+  'IMMORTAL_TECH_MAP', 'planImmortalResearch', 'researchImmortal',
+  'immortalTechStatus', 'immortalTechMissing', 'isImmortalTechResearched',
+  'cultivatorLimit', 'mapHoldPower', 'mapHoldPowerFor', 'mapYieldOf',
+  'marketExchangeQuote', 'marketExchangeLimit', 'marketExchangeCount',
+  'cityWorkshopDemand', 'cityWorkersOf', 'innatePoolBonus',
+  'MORTAL_EFFECT_KEYS', 'IMMORTAL_EFFECT_KEYS', 'EFFECT_LABELS',
 ];
 
 const declared = new Set([
@@ -195,7 +206,6 @@ function gateDistance(p) {
   return 99;
 }
 
-
 /** 三条路线只差偏好乘数。 */
 const BUILD_MULT = {
   greedy: { field: 1, house: 1, bank: 1, estate: 1, arena: 1, caravan: 1 },
@@ -205,12 +215,77 @@ const BUILD_MULT = {
 /**
  * 科技研习顺序。只列 id —— 没列出的科技该策略永不研习，
  * 这样才能读出「孤儿节点」（前置了但没人点）。
+ *
+ * ⚠ `quzhang` 故意排在很前面：它连锁着**整条仙道线**
+ *   （祛障 → 祛障丹 → 第一位修士 → 仙途开启）。
+ *   排在 `courier` 后面的话，一旦 courier 被某条策略卡住，
+ *   整局就停在凡人篇 —— 这种「一个节点拖死整条线」的排序是仿真的坑，
+ *   不是游戏的坑（真人看到「仙途」页签一直是灰的会先去点它）。
  */
 const TECH_ORDER = {
-  greedy: ['realestate', 'architecture', 'finance', 'surveying', 'expansion', 'tuntian', 'household', 'trade', 'arithmetic', 'seeker', 'courier', 'quzhang'],
-  trade: ['realestate', 'architecture', 'finance', 'surveying', 'trade', 'expansion', 'courier', 'seeker', 'arithmetic', 'household', 'tuntian', 'quzhang'],
-  farm: ['realestate', 'architecture', 'surveying', 'expansion', 'tuntian', 'household', 'finance', 'trade', 'seeker', 'arithmetic', 'courier', 'quzhang'],
+  greedy: ['realestate', 'architecture', 'finance', 'surveying', 'expansion', 'household', 'trade', 'quzhang', 'vault', 'tuntian', 'arithmetic', 'seeker', 'courier', 'marketexp', 'yizhuang', 'jixian', 'xiangxian', 'mutualmarket'],
+  trade: ['realestate', 'architecture', 'finance', 'surveying', 'trade', 'quzhang', 'vault', 'expansion', 'household', 'courier', 'seeker', 'arithmetic', 'marketexp', 'tuntian', 'yizhuang', 'jixian', 'xiangxian', 'mutualmarket'],
+  farm: ['realestate', 'architecture', 'surveying', 'expansion', 'tuntian', 'household', 'vault', 'quzhang', 'finance', 'trade', 'seeker', 'arithmetic', 'courier', 'marketexp', 'yizhuang', 'jixian', 'xiangxian', 'mutualmarket'],
 };
+/**
+ * ⚠ 三条策略都必须含 `tuntian`。
+ *
+ *   仙道线的入口是「灵田」，而灵田 require 凡人侧的「屯田」。
+ *   第一版的 greedy 顺序里漏了屯田 → 整条仙道线对它永久锁死 →
+ *   仿真报告上看起来是「仙道线没用」，实际上是**AI 没点那个前置**。
+ *   这类「策略表漏一项 → 结论反转」的坑，是读对照表时最该先排除的。
+ */
+
+/**
+ * 仙道科技研习顺序。
+ *
+ * 与凡人侧同构，并且是**三条策略共用**的（策略差异只在凡人篇）。
+ * 遍历顺序刻意与修仙侧 AI 的优先级一致：
+ *   先把「能养人」（开脉/引灵）与「城里能出料」（灵田/丹药房）打开，
+ *   再开「冲关材料」（筑基之道/镇岳），最后开上限（元婴/化神）。
+ *
+ * ⚠ 这里可以出现**尚不可研习**的项（跨树前置还没满足，例如灵田要凡人侧屯田）。
+ *   doImmortalTech 会把它们跳过去、继续往后看，所以顺序表不必按依赖拓扑排序。
+ */
+const IMMORTAL_ORDER = [
+  // 一 · 开脉：先把名册与灵根这两条根养起来
+  'kaimai', 'yinling', 'lingtian',
+  // 二 · 筑基：冲关率、镇守、城里出料
+  'zhuji', 'zhenyue', 'lingxu', 'danfang',
+  // 三 · 结丹：材料与战力
+  'xuanhu', 'julingzhen', 'yujian', 'qidao', 'fudi', 'tanxue', 'jindan',
+  // 四 · 元婴：矿、洞府、田
+  'lingmai', 'dongfu', 'zhoutian', 'yuanying', 'lingzhi',
+  // 五 · 化神
+  'jiexu', 'jiuzhuan', 'huashen', 'jielu',
+];
+
+/**
+ * 城中作坊的营造门槛（策略无关）。
+ *
+ * 城里盖作坊不产银两，产的是**仙道的原料**：药圃出药材、矿寮出矿料、
+ * 纸坊出符料。所以它们只在「已经踏入仙途、材料确实在用」的时候才值得盖 ——
+ * 与 gatesFor 的银两闸门是两回事，故单独一张表。
+ */
+const CITY_GATES = [
+  // 已经开脉（有人能修行）之后才谈供给。没修士的话作坊产了也没人用。
+  (s, d) => (!s.immortalTechs?.includes('lingtian') ? null
+    : (s.buildings.herbhouse || 0) < 2 && s.spiritStones > 40
+      ? { id: 'herbhouse', why: '仙道原料：药材' } : null),
+  (s, d) => (!s.immortalTechs?.includes('xuanhu') ? null
+    : (s.buildings.minestop || 0) < 2 && s.spiritStones > 60
+      ? { id: 'minestop', why: '仙道原料：矿料' } : null),
+  (s, d) => (!s.immortalTechs?.includes('xuanhu') ? null
+    : (s.buildings.papermill || 0) < 1 && s.spiritStones > 60
+      ? { id: 'papermill', why: '仙道原料：符料' } : null),
+  // 灵脉感应开了矿场建筑，才去盖它（它只放大已有矿脉的出石）
+  (s, d) => (!s.immortalTechs?.includes('lingmai') ? null
+    : (s.buildings.spiritmine || 0) < 1 && (s.cultivation?.mineLevel || 0) > 0
+      ? { id: 'spiritmine', why: '灵脉采掘队' } : null),
+  // 仙凡互市：把银钱做硬，是后期银两的主要去处之一
+  (s, d) => (!s.immortalTechs?.includes('mutualmarket') && !s.techs.includes('mutualmarket') ? null
+    : (s.buildings.immortalmarket || 0) < 2 ? { id: 'immortalmarket', why: '仙凡互市' } : null),
+];
 
 const ALL_STRATEGIES = ['greedy', 'trade', 'farm'];
 
@@ -227,10 +302,21 @@ function run(strategy, opt = {}) {
   const actionEvery = opt.actionEvery ?? 20;
   const tickSeconds = opt.tickSeconds ?? 5;
   const snapEvery = opt.snapEvery ?? 600;
+  /**
+   * 是否让 AI 研习仙道科技。
+   *
+   * 关掉它（XIUXIAN_NO_IMMORTAL=1）就得到一份**同 AI、同凡人树**的对照盘：
+   *   「改了之后」= 22 项凡人科技 + 23 项仙道科技
+   *   「改之前」  = 22 项凡人科技 + 0 项仙道科技
+   * 两者之差就是仙道线（以及它对凡人线的反哺）的净贡献。
+   * 城坊建筑也会随之不盖 —— 它们全部由仙道科技解锁，本来就打不开。
+   */
+  const immortalOn = opt.immortal !== false && process.env.XIUXIAN_NO_IMMORTAL !== '1';
 
   const X = boot();
   const s = X.state;
   const to = TECH_ORDER[strategy];
+  const ito = IMMORTAL_ORDER;
 
   const realmAt = {};    // realmIndex -> 首次达成的小时
   const techAt = {};     // techId -> 研习时的小时
@@ -257,7 +343,7 @@ function run(strategy, opt = {}) {
     }
   }
 
-  /** 研习科技：按策略顺序找第一个「可研习且买得起」的。 */
+  /** 研习凡人科技：按策略顺序找第一个「可研习且买得起」的。 */
   function doTech() {
     for (const id of to) {
       if (s.techs.includes(id)) continue;
@@ -273,6 +359,26 @@ function run(strategy, opt = {}) {
   }
 
   /**
+   * 研习仙道科技。与 doTech 同构，只是走 X.actions.researchImmortal。
+   *
+   * ⚠ 顺序里有「跨树混排」的项（例如 lingtian 要求凡人侧的 tuntian），
+   *   所以这里必须能把「还没解锁」的项跳过而不阻塞后面的项 ——
+   *   immortalTechStatus 返回 'locked' 时 continue，不 return。
+   */
+  function doImmortalTech() {
+    if (!immortalOn) return false;
+    for (const id of ito) {
+      const tech = B.IMMORTAL_TECH_MAP[id];
+      if (!tech) continue;
+      const st = B.immortalTechStatus(s, tech);
+      if (st !== 'ready') continue;
+      const res = X.actions.researchImmortal(id);
+      if (res && res.ok) { techAt[id] = hour(); return true; }
+    }
+    return false;
+  }
+
+  /**
    * 营造：按策略优先级买第一个买得起、也放得下的。
    *
    * ⚠ 这里有个**只有仿真才需要**的规则：留一格给「地产」。
@@ -282,41 +388,36 @@ function run(strategy, opt = {}) {
    */
   function doBuild() {
     const d = B.derive(s);
-    const buy = (id) => {
-      const def = B.BUILDING_MAP[id];
-      if (!def || !B.isBuildingUnlocked(s, def)) return false;
-      if (def.slots > 0 && d.freeSlots < def.slots) return false;
-      if (s.silver < B.currentUnitCost(s, d, def)) return false;
-      const res = X.actions.buy(id);
-      if (res && res.ok) {
-        if (buildAt[id] === undefined) buildAt[id] = hour();
-        return true;
-      }
-      return false;
-    };
-
-    // 第一层：闸门。做到了才轮到 ROI。
-    for (const gate of gatesFor(strategy)) {
+    // 先过凡人侧的闸门，再城坊闸门，最后才是 ROI。
+    for (const gate of [...gatesFor(strategy), ...CITY_GATES]) {
       const g = gate(s, d);
-      if (g && buy(g.id)) return true;
+      if (!g) continue;
+      const def = B.BUILDING_MAP[g.id];
+      if (!def || !B.isBuildingUnlocked(s, def)) continue;
+      if (X.actions.buy(g.id, '1').ok) { if (buildAt[g.id] === undefined) buildAt[g.id] = hour(); return true; }
     }
-
-    // 第二层：ROI。只在「买得起里挑最划算的」。
-    const ranked = B.BUILDINGS
-      .filter((def) => B.isBuildingUnlocked(s, def))
-      .filter((def) => !(def.slots > 0 && d.freeSlots < def.slots))
-      .filter((def) => s.silver >= B.currentUnitCost(s, d, def))
-      .map((def) => ({ def, score: buildScore(s, d, def.id, strategy) }))
-      .filter((c) => c.score > 0)
-      .sort((a, b) => b.score - a.score);
-    if (!ranked.length) return false;
-    return buy(ranked[0].def.id);
+    const ids = ['estate', 'house', 'bank', 'field', 'caravan', 'arena'];
+    let best = null;
+    for (const id of ids) {
+      const def = B.BUILDING_MAP[id];
+      if (!def || !B.isBuildingUnlocked(s, def)) continue;
+      if (def.slots > 0 && d.freeSlots - def.slots < 1) continue;   // 留一格
+      if (B.maxAffordable(s, d, def, '1') <= 0) continue;
+      const score = buildScore(s, d, id, strategy);
+      if (!best || score > best.score) best = { id, score };
+    }
+    if (best && X.actions.buy(best.id, '1').ok) {
+      if (buildAt[best.id] === undefined) buildAt[best.id] = hour();
+      return true;
+    }
+    return false;
   }
 
   /**
-   * 凡人篇的银两去处。顺序即优先级：
-   *   1. 买祛障丹 —— 凡人篇的终门，一颗就开仙途
-   *   2. 坊市换灵石 —— 10 万银两一笔，换来的灵石供冲关与洞天
+   * 凡人篇的非建筑动作。
+   *
+   *   1. 买祛障丹 —— 修士是全局运转的分母
+   *   2. 换灵石 —— 银两→灵石是凡人向修仙输送资源的唯一动脉
    *   3. 商队对着凡人商路一直跑 —— 秘闻的唯一来源
    *
    * 商队收益恒为正（1.6 倍），所以「铺满、一直跑」就是最优解，
@@ -324,9 +425,40 @@ function run(strategy, opt = {}) {
    */
   function doMortal() {
     const c = s.cultivation;
-    // 买祛障丹。判据是「**现在还有没有修士**」，不是 cultivation.unlocked ——
-    // unlocked 一旦置位就永不复位，修士死光了它也还是 true。
-    // 真人会一直补人（这是维持全局运转的基本操作），这里照做。
+    // ── 1. 换灵石：银→石是**唯一的动脉**，优先级必须排在商队与营造之前 ──
+    //
+    // ⚠ 为什么它必须最优先：商队（每 20 秒一批，本钱 100 两 × 队数）
+    //   会把银两**一直花到接近零**。只要它在换灵石之前跑，银两就永远
+    //   攒不到「一笔兑换」的规模 —— 实测 25 小时只点出了 0 笔兑换、
+    //   0 枚祛障丹、0 位修士，整局停在凡人。
+    //
+    // 兑率是递进的（第 n 笔更贵、给得更多，总笔数有上限），
+    // 而撑大胃口的是「坊市扩建 / 仙凡互市 / 界墟 / 结庐」这四项科技。
+    //
+    // 留多少银两这件事**很容易把自己锁死**，所以这里只留「两座地产的钱」，
+    // 并且**夹在一个不会挡住报价的上限里**。
+    //
+    // ⚠ 第一版写的是 min(silverCap × 0.5, …) = 121500，于是要 12.15 万 + 报价
+    //   才肯换；而开局银两上限就只有 24.3 万，换过一笔之后永远攒不到这个数。
+    //   第二版写成 min(地产×2, silverCap) —— 更糟：银两一旦顶到 24.3 万上限，
+    //   reserve 就等于 silverCap，条件变成 `silver >= 2×silverCap`，**恒为假**。
+    //   实测 50 小时 0 笔兑换、0 位修士。教训：reserve 的上限绝不能取 silverCap，
+    //   必须取「比 silverCap 小一个报价」的量级。
+    const d = B.derive(s);
+    if (d.marketUnlocked) {
+      const quote = d.marketExchange;
+      const est = B.BUILDING_MAP.estate;
+      const estateMoney = B.currentUnitCost(s, d, est) * 2;
+      const reserve = Math.min(estateMoney, d.silverCap * 0.25);
+      if (s.silver >= reserve + quote.silver) {
+        const res = X.actions.exchange('yunshen');
+        if (res && res.ok) return true;
+      }
+    }
+
+    // ── 2. 买祛障丹。判据是「**现在还有没有修士**」，不是 cultivation.unlocked ——
+    //    unlocked 一旦置位就永不复位，修士死光了它也还是 true。
+    //    真人会一直补人（这是维持全局运转的基本操作），这里照做。
     const cults = (c && c.cultivators) ? c.cultivators.length : 0;
     if (s.techs.includes('quzhang') && cults < Math.min(B.CULTIVATOR_LIMIT, 60)) {
       if (s.spiritStones >= B.PILL_STONE_COST && s.population >= 1) {
@@ -335,20 +467,8 @@ function run(strategy, opt = {}) {
         if (((c.cultivators || []).length) > before) return true;
       }
     }
-    // 换灵石：留够「下一座最贵建筑」+ 一点营造余量，其余全换。
-    // 门槛必须盯住**银两上限**——留太多了就永远换不成（银两会先被上限吃掉）。
-    const d = B.derive(s);
-    if (d.marketUnlocked && !(c && c.unlocked)) {
-      const MK = B.CULTIVATOR_MARKET;
-      const est = B.BUILDING_MAP.estate;
-      const reserve = Math.min(d.silverCap * 0.5,
-        Math.max(MK.silver, B.currentUnitCost(s, d, est) * 2));
-      if (s.silver >= reserve + MK.silver) {
-        const res = X.actions.exchange('yunshen');
-        if (res && res.ok) return true;
-      }
-    }
-    // 商队：铺满就一直跑。收益恒为正（1.6 倍本钱），不存在「该不该派」的决策
+
+    // ── 3. 商队：铺满就一直跑。收益恒为正（1.6 倍本钱），不存在「该不该派」的决策 ──
     if (s.techs.includes('trade') && d.freeCaravans > 0 && d.tradeUnlocked) {
       const res = X.actions.tradeFleet('mortal', 'all');
       if (res && res.ok) return true;
@@ -358,12 +478,19 @@ function run(strategy, opt = {}) {
 
   /**
    * 修仙侧策略。顺序即优先级，与真人直觉一致：
+   *   0. 先补冲关材料（炼丹）—— 没有丹，卡在门口的人一个都过不去
    *   1. 能冲关就冲关（唯一的进度来源）
    *   2. 先补镇守（不镇守的领地会叛离）
    *   3. 有把握就攻伐下一块地（领地是灵石与材料的唯一来源）
    *   4. 洞天只在生还率够高时去（死人是不可逆损失）
    *   5. 给主力测灵根（灵石的主要去处，且**保证不亏**）
    *   6. 闲人丢去闭关
+   *
+   * ⚠ 第 0 条是补上的，而且是整条链最容易漏的一环。
+   *   大境界门槛要一枚丹（筑基丹/金丹/元婴丹/化神丹），而丹**只能自己炼**。
+   *   不炼的话「堵在门口的 194 人」会一直站着 —— 实测 90 小时停在炼气九层，
+   *   灵石攒到 5.5 万却一枚筑基丹都没有。这是仿真的坑，不是游戏的坑
+   *   （真人看到「冲关需一枚筑基丹（尚无）」会立刻去丹房）。
    *
    * ⚠ 第 5 条不能省。灵根决定 capIndex（境界硬上限）：
    * 五灵根卡在元婴圆满、四灵根卡在化神初期、三灵根卡在化神中期。
@@ -377,16 +504,49 @@ function run(strategy, opt = {}) {
     const ps = c.cultivators || [];
     if (!ps.length) return false;
 
+    // 0. 炼冲关用的丹：只要有人卡在本档最后一层，就按需要的丹方炼一枚。
+    //    顺带把丹炉升上去（炉子不够就炼不动高阶丹）。
+    if (X.alchemy) {
+      const top = [...ps].sort((a, b) => b.realmIndex - a.realmIndex)[0];
+      const rg = top ? B.realmGate(Math.floor(top.realmIndex)) : null;
+      const need = rg && rg.pill ? rg.pill : null;
+      if (need) {
+        const have = X.alchemy.pill(need);
+        if (have < 3) {
+          const r = X.alchemy.craft(need);
+          if (r && r.ok) return true;
+          const up = X.alchemy.furnacePlan();
+          if (up && up.ok) { X.alchemy.upgradeFurnace(); return true; }
+        }
+      }
+    }
+
     // 1. 把所有「卡在大档瓶颈上、材料也够」的人逐个推过去。
     //    不能只推一个 —— 只有一个人过门槛的话，其余全族都会堵在
     //    炼气九层攒满修为干等（真人会把每一条能冲的都点了）。
     //    失败也算动作：它扣了丹药与灵石、也涨了下一次的成功率，
     //    真人不会在同一分钟里连点 25 次，所以这里一轮最多试 25 次。
+    //
+    // ⚠ 这里**不要**给 300+ 人的名册做全排序，也不要对每个人算 realmXpNeeded。
+    //   第一版是 `[...ps].sort(gateDistance)` + 逐个问 breakthroughPlan。
+    //   名册涨到 950 人、而大家都在等一枚不存在的丹时，
+    //   「排序 + 950 次询价」会在**每一轮**白跑一遍 ——
+    //   实测一条策略要跑 40 分钟，整套对照实验要两小时。
+    //
+    //   现在分两层筛：
+    //     1. 只对**站在门槛层**的人看修为（全局只有 4 个门槛层，绝大多数人一层就被刷掉）
+    //     2. 命中之后才问 breakthroughPlan（通常只有几十个人）
+    //   语义与原来完全相同（没站上门槛层的人不可能冲关成功），
+    //   但每轮的成本从 O(n log n) 降到 O(n) 次整数比较。
+    const atGate = [];
+    for (const p of ps) {
+      if (!B.realmGate(Math.floor(p.realmIndex))) continue;       // ① 廉价的层号判断
+      if (p.xp < B.realmXpNeeded(p.realmIndex)) continue;         // ② 只在门槛层算这个
+      atGate.push(p);
+      if (atGate.length >= 60) break;
+    }
     let tries = 0;
-    // 按「离大境界门槛还差几层」排序：快撞墙的人先冲，别把 25 次配额
-    // 浪费在明明还早的修士身上。
-    const nearGate = [...ps].sort((a, b) => gateDistance(a) - gateDistance(b));
-    for (const p of nearGate) {
+    for (const p of atGate) {
       const plan = B.breakthroughPlan(s, p.id);
       if (!plan.ok) continue;
       B.commitBreakthrough(s, p.id, Date.now());
@@ -398,10 +558,16 @@ function run(strategy, opt = {}) {
     const w = B.worldOf(s);
     for (const id of w.held) {
       if (B.mapIsPacified(s, id)) continue;
-      const cands = B.mapGarrisonCandidates(s)
-        .filter((p) => p.job !== 'garrison')
-        .sort((a, b) => B.cultivatorPower(s, b) - B.cultivatorPower(s, a));
-      if (cands.length) { B.mapAssignGarrison(s, id, cands[0].id); return true; }
+      // 一趟 O(n) 找最强的可派人，而不是 O(n log n) 全排序 ——
+      // 名册 950 人时这个差别是「每轮 950 次比较」对「每轮 950·log950 次」。
+      let best = null;
+      let bestPower = -1;
+      for (const p of ps) {
+        if (p.job === 'sect' || p.job === 'garrison') continue;
+        const pw = B.cultivatorPower(s, p);
+        if (pw > bestPower) { bestPower = pw; best = p; }
+      }
+      if (best) { B.mapAssignGarrison(s, id, best.id); return true; }
     }
 
     // 打下来的地得有人守，所以先确认派得出多余的镇守者
@@ -463,6 +629,31 @@ function run(strategy, opt = {}) {
   let lastCultCount = 0;
   const events = [];
 
+  /**
+   * 排查用的事件流（`XIUXIAN_TRACE=1` 打开）。
+   *
+   * 只在真的要看「为什么这一步没发生」时才开 —— 它记录的是
+   * **每一次成功操作**，而不是 AI 的判定过程，所以输出量很小。
+   */
+  const TRACE = process.env.XIUXIAN_TRACE === '1';
+  const trace = [];
+  const noteAction = (what, extra = '') => { if (TRACE) trace.push(`${hour().toFixed(2)}h ${what} ${extra}`); };
+  if (TRACE) {
+    for (const k of Object.keys(X.actions || {})) {
+      const orig = X.actions[k];
+      if (typeof orig !== 'function') continue;
+      X.actions[k] = function traced(...args) {
+        const r = orig.apply(this, args);
+        if (r && r.ok) {
+          noteAction(k, String(args[0] ?? '')
+            + (r.cost !== undefined ? ` 价${Math.round(r.cost)}` : '')
+            + (r.stones !== undefined ? ` 石${r.stones}` : ''));
+        }
+        return r;
+      };
+    }
+  }
+
 
   while (hours < maxHours && !done) {
     X.tick(tickSeconds);
@@ -494,6 +685,7 @@ function run(strategy, opt = {}) {
         cultivators: (s.cultivation?.cultivators || []).length,
         buildings: Object.fromEntries(B.BUILDINGS.map((b) => [b.id, s.buildings[b.id] || 0])),
         techCount: s.techs.length,
+        immortalTechCount: (s.immortalTechs || []).length,
         held: B.worldOf(s).held.length,
         wasted: Math.round(s.stats.silverWasted),
         equity: Math.round(s.stats.silverEarned),
@@ -513,7 +705,22 @@ function run(strategy, opt = {}) {
        */
       immortalDue += actionEvery;
       if (immortalDue >= 60) { immortalDue = 0; if (aiImmortal()) acted = true; }
-      if (!acted && doTech()) acted = true;
+
+      /**
+       * ⚠ 研习**不参与** `acted` 的短路链，这是踩过坑之后改的。
+       *
+       * 原来的写法是 `if (!acted && doTech()) ...`：只要 aiImmortal 做过任意一件事
+       * （而它几乎每轮都会做 —— 「把闲人丢去闭关」永远成立），
+       * 研习就永远轮不上。实测后果是三条策略跑满 90 小时**一项仙道科技都没点**，
+       * 而报告看上去一切正常（「损银 367%」只像是数值问题）。
+       *
+       * 真人是会一边推进仙途、一边点科技的，两者本来就不互斥；
+       * 所以这里让研习每轮都有机会，只是不参与「这轮算不算做过事」的判定。
+       */
+      const techActed = doTech();
+      const immActed = doImmortalTech();
+      if (techActed || immActed) acted = true;
+
       if (!acted && doMortal()) acted = true;
       if (!acted && doBuild()) acted = true;
 
@@ -534,6 +741,16 @@ function run(strategy, opt = {}) {
         stallRun += 1;
         if (stallRun * actionEvery >= 1800) {
           const d = B.derive(s);
+          // 修士到底卡在哪：把前 3 名「离门槛最近」的人的状态摊开。
+          // 没有这一栏，卡点报告只会说「90 小时仍在炼气八层」，
+          // 却看不出是修为没满、材料不够，还是**根本没人走到门槛上**。
+          const nearTop = [...(s.cultivation?.cultivators || [])]
+            .sort((a, b) => b.realmIndex - a.realmIndex || gateDistance(a) - gateDistance(b))
+            .slice(0, 3)
+            .map((p) => {
+              const g = B.realmGate(Math.floor(p.realmIndex));
+              return `${B.realmName(p.realmIndex)}${g ? '(门槛上)' : ''} xp${Math.round(p.xp||0)}/${Math.round(B.realmXpNeeded(p.realmIndex))} 灵根${p.root?.grade || '?'} cap${B.cultivateLevelCap ? B.cultivateLevelCap(p) : '?'}`;
+            });
           stalls.push({
             h: +hours.toFixed(2),
             realm: topRealm,
@@ -546,6 +763,7 @@ function run(strategy, opt = {}) {
             cultivators: (s.cultivation?.cultivators || []).length,
             topPower: Math.round(d.totalPower),
             techsLeft: B.TECHS.filter((t) => !s.techs.includes(t.id)).map((t) => t.id),
+            nearTop,
           });
           stallRun = 0;
         }
@@ -596,6 +814,8 @@ function run(strategy, opt = {}) {
     secrets: s.secrets.length,
     clues: s.cultivation?.clues || 0,
     techs: s.techs.slice(),
+    immortalTechs: (s.immortalTechs || []).slice(),
+    exchangeCount: s.exchangeCount || 0,
     techAt,
     gateAt,
     buildAt,
@@ -606,6 +826,8 @@ function run(strategy, opt = {}) {
     manuals: (s.cultivation?.manuals || []).slice(),
     stalls,
     snaps,
+    trace,
+    s,
   };
 }
 
@@ -620,7 +842,7 @@ function auditTechs() {
   const byTier = {};
   for (const t of B.TECHS) (byTier[t.tier] ||= []).push(t);
 
-  console.log('\n── 二、科技树静态盘点 ──');
+  console.log('\n── 二、凡人科技树静态盘点 ──');
   console.log('   id            层  成本     前置              effect');
   for (const t of rows) {
     const fx = t.effect ? Object.entries(t.effect).map(([k, v]) => `${k}:${v}`).join(' ') : '';
@@ -646,19 +868,98 @@ function auditTechs() {
 
   // 孤儿节点：谁需要它
   const usedBy = {};
-  for (const t of B.TECHS) for (const r of t.requires) (usedBy[r] ||= []).push(t.id);
+  for (const t of B.TECHS) for (const r of t.requires || []) (usedBy[r] ||= []).push(t.id);
+  for (const t of B.IMMORTAL_TECHS || []) for (const r of t.requires || []) (usedBy[r] ||= []).push(t.id);
+  for (const t of B.TECHS) for (const r of t.requiresImmortal || []) (usedBy[r] ||= []).push(`仙:${t.id}`);
+
   console.log('\n   后缀（谁需要它）：');
+  let orphans = 0;
   for (const t of B.TECHS) {
     const users = usedBy[t.id] || [];
-    console.log(`     ${t.id.padEnd(13)} ${users.length ? users.join(' ') : '★ 没有后继 —— 点了它只为它自己'}`);
+    // terminal: true 的节点是**刻意的终点**（该条线的最后一块碑），不算孤儿
+    const tag = users.length ? users.join(' ')
+      : (t.terminal ? '○ 终点（刻意的末节点）' : '★ 没有后继 —— 点了它只为它自己');
+    if (!users.length && !t.terminal) orphans += 1;
+    console.log(`     ${t.id.padEnd(13)} ${tag}`);
   }
+  console.log(`   孤儿节点合计：${orphans} 个`);
 
   // effect 键覆盖面
   const keyUse = {};
   for (const t of B.TECHS) for (const k of Object.keys(t.effect || {})) (keyUse[k] ||= []).push(t.id);
   console.log('\n   effect 键使用情况：');
   for (const [k, ids] of Object.entries(keyUse).sort((a, b) => b[1].length - a[1].length)) {
-    console.log(`     ${k.padEnd(15)} ×${ids.length}   ${ids.join(' ')}`);
+    console.log(`     ${k.padEnd(22)} ×${ids.length}   ${ids.join(' ')}`);
+  }
+
+  auditImmortalTechs();
+}
+
+/** 修仙侧科技树的静态盘点（结构与凡人侧对称，另加「交叉依赖」一栏）。 */
+function auditImmortalTechs() {
+  const list = B.IMMORTAL_TECHS || [];
+  if (!list.length) { console.log('\n   修仙侧科技树：**不存在**（本版本尚未实现）'); return; }
+
+  const byTier = {};
+  for (const t of list) (byTier[t.tier] ||= []).push(t);
+
+  console.log('\n── 二之二、仙道科技树静态盘点 ──');
+  console.log('   id            层  成本(银/石)  前置                     effect / 解锁');
+  for (const t of [...list].sort((a, b) => a.tier - b.tier || a.cost - b.cost)) {
+    const fx = t.effect ? Object.entries(t.effect).map(([k, v]) => `${k}:${v}`).join(' ') : '';
+    const unl = [
+      t.unlocksBuilding ? `建筑:${t.unlocksBuilding}` : '',
+      t.unlocksPill ? `丹药:${t.unlocksPill}` : '',
+      t.unlocksAction ? `操作:${t.unlocksAction}` : '',
+    ].filter(Boolean).join(' ');
+    const cost = `${t.cost}${t.stones ? '/' + t.stones : ''}`;
+    console.log(`   ${t.id.padEnd(13)} ${String(t.tier).padStart(2)} ${cost.padStart(11)}  `
+      + `${(t.requires.join('+') || '—').padEnd(24)} ${fx} ${unl}`.trimEnd());
+  }
+
+  console.log('\n   层级成本区间与跳变（灵石）：');
+  const tiers = Object.keys(byTier).map(Number).sort((a, b) => a - b);
+  let prevMax = 0;
+  for (const tier of tiers) {
+    const costs = byTier[tier].map((t) => t.stones || 0);
+    const lo = Math.min(...costs); const hi = Math.max(...costs);
+    console.log(`     T${tier}  ${byTier[tier].length} 项  ${lo}–${hi} 石  ${byTier[tier].map((t) => t.id).join(' ')}`);
+    if (prevMax) console.log(`        T${tier - 1}最高 ${prevMax} → T${tier}最低 ${lo}   倍数 ×${(lo / prevMax).toFixed(2)}`);
+    prevMax = hi;
+  }
+
+  const usedBy = {};
+  for (const t of list) for (const r of t.requires || []) (usedBy[r] ||= []).push(t.id);
+  for (const t of list) for (const r of t.requiresImmortal || []) (usedBy[r] ||= []).push(t.id);
+  console.log('\n   后缀（谁需要它）：');
+  let orphans = 0;
+  for (const t of list) {
+    const users = usedBy[t.id] || [];
+    const tag = users.length ? users.join(' ')
+      : (t.terminal ? '○ 终点（刻意的末节点）' : '★ 没有后继');
+    if (!users.length && !t.terminal) orphans += 1;
+    console.log(`     ${t.id.padEnd(13)} ${tag}`);
+  }
+  console.log(`   孤儿节点合计：${orphans} 个`);
+
+  // 跨树前置：两条线互相咬合的地方
+  const mortalIds = new Set(B.TECHS.map((t) => t.id));
+  const cross = [];
+  for (const t of list) {
+    for (const r of t.requires) if (mortalIds.has(r)) cross.push(`仙道「${t.name}」← 凡人「${r}」`);
+  }
+  for (const t of B.TECHS) {
+    for (const r of (t.requiresImmortal || [])) cross.push(`凡人「${t.name}」← 仙道「${r}」`);
+  }
+  console.log('\n   跨树前置（仙凡咬合点）：');
+  if (!cross.length) console.log('     ★ 无 —— 两条线完全平行，没有咬合');
+  for (const c of cross) console.log(`     ${c}`);
+
+  const keyUse = {};
+  for (const t of list) for (const k of Object.keys(t.effect || {})) (keyUse[k] ||= []).push(t.id);
+  console.log('\n   effect 键使用情况：');
+  for (const [k, ids] of Object.entries(keyUse).sort((a, b) => b[1].length - a[1].length)) {
+    console.log(`     ${k.padEnd(22)} ×${ids.length}   ${ids.join(' ')}`);
   }
 }
 
@@ -670,7 +971,7 @@ function auditBuildings() {
     const cap = (() => {
       try { return b.perText || ''; } catch { return ''; }
     })();
-    console.log(`   ${b.name.padEnd(6)} 首件 ${String(b.baseCost).padStart(5)}  增长 ×${b.growth}  格 ${b.slots}  ${b.tech || '开局即有'}  ${cap}`);
+    console.log(`   ${b.name.padEnd(6)} 首件 ${String(b.baseCost).padStart(7)}  增长 ×${b.growth}  格 ${b.slots}  ${b.tech || '开局即有'}  ${cap}`);
     // 第 10 / 25 / 50 件的边际成本
     const seq = [1, 10, 25, 50].map((n) => {
       const c = b.baseCost * Math.pow(b.growth, n - 1);
@@ -726,123 +1027,155 @@ function auditSilver() {
 
 /* ────────────────────────── 入口 ────────────────────────── */
 
-const argv = process.argv.slice(2);
-const wantJson = argv.includes('--json');
-const staticOnly = argv.includes('--baseline');
-const positional = argv.filter((a) => !a.startsWith('--'));
-const only = positional.find((a) => ALL_STRATEGIES.includes(a)) || null;
-const snapIdx = argv.indexOf('--snap');
-const snapFor = snapIdx >= 0 ? argv[snapIdx + 1] : null;
+/**
+ * 只有「被当成脚本跑」时才执行这一段。
+ *
+ * 用 `import.meta.main`（Node 22+）判定：被 import 时本段整块跳过，
+ * 于是 diagnose.mjs 能拿到 boot/run 而不用白跑一局仿真。
+ */
+if (import.meta.main) {
+  const argv = process.argv.slice(2);
+  const wantJson = argv.includes('--json');
+  const staticOnly = argv.includes('--baseline');
+  const positional = argv.filter((a) => !a.startsWith('--'));
+  const only = positional.find((a) => ALL_STRATEGIES.includes(a)) || null;
+  const snapIdx = argv.indexOf('--snap');
+  const snapFor = snapIdx >= 0 ? argv[snapIdx + 1] : null;
 
-boot();   // 先把桥搭起来（静态盘点要用）
+  boot();   // 先把桥搭起来（静态盘点要用）
 
-console.log('\n《修仙世家》平衡仿真 · 基准盘（天赋 1 · 无灵根 · 无金手指 · 关答题）');
-if (MISSING.length) console.log(`⚠ 缺失的名字：${MISSING.join(', ')}`);
+  console.log('\n《修仙世家》平衡仿真 · 基准盘（天赋 1 · 无灵根 · 无金手指 · 关答题）');
+  if (MISSING.length) console.log(`⚠ 缺失的名字：${MISSING.join(', ')}`);
 
-auditTechs();
-auditBuildings();
-auditRealms();
-auditSilver();
+  auditTechs();
+  auditBuildings();
+  auditRealms();
+  auditSilver();
 
-if (staticOnly) {
-  console.log('\n（--baseline：只做静态盘点，未跑仿真）\n');
-  process.exit(0);
-}
-
-const strategies = only ? [only] : ALL_STRATEGIES;
-const results = [];
-
-for (const st of strategies) {
-  console.log(`\n… 正在跑「${st}」，最多 90 小时游戏时间`);
-  const t0 = Date.now();
-  const r = run(st, {
-    snapEvery: 600,
-    onSnap: snapFor === st ? (snap) => {
-      if (Math.abs(snap.h % 1) < 1e-9) {
-        console.log(`   ${String(Math.round(snap.h)).padStart(4)}h  ${snap.topRealm ? B.realmName(snap.topRealm) : '凡人'}`
-          + `  人 ${String(snap.pop).padStart(7)}  银 ${String(snap.silver).padStart(10)}/${snap.silverCap}`
-          + `  石 ${String(snap.stones).padStart(8)}  秘闻 ${String(snap.secrets).padStart(2)}  修士 ${snap.cultivators}`);
-      }
-    } : undefined,
-  });
-  console.log(`   用时 ${((Date.now() - t0) / 1000).toFixed(1)} 秒`);
-  results.push(r);
-}
-
-console.log('\n════════════════════ 六、总览 ════════════════════');
-const pad = (v, n) => String(v).padStart(n);
-console.log('策略     通关  总时长   最高境界       人口      银两/上限    灵石   秘闻 科技 领地  损银占比');
-for (const r of results) {
-  console.log(
-    `${r.strategy.padEnd(7)} ${r.reachedTop ? '✓' : '✗'}  ${pad(r.hours.toFixed(1), 6)}h ${r.topRealmName.padEnd(12, '　')} `
-    + `${pad(r.pop, 8)} ${pad(r.silver, 10)}/${pad(r.silverCap, 7)} ${pad(r.stones.toFixed(1), 7)} `
-    + `${pad(r.secrets, 4)} ${pad(r.techs.length, 4)} ${pad(r.held.length, 4)} ${pad((r.wasteRatio * 100).toFixed(1) + '%', 9)}`,
-  );
-}
-
-console.log('\n════════════════════ 七、境界驻留（小时）════════════════════');
-for (const r of results) {
-  console.log(`\n［${r.strategy}］`);
-  for (const i of Object.keys(r.dwell).map(Number).sort((a, b) => a - b)) {
-    const d = r.dwell[i];
-    console.log(`   ${r.realmAt[i].toFixed(2).padStart(6)}h 起  ${B.realmName(i).padEnd(12, '　')} 停留 ${d.toFixed(2).padStart(6)}h  ${'█'.repeat(Math.max(1, Math.round(d * 1.6)))}`);
+  if (staticOnly) {
+    console.log('\n（--baseline：只做静态盘点，未跑仿真）\n');
+    process.exit(0);
   }
-}
 
-console.log('\n════════════════════ 八、科技研习时点（小时）════════════════════');
-console.log('   id'.padEnd(19) + '成本   ' + results.map((r) => r.strategy.padStart(9)).join(''));
-for (const t of [...B.TECHS].sort((a, b) => a.cost - b.cost)) {
-  const cells = results.map((r) => {
-    const at = r.techAt[t.id];
-    return (at === undefined ? '—' : at.toFixed(2)).padStart(9);
-  }).join('');
-  console.log(`   ${t.id.padEnd(14)} ${String(t.cost).padStart(5)} ${cells}`);
-}
+  const strategies = only ? [only] : ALL_STRATEGIES;
+  const results = [];
 
-console.log('\n════════════════════ 九、建筑数量 ════════════════════');
-for (const r of results) {
-  console.log(`   [${r.strategy}] ` + B.BUILDINGS.map((b) => `${b.name} ${r.buildings[b.id]}`).join('  '));
-}
-
-console.log('\n════════════════════ 九之二、收局时修士的境界与灵根分布 ════════════════════');
-for (const r of results) {
-  const rh = r.realmHistogram;
-  const realms = Object.keys(rh.byRealm).map(Number).sort((a, b) => a - b);
-  console.log(`   [${r.strategy}] 境界：` + (realms.length
-    ? realms.map((i) => `${B.realmName(i)}×${rh.byRealm[i]}`).join('  ') : '无修士'));
-  console.log(`              灵根：` + (Object.keys(rh.byRoot).length
-    ? Object.entries(rh.byRoot).sort((a, b) => b[1] - a[1]).map(([g, n]) => `${g}×${n}`).join('  ') : '—'));
-}
-
-console.log('\n════════════════════ 九之三、关键里程碑时点（小时）════════════════════');
-for (const r of results) {
-  console.log(`\n［${r.strategy}］`);
-  for (const [k, v] of Object.entries(r.gates)) console.log(`   ${k.padEnd(18, '　')} ${v.toFixed(2)}h`);
-}
-
-console.log('\n════════════════════ 九之四、修士减少事件 ════════════════════');
-for (const r of results) {
-  console.log(`\n［${r.strategy}］共 ${r.events.length} 次`);
-  for (const e of r.events.slice(0, 10)) {
-    console.log(`   ${e.h.toFixed(1).padStart(6)}h  ${e.from} → ${e.to}   ${e.text.slice(0, 70)}`);
+  for (const st of strategies) {
+    console.log(`\n… 正在跑「${st}」，最多 90 小时游戏时间`);
+    const t0 = Date.now();
+    const r = run(st, {
+      snapEvery: 600,
+      onSnap: snapFor === st ? (snap) => {
+        if (Math.abs(snap.h % 1) < 1e-9) {
+          console.log(`   ${String(Math.round(snap.h)).padStart(4)}h  ${snap.topRealm ? B.realmName(snap.topRealm) : '凡人'}`
+            + `  人 ${String(snap.pop).padStart(7)}  银 ${String(snap.silver).padStart(10)}/${snap.silverCap}`
+            + `  石 ${String(snap.stones).padStart(8)}  秘闻 ${String(snap.secrets).padStart(2)}  修士 ${snap.cultivators}`);
+        }
+      } : undefined,
+    });
+    console.log(`   用时 ${((Date.now() - t0) / 1000).toFixed(1)} 秒`);
+    results.push(r);
   }
-  if (r.events.length > 10) console.log(`   …… 另有 ${r.events.length - 10} 次`);
-}
 
-console.log('\n════════════════════ 十、卡点（连续 30 分钟无任何可做的事）════════════════════');
-for (const r of results) {
-  console.log(`\n［${r.strategy}］共 ${r.stalls.length} 次`);
-  for (const s of r.stalls.slice(0, 14)) {
-    console.log(`   ${s.h.toFixed(1).padStart(6)}h  ${s.realmName.padEnd(10, '　')} 银 ${pad(s.silver, 10)}/${s.silverCap}`
-      + `  石 ${s.stones.toFixed(1).padStart(8)}  秘闻 ${pad(s.secrets, 3)}/线索 ${pad(s.clues, 3)}`
-      + `  修士 ${pad(s.cultivators, 2)}  战力 ${pad(s.topPower, 7)}  未研科技: ${s.techsLeft.join(',') || '无'}`);
+  console.log('\n════════════════════ 六、总览 ════════════════════');
+  const pad = (v, n) => String(v).padStart(n);
+  console.log('策略     通关  总时长   最高境界       人口      银两/上限    灵石   秘闻 凡人术 仙道术 领地  损银占比');
+  for (const r of results) {
+    console.log(
+      `${r.strategy.padEnd(7)} ${r.reachedTop ? '✓' : '✗'}  ${pad(r.hours.toFixed(1), 6)}h ${r.topRealmName.padEnd(12, '　')} `
+      + `${pad(r.pop, 8)} ${pad(r.silver, 10)}/${pad(r.silverCap, 7)} ${pad(r.stones.toFixed(1), 7)} `
+      + `${pad(r.secrets, 4)} ${pad(r.techs.length, 5)} ${pad(r.immortalTechs.length, 6)} ${pad(r.held.length, 4)} ${pad((r.wasteRatio * 100).toFixed(1) + '%', 9)}`,
+    );
   }
-  if (r.stalls.length > 14) console.log(`   …… 另有 ${r.stalls.length - 14} 次`);
+
+  console.log('\n════════════════════ 七、境界驻留（小时）════════════════════');
+  for (const r of results) {
+    console.log(`\n［${r.strategy}］`);
+    for (const i of Object.keys(r.dwell).map(Number).sort((a, b) => a - b)) {
+      const d = r.dwell[i];
+      console.log(`   ${r.realmAt[i].toFixed(2).padStart(6)}h 起  ${B.realmName(i).padEnd(12, '　')} 停留 ${d.toFixed(2).padStart(6)}h  ${'█'.repeat(Math.max(1, Math.round(d * 1.6)))}`);
+    }
+  }
+
+  console.log('\n════════════════════ 八、科技研习时点（小时）════════════════════');
+  console.log('   id'.padEnd(19) + '成本   ' + results.map((r) => r.strategy.padStart(9)).join(''));
+  for (const t of [...B.TECHS].sort((a, b) => a.cost - b.cost)) {
+    const cells = results.map((r) => {
+      const at = r.techAt[t.id];
+      return (at === undefined ? '—' : at.toFixed(2)).padStart(9);
+    }).join('');
+    console.log(`   ${t.id.padEnd(14)} ${String(t.cost).padStart(5)} ${cells}`);
+  }
+  if ((B.IMMORTAL_TECHS || []).length) {
+    console.log('   ── 仙道 ──');
+    for (const t of [...B.IMMORTAL_TECHS].sort((a, b) => (a.stones || 0) - (b.stones || 0))) {
+      const cells = results.map((r) => {
+        const at = r.techAt[t.id];
+        return (at === undefined ? '—' : at.toFixed(2)).padStart(9);
+      }).join('');
+      console.log(`   ${t.id.padEnd(14)} ${String(t.stones || 0).padStart(5)}石 ${cells}`);
+    }
+  }
+
+  console.log('\n════════════════════ 九、建筑数量 ════════════════════');
+  for (const r of results) {
+    console.log(`   [${r.strategy}] ` + B.BUILDINGS.map((b) => `${b.name} ${r.buildings[b.id]}`).join('  '));
+  }
+
+  console.log('\n════════════════════ 九之二、收局时修士的境界与灵根分布 ════════════════════');
+  for (const r of results) {
+    const rh = r.realmHistogram;
+    const realms = Object.keys(rh.byRealm).map(Number).sort((a, b) => a - b);
+    console.log(`   [${r.strategy}] 境界：` + (realms.length
+      ? realms.map((i) => `${B.realmName(i)}×${rh.byRealm[i]}`).join('  ') : '无修士'));
+    console.log(`              灵根：` + (Object.keys(rh.byRoot).length
+      ? Object.entries(rh.byRoot).sort((a, b) => b[1] - a[1]).map(([g, n]) => `${g}×${n}`).join('  ') : '—'));
+  }
+
+  console.log('\n════════════════════ 九之三、关键里程碑时点（小时）════════════════════');
+  for (const r of results) {
+    console.log(`\n［${r.strategy}］`);
+    for (const [k, v] of Object.entries(r.gates)) console.log(`   ${k.padEnd(18, '　')} ${v.toFixed(2)}h`);
+  }
+
+  console.log('\n════════════════════ 九之四、修士减少事件 ════════════════════');
+  for (const r of results) {
+    console.log(`\n［${r.strategy}］共 ${r.events.length} 次`);
+    for (const e of r.events.slice(0, 10)) {
+      console.log(`   ${e.h.toFixed(1).padStart(6)}h  ${e.from} → ${e.to}   ${e.text.slice(0, 70)}`);
+    }
+    if (r.events.length > 10) console.log(`   …… 另有 ${r.events.length - 10} 次`);
+  }
+
+  console.log('\n════════════════════ 十、卡点（连续 30 分钟无任何可做的事）════════════════════');
+  for (const r of results) {
+    console.log(`\n［${r.strategy}］共 ${r.stalls.length} 次`);
+    for (const s of r.stalls.slice(0, 14)) {
+      console.log(`   ${s.h.toFixed(1).padStart(6)}h  ${s.realmName.padEnd(10, '　')} 银 ${pad(s.silver, 10)}/${s.silverCap}`
+        + `  石 ${s.stones.toFixed(1).padStart(8)}  秘闻 ${pad(s.secrets, 3)}/线索 ${pad(s.clues, 3)}`
+        + `  修士 ${pad(s.cultivators, 2)}  战力 ${pad(s.topPower, 7)}  未研科技: ${s.techsLeft.join(',') || '无'}`);
+      for (const t of s.nearTop || []) console.log(`            ↳ ${t}`);
+    }
+    if (r.stalls.length > 14) console.log(`   …… 另有 ${r.stalls.length - 14} 次`);
+  }
+
+  if (wantJson) {
+    console.log('\n--- JSON ---');
+    console.log(JSON.stringify(results.map((r) => ({ ...r, snaps: undefined, s: undefined })), null, 1));
+  }
+
+  console.log('\n完成。\n');
 }
 
-if (wantJson) {
-  console.log('\n--- JSON ---');
-  console.log(JSON.stringify(results.map((r) => ({ ...r, snaps: undefined })), null, 1));
-}
+/* ────────────────────────── 模块出口 ────────────────────────── */
 
-console.log('\n完成。\n');
+/**
+ * 让别的脚本能复用这套仿真核心（见 scripts/diagnose.mjs）。
+ *
+ * 之所以要求 `import.meta.main`：本文件尾部是**入口代码**，被 import 时
+ * 会直接跑一整轮 90 小时仿真，那样 diagnose 每开一次就白跑三个策略。
+ * Node 22 起 `import.meta.main` 可用（本仓库要求 Node 22）。
+ */
+export { boot, run, auditTechs, auditBuildings, auditRealms, auditSilver };
+export { B };          // 活绑定：boot() 之后才是桥对象
+export const SIM = { run, boot, get bridge() { return B; } };

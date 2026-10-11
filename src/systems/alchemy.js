@@ -105,7 +105,9 @@ function recipeRate(state, recipeId) {
     + proficiency(state, recipeId) * ALCHEMY_PROFICIENCY_STEP
     + alchemyWoodBonus(state)
     // 丹修流派：专精这一行，代价是战力
-    + schoolFx(state, 'alchemyRate');
+    + schoolFx(state, 'alchemyRate')
+    // 仙道科技「金丹大道」：把火候写定，全族少炸几炉
+    + techEffects(state).alchemyRateBonus;
   return Math.max(ALCHEMY_RATE_MIN, Math.min(ALCHEMY_RATE_MAX, rate));
 }
 
@@ -123,6 +125,15 @@ function recipeYield(state, recipeId) {
 function recipePlan(state, recipeId) {
   const r = ALCHEMY_RECIPE_MAP[recipeId];
   if (!r) return { ok: false, reason: '并无此方' };
+  // 丹方也能被仙道科技 gate 住（例：凝丹丸要「金丹大道」）。
+  // 与 techs.js 的 requiresImmortal 是同一套约定，只是长在丹方上。
+  if (r.requiresImmortalTech && !isImmortalTechResearched(state, r.requiresImmortalTech)) {
+    return {
+      ok: false,
+      reason: `此方尚未参透（须仙道「${IMMORTAL_TECH_MAP[r.requiresImmortalTech]?.name || r.requiresImmortalTech}」）`,
+      recipe: r,
+    };
+  }
   const a = alchemyOf(state);
   if (furnaceAt(a.furnace).level < r.furnace) {
     return { ok: false, reason: `需 ${ALCHEMY_FURNACE[r.furnace - 1].name}（丹炉 ${r.furnace} 级）`, recipe: r };

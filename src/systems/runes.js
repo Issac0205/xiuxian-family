@@ -84,11 +84,23 @@ function runeProficiency(state, id) {
   return Math.max(0, Math.min(RUNE_PROFICIENCY_MAX, Math.floor(Number(runesOf(state).prof[id]) || 0)));
 }
 
-/** 成功率。符台等级同样夹到至少该符的要求。 */
+/**
+ * 成功率。符台等级同样夹到至少该符的要求。
+ *
+ * 「聚灵阵」这类仙道科技会让符台免费升 runeBenchFree 阶 ——
+ * 那是**等效等级**，所以加在这里而不是去改 runesOf().bench：
+ * 玩家自己买的符台等级不能被科技覆盖掉，否则「升符台」就白花了灵石。
+ */
+function runeEffectiveBench(state) {
+  const own = runesOf(state).bench;
+  const free = Math.max(0, Math.round(techEffects(state).runeBenchFree || 0));
+  return Math.max(1, Math.min(RUNE_BENCH_MAX, own + free));
+}
+
 function runeRate(state, id) {
   const item = RUNE_ITEM_MAP[id];
   if (!item) return 0;
-  const lv = Math.max(runesOf(state).bench, item.bench);
+  const lv = Math.max(runeEffectiveBench(state), item.bench);
   const rate = item.baseRate
     + runeBenchAt(lv).rateBonus
     + runeProficiency(state, id) * RUNE_PROFICIENCY_STEP
@@ -99,7 +111,7 @@ function runeRate(state, id) {
 function runePlan(state, id) {
   const item = RUNE_ITEM_MAP[id];
   if (!item) return { ok: false, reason: '并无此符' };
-  if (runeBenchAt(runesOf(state).bench).level < item.bench) {
+  if (runeEffectiveBench(state) < item.bench) {
     return { ok: false, reason: `需 ${RUNE_BENCH_LEVELS[item.bench - 1].name}（符台 ${item.bench} 级）`, item };
   }
   const missing = [];

@@ -140,6 +140,79 @@ function research(state, techId, now = Date.now()) {
   return commitResearch(state, techId, now);
 }
 
+/* ────────────────────── 仙道科技：灵石与银两双付 ────────────────────── */
+
+/**
+ * 询价：研习一项仙道科技要什么。不改动状态。
+ *
+ * 与凡人侧的 planResearch 是两个函数而不是一个带分支的函数，
+ * 因为两者的**货币不同**（仙道是灵石 + 银两双付），硬合在一起
+ * 会让「界面写的代价」与「实际扣的代价」很容易走偏。
+ */
+function planImmortalResearch(state, techId) {
+  const tech = IMMORTAL_TECH_MAP[techId];
+  if (!tech) return { ok: false, reason: '并无此术' };
+  if (isImmortalTechResearched(state, techId)) return { ok: false, reason: '此术已研习' };
+  const missing = immortalTechMissing(state, tech);
+  if (missing.length) return { ok: false, reason: missing[0], missing };
+  return {
+    ok: true,
+    kind: 'immortalResearch',
+    id: tech.id,
+    name: tech.name,
+    cost: tech.cost || 0,
+    stones: tech.stones || 0,
+    currency: 'stones',
+    label: `参悟「${tech.name}」`,
+  };
+}
+
+/**
+ * 兑现一次仙道研习。
+ *
+ * 注意**扣两样**：灵石与银两。灵石是主门槛，银两是「城里拿得出这笔钱」
+ * 的资格线 —— 这条设计本身就是仙凡咬合：仙道再高，也要城供着。
+ */
+function commitImmortalResearch(state, techId, now = Date.now()) {
+  const tech = IMMORTAL_TECH_MAP[techId];
+  if (!tech) return { ok: false, reason: '并无此术' };
+  const plan = planImmortalResearch(state, techId);
+  if (!plan.ok) return plan;
+
+  state.silver -= plan.cost;
+  state.spiritStones = Math.max(0, (state.spiritStones || 0) - plan.stones);
+  if (!Array.isArray(state.immortalTechs)) state.immortalTechs = [];
+  state.immortalTechs.push(tech.id);
+
+  const gains = techGainText(
+    tech,
+    BUILDING_MAP[tech.unlocksBuilding]?.name,
+    ALCHEMY_RECIPE_MAP[tech.unlocksPill]?.name || PILL_MAP[tech.unlocksPill]?.name,
+  );
+  pushLog(
+    state,
+    `参悟「${tech.name}」成，耗灵石 ${fmtStones(plan.stones)} 枚、银 ${fmt(plan.cost)} 两。`
+      + (gains.length ? `${gains.join('；')}` : ''),
+    'tech',
+    null,
+    now,
+  );
+
+  return { ok: true, tech, cost: plan.cost, stones: plan.stones };
+}
+
+/** 一站式研习仙道科技（供测试与仿真使用）。 */
+function researchImmortal(state, techId, now = Date.now()) {
+  const plan = planImmortalResearch(state, techId);
+  if (!plan.ok) return plan;
+  return commitImmortalResearch(state, techId, now);
+}
+
+/** 仙道科技是否已研习（对外的查询口，仿真与界面都用它）。 */
+function isImmortalTechResearchedPublic(state, techId) {
+  return isImmortalTechResearched(state, techId);
+}
+
 /* ────────────────────────────── 购置 ────────────────────────────── */
 
 /** 计算一次购置的代价与规模；不改动状态。 */
@@ -279,7 +352,21 @@ function sell(state, id, count = 1, now = Date.now()) {
 
 /* ────────────────────── 云深谷坊市：银两换灵石 ────────────────────── */
 
-/** 询价：兑 count 份灵石要多少银两。不改动状态。 */
+/**
+ * 询价：再兑一笔灵石要多少银两、给多少灵石。不改动状态。
+ *
+ * ⚠ 兑率是**递进**的（见 core/config.js 的 MARKET_EXCHANGE_*）：
+ *   第 n 笔比第 n-1 笔贵 COST_GROWTH 倍，但给的石子也多 YIELD_GROWTH 倍。
+ *   所以「换过几次」本身是一条进度线，而不是可以无限刷的兑换按钮。
+ *
+ * 灵石那一侧还乘 (1 + tradeStoneMult) ——
+ * 这就是**城中科技对兑率的杠杆**（坊市扩建 / 仙凡互市 / 界墟 / 结庐）。
+ * 「城越像样，银钱越值灵石」，这句设计话术的全部实现就在这里。
+ *
+ * @param {number} count 这一次要兑几笔（默认 1）。批量时逐笔累加，
+ *                       所以「一次换三笔」与「分三次换」代价完全相同——
+ *                       报价与实际扣除共用这一个函数，不可能对不上。
+ */
 function planExchange(state, count = 1) {
   const n = Math.max(1, Math.floor(count));
 
@@ -290,9 +377,34 @@ function planExchange(state, count = 1) {
     };
   }
 
-  const cost = CULTIVATOR_MARKET.silver * n;
+  const limit = marketExchangeLimit(state);
+  const done = marketExchangeCount(state);
+  if (done >= limit) {
+    return {
+      ok: false,
+      reason: `云深谷坊市已吃不下更多银钱（${done}/${limit} 笔）——扩建坊市或通仙凡互市可再开胃口`,
+      exhausted: true,
+    };
+  }
+
+  const batches = Math.min(n, limit - done);
+  let cost = 0;
+  let stones = 0;
+  for (let i = 0; i < batches; i += 1) {
+    const q = marketExchangeQuote(state, done + i);
+    cost += q.silver;
+    stones += q.stones;
+  }
+  stones = +stones.toFixed(4);
+
   if (state.silver < cost) {
-    return { ok: false, reason: `银两不足，需 ${fmt(cost)} 两` };
+    return {
+      ok: false,
+      reason: `银两不足，需 ${fmt(cost)} 两（第 ${done + 1} 笔起）`,
+      need: cost,
+      quote: marketExchangeQuote(state, done),
+      remaining: limit - done,
+    };
   }
 
   return {
@@ -300,11 +412,15 @@ function planExchange(state, count = 1) {
     kind: 'exchange',
     id: CULTIVATOR_MARKET.id,
     name: CULTIVATOR_MARKET.name,
-    count: n,
+    count: batches,
     cost,
     currency: 'silver',
-    stones: CULTIVATOR_MARKET.stones * n,
-    label: `云深谷坊市兑灵石 ×${n}`,
+    stones,
+    index: done,
+    remaining: limit - done - batches,
+    limit,
+    quote: marketExchangeQuote(state, done),
+    label: `云深谷坊市兑灵石 ×${batches}`,
   };
 }
 
@@ -315,10 +431,12 @@ function commitExchange(state, count = 1, now = Date.now()) {
 
   state.silver -= plan.cost;
   state.spiritStones += plan.stones;
+  state.exchangeCount = marketExchangeCount(state) + plan.count;
 
   pushLog(
     state,
-    `于云深谷坊市兑得灵石 ${fmtStones(plan.stones)} 枚，耗银 ${fmt(plan.cost)} 两。`,
+    `于云深谷坊市兑得灵石 ${fmtStones(plan.stones)} 枚，耗银 ${fmt(plan.cost)} 两`
+      + `（第 ${plan.index + plan.count}/${plan.limit} 笔）。`,
     'spirit',
     null,
     now,
@@ -340,7 +458,7 @@ function planPill(state, pillId = 'quzhangdan') {
   }
 
   if (state.population < 1) return { ok: false, reason:'族中暂无可祛障的凡人' };
-  if ((state.cultivation.cultivators||[]).length>=CULTIVATOR_LIMIT) return { ok:false,reason:'名册已达本版人数上限' };
+  if ((state.cultivation.cultivators||[]).length>=cultivatorLimit(state)) return { ok:false,reason:'名册已达上限（仙道「开脉」「化神大道」可扩容）' };
   if (state.spiritStones < pill.stoneCost) {
     return { ok: false, reason: `灵石不足，需 ${fmtStones(pill.stoneCost)} 枚` };
   }
@@ -531,9 +649,10 @@ function commitTradeFleet(state, routeId, count, now = Date.now()) {
 function planStatus(state, kind, id, mode = '1') {
   if (kind === 'buy') return planBuy(state, id, mode);
   if (kind === 'research') return planResearch(state, id);
+  if (kind === 'immortalResearch') return planImmortalResearch(state, id);
   if (kind === 'trade') return planTrade(state, id);
   if (kind === 'tradeFleet') return planTradeFleet(state, id, mode);
-  if (kind === 'exchange') return planExchange(state, 1);
+  if (kind === 'exchange') return planExchange(state, mode === '1' ? 1 : Number(mode) || 1);
   if (kind === 'pill') return planPill(state, id);
   return { ok: false, reason: '未知操作' };
 }
@@ -543,6 +662,7 @@ function commitPlan(state, plan, now = Date.now(), rng = Math.random) {
   if (!plan || !plan.ok) return { ok: false, reason: '操作无效' };
   if (plan.kind === 'buy') return commitBuy(state, plan.id, plan.count, now);
   if (plan.kind === 'research') return commitResearch(state, plan.id, now);
+  if (plan.kind === 'immortalResearch') return commitImmortalResearch(state, plan.id, now);
   if (plan.kind === 'trade') return commitTrade(state, plan.id, now);
   if (plan.kind === 'tradeFleet') return commitTradeFleet(state, plan.id, plan.count, now);
   if (plan.kind === 'exchange') return commitExchange(state, plan.count, now);

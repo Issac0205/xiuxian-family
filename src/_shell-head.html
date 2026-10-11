@@ -670,6 +670,25 @@ body {
 
 .tech-list { padding: 4px 0 8px; }
 
+/* 两条科技线的切换。仙道那一半整体偏青，与凡人侧的暖金区分开。 */
+.tech-lines {
+  display: flex;
+  gap: 8px;
+  padding: 8px 14px 0;
+}
+.tech-lines .btn.is-active {
+  border-color: var(--jade);
+  color: var(--jade);
+}
+#immortal-tech-list .tech-tier {
+  background: linear-gradient(90deg, rgba(99, 201, 168, 0.07), transparent);
+}
+#immortal-tech-list .tier-name { color: var(--jade); }
+#immortal-tech-list .tech-mark { border-color: rgba(99, 201, 168, 0.35); }
+#immortal-tech-list .tech.is-ready .tech-cost { color: var(--jade); }
+#immortal-tech-list .tech-cost { color: rgba(99, 201, 168, 0.85); }
+.tech-lines .chip { margin-left: auto; }
+
 .tech-group { border-bottom: 1px solid rgba(255, 255, 255, 0.045); }
 .tech-group:last-child { border-bottom: 0; }
 
@@ -2372,11 +2391,21 @@ body[data-theme="daotian"] ::-webkit-scrollbar-thumb:hover { background: #3a4c60
           <h2>格物</h2>
           <div class="panel-head-right">
             <span class="chip" id="tech-chip">已研习 0 / 12</span>
+            <span class="chip" id="immortal-tech-chip">仙道 0 / 17</span>
             <button class="btn ghost tiny" id="hide-done-btn" data-action="toggle-hide-done" title="把已经研习过的科技收起来，剩下的才看得清。">隐藏已研习</button>
             <button class="panel-toggle" data-toggle="techs" title="折叠 / 展开" aria-expanded="true">▾</button>
           </div>
         </div>
         <div class="panel-body">
+          <!-- 两条科技线并排：凡人（银两）与仙道（灵石+银两）。
+               它们共用 .tech 的外观，但仙道那一半另带 .is-immortal 标记，
+               所以「凡人科技有几项」这类计数不会被仙道侧污染。 -->
+          <div class="tech-lines">
+            <button class="btn ghost tiny is-active" data-action="tech-line" data-line="mortal" id="line-mortal-btn">凡人 · 格物</button>
+            <button class="btn ghost tiny" data-action="tech-line" data-line="immortal" id="line-immortal-btn">仙道 · 参悟</button>
+          </div>
+          <div class="tech-list is-hidden" id="immortal-tech-list"></div>
+          <div class="tech-list-static-placeholder" hidden>
           <div class="tech-list" id="tech-list"><div class="tech-group"><div class="tech-tier"><span class="tier-name">一 · 立族</span><span class="tier-hint">从一姓一户，到有地有业</span></div><div class="tech is-open" data-tech="realestate" title="摸清了地契、税契与里正的门道，世家终于能在本乡置办田庄宅地。">
           <div class="tech-mark">宅</div>
           <div class="tech-body">
@@ -2498,8 +2527,13 @@ body[data-theme="daotian"] ::-webkit-scrollbar-thumb:hover { background: #3a4c60
             <div class="tech-req" data-role="req">须先研习 「商路」 · 须集齐 10 条秘闻（0/10）</div>
           </div>
           <button class="btn tech-btn" data-action="research" data-tech="quzhang" disabled="disabled" title="凡人篇的最后一道门。障一破，方见天光——但破障要拿命去试。">需前置</button></div></div></div>
+          </div>
           <p class="foot-note">
             研习科技可解锁新的营造门类，或直接精进家业数值。带<b>金色边框</b>的是当前买得起的。
+            <br>
+            <b>凡人 · 格物</b>花银两，长在城里；<b>仙道 · 参悟</b>花灵石与银两，长在修士身上。
+            两条线互相咬合：许多仙道之法要先有城里的本事（屯田、营造、户籍），
+            而城里也有几项非仙家不成（祛障、义庄、集贤馆）。
           </p>
         </div>
       </section>

@@ -20,6 +20,10 @@
     "marker": "/* ══════════ src/data/techs.js ══════════ */"
   },
   {
+    "path": "src/data/immortal-techs.js",
+    "marker": "/* ══════════ src/data/immortal-techs.js ══════════ */"
+  },
+  {
     "path": "src/data/trade.js",
     "marker": "/* ══════════ src/data/trade.js ══════════ */"
   },

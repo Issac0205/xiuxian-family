@@ -670,6 +670,25 @@ body {
 
 .tech-list { padding: 4px 0 8px; }
 
+/* 两条科技线的切换。仙道那一半整体偏青，与凡人侧的暖金区分开。 */
+.tech-lines {
+  display: flex;
+  gap: 8px;
+  padding: 8px 14px 0;
+}
+.tech-lines .btn.is-active {
+  border-color: var(--jade);
+  color: var(--jade);
+}
+#immortal-tech-list .tech-tier {
+  background: linear-gradient(90deg, rgba(99, 201, 168, 0.07), transparent);
+}
+#immortal-tech-list .tier-name { color: var(--jade); }
+#immortal-tech-list .tech-mark { border-color: rgba(99, 201, 168, 0.35); }
+#immortal-tech-list .tech.is-ready .tech-cost { color: var(--jade); }
+#immortal-tech-list .tech-cost { color: rgba(99, 201, 168, 0.85); }
+.tech-lines .chip { margin-left: auto; }
+
 .tech-group { border-bottom: 1px solid rgba(255, 255, 255, 0.045); }
 .tech-group:last-child { border-bottom: 0; }
 
@@ -2372,11 +2391,21 @@ body[data-theme="daotian"] ::-webkit-scrollbar-thumb:hover { background: #3a4c60
           <h2>格物</h2>
           <div class="panel-head-right">
             <span class="chip" id="tech-chip">已研习 0 / 12</span>
+            <span class="chip" id="immortal-tech-chip">仙道 0 / 17</span>
             <button class="btn ghost tiny" id="hide-done-btn" data-action="toggle-hide-done" title="把已经研习过的科技收起来，剩下的才看得清。">隐藏已研习</button>
             <button class="panel-toggle" data-toggle="techs" title="折叠 / 展开" aria-expanded="true">▾</button>
           </div>
         </div>
         <div class="panel-body">
+          <!-- 两条科技线并排：凡人（银两）与仙道（灵石+银两）。
+               它们共用 .tech 的外观，但仙道那一半另带 .is-immortal 标记，
+               所以「凡人科技有几项」这类计数不会被仙道侧污染。 -->
+          <div class="tech-lines">
+            <button class="btn ghost tiny is-active" data-action="tech-line" data-line="mortal" id="line-mortal-btn">凡人 · 格物</button>
+            <button class="btn ghost tiny" data-action="tech-line" data-line="immortal" id="line-immortal-btn">仙道 · 参悟</button>
+          </div>
+          <div class="tech-list is-hidden" id="immortal-tech-list"></div>
+          <div class="tech-list-static-placeholder" hidden>
           <div class="tech-list" id="tech-list"><div class="tech-group"><div class="tech-tier"><span class="tier-name">一 · 立族</span><span class="tier-hint">从一姓一户，到有地有业</span></div><div class="tech is-open" data-tech="realestate" title="摸清了地契、税契与里正的门道，世家终于能在本乡置办田庄宅地。">
           <div class="tech-mark">宅</div>
           <div class="tech-body">
@@ -2498,8 +2527,13 @@ body[data-theme="daotian"] ::-webkit-scrollbar-thumb:hover { background: #3a4c60
             <div class="tech-req" data-role="req">须先研习 「商路」 · 须集齐 10 条秘闻（0/10）</div>
           </div>
           <button class="btn tech-btn" data-action="research" data-tech="quzhang" disabled="disabled" title="凡人篇的最后一道门。障一破，方见天光——但破障要拿命去试。">需前置</button></div></div></div>
+          </div>
           <p class="foot-note">
             研习科技可解锁新的营造门类，或直接精进家业数值。带<b>金色边框</b>的是当前买得起的。
+            <br>
+            <b>凡人 · 格物</b>花银两，长在城里；<b>仙道 · 参悟</b>花灵石与银两，长在修士身上。
+            两条线互相咬合：许多仙道之法要先有城里的本事（屯田、营造、户籍），
+            而城里也有几项非仙家不成（祛障、义庄、集贤馆）。
           </p>
         </div>
       </section>
@@ -2961,6 +2995,17 @@ const FIELD_BIRTH = 0.0012;
 const BANK_CAPACITY = 8000;
 
 /**
+ * 「库房」科技：银两上限倍率加成。
+ *
+ * 为什么需要它：银两上限是**全局最硬的一道墙**。银两产出随人口线性增长，
+ * 而上限只随钱庄数量线性增长，且钱庄还要跟药圃/矿寮/钱庄抢营造格 ——
+ * 于是到中期银两会一直顶在上限上（`silverWasted` 飙升），
+ * 同时「云深谷坊市的第 n 笔」会因为报价超过上限而**永远换不了**。
+ * 库房给上限一个乘数，让「把城做大」在纵向上还有空间。
+ */
+const VAULT_CAP_MULT = 0.5;
+
+/**
  * 演武台：降低地产价格，但**边际递减**。
  *
  *   折扣(n) = MAX × n / (n + HALF)
@@ -3027,6 +3072,119 @@ const THEMES = {
   inkwash: { name: '水墨风' },
   daotian: { name: '丹霄' },
 };
+
+/* ══════════════════ 仙凡经济（两条科技线的咬合面） ══════════════════
+ *
+ * 这一节是「仙凡共存、相互依赖」的**全部数值落点**。三件事：
+ *
+ *   1. 城里的作坊（药圃/矿寮/纸坊）把**人口**换成仙道生产线的原料。
+ *      原料不再是地图领地的专利 —— 城越大，能养的药农、矿工、抄纸匠越多。
+ *   2. 云深谷坊市的兑率随**科技与城市规模**变松：城越像样，银钱越值灵石。
+ *   3. 灵脉矿场出石随仙道科技变厚，而矿工的命仍是凡人在填。
+ *
+ * 三条合起来构成主循环：
+ *   人口 → 作坊原料 → 丹药/法器/符箓 → 领地与突破
+ *   银两 → 坊市 → 灵石 → 更高境界 → 更多领地 → 更多灵石
+ * 而反向的拉扯是：作坊与矿场都要人，人都去做了工，生的人就少了。
+ */
+
+/**
+ * 城中药材产出：每座「药圃」每秒钟贡献多少「药材当量」。
+ * 实际产量 = 本值 × 药圃座数 × min(1, 人口 / (药圃座数 × 每座用工))
+ *   —— 即**分摊到各座的人口比例**，所以药圃铺得比人多时会摊薄。
+ * 之后整体乘 cityMaterialMult（灵田/悬壶/灵脉感应等科技给）。
+ */
+const CITY_HERB_PER_SEC = 0.0010;
+/** 城中矿料产出：每座「矿寮」每秒钟的矿料当量。口径同上。 */
+const CITY_ORE_PER_SEC = 0.0008;
+/** 城中符料产出：每座「纸坊」每秒钟的符料当量。口径同上。 */
+const CITY_RUNE_PER_SEC = 0.0006;
+
+/**
+ * 每座作坊的用工上限。
+ * 人口的 min(1, 人口/(座数×此值)) 分摊系数就是按它算的：
+ * 一座作坊配够 300 人算「满员」，配不满就按比例少产。
+ */
+const CITY_WORKSHOP_WORKERS = 300;
+
+/**
+ * 作坊的负面对价：每名在作坊里做活的凡人每秒的死亡概率。
+ *
+ * 与矿场取同一个叙事口径 —— 做工要死人。数值压得很低（万分之零点一），
+ * 因为它是**长期**扣血：人口 2000、作坊用工 1000 时约每秒 0.02 人，
+ * 也就是每小时 72 人。基地出生率在人口 2000 时是每秒 22 人，
+ * 所以它咬得住、但咬不死 —— 这正是「有张力才有选择」的分寸。
+ */
+const CITY_LABOR_DEATH = 0.0000001;
+
+/**
+ * 坊市用工（仙凡互市解锁）：每名在坊市做活的凡人每秒带来的**银两产出加成**。
+ * 这是人多的一方在兑率上占便宜的具体体现 —— 城越大，银钱越硬。
+ */
+const CITY_MARKET_YIELD_PER_WORKER = 0.0015;
+/** 坊市用工上限（每座）。 */
+const CITY_MARKET_WORKERS_MAX = 300;
+
+/**
+ * 灵气池：以秘闻换来的修行世界入口，给**天生灵根**的诞生率加成。
+ * 池子越深，灵根越容易落在新生儿身上 —— 这是「城养仙」最直接的一条。
+ * 加成 = min(MAX, 池数 × PER_POOL)
+ */
+const INNATE_POOL_BONUS_PER = 0.12;
+const INNATE_POOL_BONUS_MAX = 1.2;
+
+/** 灵脉矿场：基础出石速率（每秒，按「人数 × 品位」计）。 */
+const STONE_MINE_BASE_RATE = 0.000045;
+
+/**
+ * 城中「灵石矿场」建筑：每座让已探明的灵脉多出多少出石。
+ *
+ * 与 STONE_MINE_BASE_RATE 的关系：
+ *   仙途的「灵脉矿场」（c.mineLevel/mineWorkers）是**修士探明的矿脉本身**，
+ *   城里的「灵石矿场」建筑是**凡人搭的采掘队**。两者必须同时存在才出石 ——
+ *   一条矿脉，两班人。这是「仙凡共存」最直白的一处。
+ */
+const SPIRIT_MINE_CITY_BONUS_PER = 0.25;
+
+/**
+ * 云深谷坊市：银两换灵石的**递进**兑率。
+ *
+ *   第 n 次（n 从 0 起）：
+ *     银两 = ROUND(MARKET_EXCHANGE_BASE_SILVER × COST_GROWTH^n)
+ *     灵石 = MARKET_EXCHANGE_BASE_STONES × YIELD_GROWTH^n × (1 + tradeStoneMult)
+ *
+ * ⚠ 这组数字是**被银两上限反推出来的**，不是拍脑袋定的。推导如下：
+ *   · 银两上限 = 3000 + 8000×钱庄。开局 36 格、每座钱庄占 1 格，
+ *     所以现实上限约 30 座 = 24.3 万；研习「库房」（+50% 上限）后约 40 万。
+ *   · 于是**第 n 笔兑换的报价必须落在银两上限之内**，否则这一笔永远换不了
+ *     （实测：1.35 增长时第 4 笔要 24.6 万 > 24.3 万上限，进度就停在那里，
+ *     0 位修士、0 项仙道科技，整局卡死）。
+ *   · 反向要求：COST_GROWTH^n ≤ 上限 / BASE_SILVER。取 1.20 时：
+ *       1.20^8 ≈ 4.3 → 第 8 笔 43 万（需库房 + 满钱庄）；
+ *       1.20^5 ≈ 2.5 → 第 5 笔 25 万（24.3 万上限时换不到，所以**必须研习库房**）。
+ *     这个 ×1.20 是被"上限必须跟得上报价"逼出来的：试过 1.35 与 1.26，
+ *     两次都停在「第 4/6 笔的报价超过上限」——而报价超过上限时，
+ *     这一笔**永远换不了**，玩家既看不到原因也做不了什么。
+ *   · BASE_STONES 则由**修士的期望成本**反推：祛障丹 1 灵石、成算 25%，
+ *     所以「出 1 名修士」的期望成本是 4 灵石。取 0.5，前三笔就有
+ *     0.5 + 0.63 + 0.79 ≈ 1.9 灵石 —— 不够 4，所以玩家仍要**反复来换**，
+ *     但第一笔就买得起一枚丹（有 25% 机会立刻破障）。
+ *
+ * 结论：这条动脉是「开局立刻能用、中期越换越吃力、后期靠城里的科技撑大胃口」。
+ */
+const MARKET_EXCHANGE_BASE_SILVER = 100000;
+const MARKET_EXCHANGE_BASE_STONES = 0.5;
+const MARKET_EXCHANGE_COST_GROWTH = 1.20;
+const MARKET_EXCHANGE_YIELD_GROWTH = 1.20;
+/**
+ * 坊市兑换次数上限。
+ * 设上限的原因不是数值，是**叙事**：一家坊市能吃的银钱有量。
+ * 想再换就得靠「坊市扩建 / 仙凡互市」把胃口撑大（见 immortal-techs.js）。
+ */
+const MARKET_EXCHANGE_MAX = 12;
+/** 每研习一项撑胃口的科技（tradeStoneMult 之外的）额外增加的兑换次数。 */
+const MARKET_EXCHANGE_BONUS_PER_TECH = 4;
+
 
 /* ══════════ src/core/format.js ══════════ */
 /** 数字与时间的展示格式化。 */
@@ -3113,15 +3271,21 @@ function fmtClock(ms) {
 
 /* ══════════ src/data/buildings.js ══════════ */
 /**
- * 六类凡人建筑。
+ * 十类凡人与仙凡两用的建筑。
  *
  * 字段说明：
  *  - baseCost / growth : 第 n 座的价格 = baseCost * growth^n
  *  - slots             : 占用的建筑容量（地产为 0，它提供容量）
- *  - tech              : 解锁所需科技 id；null 表示开局即可营造
- *  - effectText(n, d)  : 已建 n 座时，本建筑提供的总效果文案
+ *  - tech              : 解锁所需科技 id；null 表示开局即可营造。
+ *                        **可以是仙道科技的 id**（见 immortal-techs.js），
+ *                        于是「仙家设的坊市，凡人才能去摆摊」这类关系能直接表达。
  *  - perText           : 每座的效果说明
+ *  - effectText(n, d)  : 已建 n 座时，本建筑提供的总效果文案
  *  - accent            : 卡片配色
+ *
+ * ⚠ 后五类是「仙凡经济」的落点：它们不产银两，产的是**仙道生产线的原料**
+ *   与**兑率**。所以城里该不该多盖一座药圃，取决于山那边炼丹缺不缺药——
+ *   这就是两条科技线要咬合的地方。数值口径见 core/config.js 的仙凡经济一节。
  */
 const BUILDINGS = [
   {
@@ -3212,6 +3376,100 @@ const BUILDINGS = [
     effectText: (n) =>
       `商队位 +${CARAVAN_SLOTS_PER * n} · 死亡率 +${fmtPercent(CARAVAN_DEATH * n, 2)}/秒`,
   },
+
+  /* ══════════ 仙凡经济：城里的作坊 ══════════
+   *
+   * 这五座建筑是「两条线互相咬合」在凡人侧的全部落点。
+   * 它们**不产银两**，产的是仙道生产线的原料与兑率：
+   *   药圃 → 药材（丹方原料）    矿寮 → 矿料（法器原料）
+   *   纸坊 → 符料（符箓原料）    坊市 → 银两换灵石的兑率
+   *   灵石矿场 → 直接产灵石，但**吃凡人矿工的命**
+   *
+   * 全部按「分摊到的人口」计产：人不够时，作坊之间一起摊薄。
+   */
+  {
+    id: 'herbhouse',
+    name: '药圃',
+    icon: '圃',
+    accent: 'jade',
+    tagline: '引灵台的水先浇过一遍，再分畦种药',
+    lore: '仙家炼一炉丹，要的是山里的灵草；可山里的灵草长在别人家的地盘上。'
+      + '族中有见识的人便说：何不自己辟一片药圃？——种出来的药性薄些，但胜在常年不断。',
+    baseCost: 1500,
+    growth: 1.26,
+    slots: 1,
+    tech: 'lingtian',
+    perText: `每座用工至多 ${CITY_WORKSHOP_WORKERS} 人，产出药材`,
+    effectText: (n, d) =>
+      `药材 +${(CITY_HERB_PER_SEC * n * (1 + d.fx.cityMaterialMult)).toFixed(3)}/秒（满员）`,
+    footnote: () => '人口不足时，各作坊按需求分摊，产量一起摊薄',
+  },
+  {
+    id: 'minestop',
+    name: '矿寮',
+    icon: '凿',
+    accent: 'silver',
+    tagline: '城外的石头里，也未必全是石头',
+    lore: '山里的矿脉原本是仙家的事。后来族中有人发现，'
+      + '凡人在浅层敲下来的那些碎料，送到器坊也能用——只是要拿命去换。',
+    baseCost: 2600,
+    growth: 1.28,
+    slots: 1,
+    tech: 'xuanhu',
+    perText: `每座用工至多 ${CITY_WORKSHOP_WORKERS} 人，产出矿料`,
+    effectText: (n, d) =>
+      `矿料 +${(CITY_ORE_PER_SEC * n * (1 + d.fx.cityMaterialMult)).toFixed(3)}/秒（满员）`,
+    footnote: () => `做工的凡人有折损：每名用工每秒 ${fmtPercent(CITY_LABOR_DEATH, 4)} 的死亡风险`,
+  },
+  {
+    id: 'papermill',
+    name: '纸坊',
+    icon: '纸',
+    accent: 'ink',
+    tagline: '灵木纤维捣浆抄纸，字迹才留得住',
+    lore: '画符用的纸与寻常纸不同：要使灵木的纤维，要一遍遍地淘洗。'
+      + '这门手艺原本只在山里传，如今城中也有人会了。',
+    baseCost: 3600,
+    growth: 1.29,
+    slots: 1,
+    tech: 'xuanhu',
+    perText: `每座用工至多 ${CITY_WORKSHOP_WORKERS} 人，产出符料`,
+    effectText: (n, d) =>
+      `符料 +${(CITY_RUNE_PER_SEC * n * (1 + d.fx.cityMaterialMult)).toFixed(3)}/秒（满员）`,
+  },
+  {
+    id: 'spiritmine',
+    name: '灵石矿场',
+    icon: '矿',
+    accent: 'violet',
+    tagline: '城外的深坑里，夜里透出光来',
+    lore: '仙家探明了灵脉，凡人负责把它挖出来。'
+      + '这是仙凡两地**唯一**一项「凡人亲手生出灵石」的营生——代价写在名册上。',
+    baseCost: 9000,
+    growth: 1.32,
+    slots: 1,
+    tech: 'lingmai',
+    perText: `每座让已探明的灵脉多出 ${fmtPercent(SPIRIT_MINE_CITY_BONUS_PER, 0)} 的出石`,
+    effectText: (n) => `矿脉出石 +${fmtPercent(SPIRIT_MINE_CITY_BONUS_PER * n, 0)}`,
+    footnote: () => '须先由修士以寻龙尺探得矿脉，此处方能开采',
+  },
+  {
+    id: 'immortalmarket',
+    name: '仙凡坊市',
+    icon: '互',
+    accent: 'ember',
+    tagline: '一边用银钱，一边用灵石，桌子摆在同一条街上',
+    lore: '凡人卖药、卖铁、卖纸；仙家卖丹、卖符、卖法器。'
+      + '两边的账本第一次并成了一本——市面越大，银钱在这一头就越硬。',
+    baseCost: 12000,
+    growth: 1.33,
+    slots: 1,
+    tech: 'mutualmarket',
+    perText: `每座用工至多 ${CITY_MARKET_WORKERS_MAX} 人，抬高银两产出与兑率`,
+    effectText: (n) =>
+      `银两产出 +${fmtPercent((CITY_MARKET_WORKERS_MAX / CITY_WORKSHOP_WORKERS) * n * CITY_MARKET_YIELD_PER_WORKER, 1)}（满员）`,
+    footnote: () => '与药圃/矿寮/纸坊抢同一批人手',
+  },
 ];
 
 /** id -> 定义 的索引表。 */
@@ -3253,8 +3511,24 @@ function createState(now = Date.now()) {
     population: BASE.population,
     buildings,
 
-    /** 已研习的科技 id。 */
+    /** 已研习的科技 id（凡人侧）。 */
     techs: [],
+
+    /**
+     * 已研习的科技 id（仙道侧）。
+     *
+     * 与 techs 并列而不是放进 cultivation 里：两条线是**同一层级**的清单，
+     * 放在一起才好对照「凡人到哪一步、仙道到哪一步」。
+     * 旧存档没有这个字段，repairCultivation 会补成空数组（见 systems/cultivation.js）。
+     */
+    immortalTechs: [],
+
+    /**
+     * 在云深谷坊市换过几次灵石。
+     * 兑率是**递进**的（见 core/config.js 的 MARKET_EXCHANGE_*），
+     * 所以这是一个「进度」而不是一个计数器 —— 界面会把它画成一条进度条。
+     */
+    exchangeCount: 0,
 
     /**
      * 进行中的商队。
@@ -3350,6 +3624,8 @@ function createState(now = Date.now()) {
       buyMode: '1',
       /** 当前页：home / techs / trade / immortal / study / codex */
       page: 'home',
+      /** 格物页当前看哪条线：'mortal' | 'immortal'。纯界面偏好，随存档走。 */
+      techLine: 'mortal',
       /** 百科：当前章节（'all' 或章节 id）与搜索词。 */
       codexChapter: 'all',
       codexQuery: '',
@@ -3416,16 +3692,30 @@ function cloneState(state) {
  *
  * 设计原则：
  *  - 开局只会「种地」——田地是唯一不需要科技的营造项。
- *  - 其余五类建筑全部由科技解锁，其中「房地产 / 建筑学 / 对外扩张」的命名与顺序
+ *  - 其余建筑全部由科技解锁，其中「房地产 / 建筑学 / 对外扩张」的命名与顺序
  *    由需求指定，钱庄与驿站对应的「金融 / 商路」是同一风格补齐的。
  *  - 除解锁建筑外，还有若干「精进」类科技直接改数值，让这条线有纵深。
  *
- * effect 支持的键（可在 config / formulas 里扩展）：
- *   estateDiscount  地产价格下降比例
- *   birthFlat       基础出生率加成（每秒绝对值）
- *   incomeMult      银两产出加成
- *   tradeSpeed      商队耗时下降比例
- *   fieldBonus      田地效果加成比例
+ * ⚠ **没有孤儿节点**：每一项科技都必须至少被另一项 require，
+ *   或者被仙道侧 require（见 data/immortal-techs.js）。
+ *   这条规则是仿真的科技盘点（balance.mjs 的 auditTechs）逐条查的，
+ *   上一版有 6 项点了只为它自己，这一版清零。
+ *
+ * ⚠ **跨树前置只能挂在凡人线的「可选深处」，绝不能挂在主线上。**
+ *   这条规则是踩过坑之后立的：第一版让「祛障」require 仙道「引灵」，
+ *   用意是「城要养得起修士，先得把灵气往族里引」。结果是在
+ *   「仙道侧不可用」的局面下（本仓库的对照实验就会这样摆），
+ *   祛障被永久锁死 → 没有修士 → 仙道永远开不了 → 祛障永远开不了。
+ *   这就是**互相卡脖子**，也正是本次设计要避免的东西。
+ *
+ *   现在跨树前置的方向是「仙道依赖凡人」：
+ *     仙道「灵田」← 凡人「屯田」
+ *     仙道「灵脉感应」← 凡人「探秘者」
+ *   而凡人侧的跨树前置（义庄←悬壶、集贤馆←聚灵阵）都是**tier 6–7 的
+ *   可选深处**，不挡任何主线。主线的方向永远是「凡人→仙道」单向的。
+ *
+ * effect 支持的键：见文件末尾的 EFFECT_LABELS，那里登记了全部合法键。
+ *   （凡人侧与仙道侧共用一张表；键在这里定义，在 core/formulas.js 里结算。）
  */
 
 const TECH_TIERS = [
@@ -3434,7 +3724,8 @@ const TECH_TIERS = [
   { tier: 3, name: '三 · 拓土', hint: '向外伸手，方有腾挪之地' },
   { tier: 4, name: '四 · 通商', hint: '货通四方，人丁自聚' },
   { tier: 5, name: '五 · 致远', hint: '以术驭势，家业可久' },
-  { tier: 6, name: '六 · 祛障', hint: '破凡俗之障，方见天光' },
+  { tier: 6, name: '六 · 祛障', hint: '门开了，就该想着怎么把根扎在城里' },
+  { tier: 7, name: '七 · 望郡', hint: '一邑之望，与仙家共此城' },
 ];
 
 const TECHS = [
@@ -3516,7 +3807,14 @@ const TECHS = [
     cost: 2200,
     requires: ['expansion'],
     effect: { fieldBonus: 0.25 },
-    desc: '设屯田、修水利，同一块田地能养活更多人。',
+    /**
+     * 跨树前置：屯田要「引灵」。
+     * 理由是叙事上的：引灵台把灵气引到田里，屯田才真的能多养人。
+     * 数值上它让「凡人篇的农业」与「仙道篇的灵气」第一次接上。
+     */
+    requiresImmortal: ['yinling'],
+    desc: '设屯田、修水利，同一块田地能养活更多人。'
+      + '引灵台的水先过一遍田垄，收成便不只多一成。',
   },
   {
     id: 'seeker',
@@ -3551,39 +3849,543 @@ const TECHS = [
     desc: '沿官道设驿、换马不换人，商队往返比别家快上一截。',
   },
   {
+    id: 'vault',
+    name: '库房',
+    icon: '库',
+    tier: 5,
+    cost: 4800,
+    requires: ['finance', 'household'],
+    effect: { vaultMult: 1.0 },
+    desc: '钱庄只管把银子收进来，库房管的是「收进来之后还数得清」。'
+      + '账房分门别类、按季盘库，同一批仓库能装下的银子翻了一倍。'
+      + '——坊市那头肯不肯多称几钱灵石，全看你先拿得出多少现银。',
+  },
+  {
     id: 'quzhang',
     name: '祛障',
     icon: '障',
     tier: 6,
-    cost: 5000,
-    requires: ['trade'],
+    cost: 6500,
+    requires: ['trade', 'household', 'courier'],
     /** 除了前置科技，还要先摸到修行世界的边（集齐秘闻）。 */
     requiresSecrets: true,
     unlocksPill: 'quzhangdan',
     unlocksPillName: '祛障丹',
     desc: '凡人篇的最后一道门。障一破，方见天光——但破障要拿命去试。',
   },
+  {
+    id: 'marketexp',
+    name: '坊市扩建',
+    icon: '廛',
+    tier: 6,
+    cost: 8000,
+    requires: ['trade', 'courier', 'surveying', 'vault'],
+    effect: { tradeStoneMult: 0.25 },
+    desc: '把云深谷那头的小集扩成一条街。本家的银钱递过去，'
+      + '对面肯多称几钱灵石——兑率这东西，向来是人多的一方说了算。',
+  },
+  {
+    id: 'yizhuang',
+    name: '义庄',
+    icon: '棺',
+    tier: 6,
+    cost: 9000,
+    requires: ['household', 'seeker'],
+    effect: { deathFlat: -0.0012, birthFlat: 0.0008 },
+    /** 跨树前置：义庄要「悬壶」（仙家的医药）。见 data/immortal-techs.js。 */
+    requiresImmortal: ['xuanhu'],
+    desc: '在城外立一处义庄，收殓无主的尸骨，也给族里老弱一口热粥。'
+      + '悬壶堂的药先紧着老人孩子，死的人少了，活着的人也就敢多生。',
+  },
+  {
+    id: 'jixian',
+    name: '集贤馆',
+    icon: '贤',
+    tier: 6,
+    cost: 11000,
+    requires: ['arithmetic', 'household'],
+    effect: { incomeMult: 0.12, secretChance: 0.03, explorePerSecFlat: 0.00012 },
+    /**
+     * 跨树前置：集贤馆要「聚灵阵」。
+     * 馆里养的不是普通读书人，是**替仙家记档、递帖子的人** ——
+     * 所以它顺带给了「修士自动寻秘」，这也是城里唯一一项
+     * 「仙道进度直接变成凡人科技的产出」。
+     */
+    requiresImmortal: ['julingzhen'],
+    desc: '养几个读书人，管账、修谱、也管往山外递帖子。'
+      + '馆里清静，日子久了，什么话都能听见——哪怕说话的人不在城里。',
+  },
+  {
+    id: 'xiangxian',
+    name: '乡贤祠',
+    icon: '乡',
+    tier: 7,
+    cost: 45000,
+    requires: ['jixian', 'yizhuang'],
+    terminal: true,
+    effect: { incomeMult: 0.25, birthFlat: 0.0015, secretChance: 0.04 },
+    desc: '一姓在此地传了七代，里正见你祖父要叫一声老太爷。'
+      + '祠堂里的牌位比县衙的卷宗还厚——这城里的事，一半在族中过。',
+  },
+  {
+    id: 'mutualmarket',
+    name: '仙凡互市',
+    icon: '互',
+    tier: 7,
+    cost: 60000,
+    requires: ['marketexp', 'quzhang'],
+    /**
+     * 跨树前置：仙凡互市要仙道「界墟」。
+     * 城里想开一条两边通用的街，先得对面**认你的字号** ——
+     * 界墟给的正是这个。这是凡人线最深处的一处「非仙不成」，
+     * 也是本树唯一一处会卡住玩家的跨树前置（因此它必须落在 tier 7 的可选深处）。
+     */
+    requiresImmortal: ['jiexu'],
+    terminal: true,
+    unlocksBuilding: 'immortalmarket',
+    effect: { tradeIncome: 0.35, tradeStoneMult: 0.35 },
+    desc: '凡人卖药、卖铁、卖纸，仙家收的是灵石；仙家卖丹、卖符、卖法器，'
+      + '凡人拿银钱接。两边的账本第一次并成了一本'
+      + '——但那条街得等云深谷那头先认了本家的字号。',
+  },
 ];
 
 const TECH_MAP = Object.fromEntries(TECHS.map((t) => [t.id, t]));
 
-/** 效果键 → 展示文案。 */
+/**
+ * 效果键 → 展示文案。
+ *
+ * ⚠ 这是**两条科技线共用的一张表**（凡人篇与仙道篇），所以新增 effect 键时
+ *   只需在这里加一行：加了才算「界面会显示」。忘了加不会报错，
+ *   但那一项科技的收益栏会是一片空白 —— 这属于必须避免的静默失败，
+ *   所以 scripts/smoke.mjs 里有一条断言专门查「每个 effect 键都有文案」。
+ *
+ * 命名约定：
+ *   · 以 Mult 结尾的是**倍率加成**（0.25 = +25%）
+ *   · 以 Flat 结尾的是**绝对值**，尺度由各自的标签决定
+ *   · 减益用负数，文案自动带正负号
+ *
+ * 四个格式化器，按「这个数是什么尺度」选：
+ *   signedPct   0.25  → “+25%”
+ *   signedPoint 0.06  → “+6 个百分点”（百分点本身就是 0–100 的数）
+ *   signedAbs   150   → “+150”
+ *   signedFlat  0.001 → “+0.10”（每秒绝对值要缩小 100 倍看）
+ */
+const signedPct = (v) => `${v < 0 ? '−' : '+'}${Math.abs(Math.round(v * 100))}%`;
+const signedPoint = (v) => `${v < 0 ? '−' : '+'}${Math.abs(Math.round(v * 100))}`;
+const signedAbs = (v) => `${v < 0 ? '−' : '+'}${Math.abs(Math.round(v))}`;
+const signedFlat = (v) => `${v < 0 ? '−' : '+'}${Math.abs(v * 100).toFixed(2)}`;
+
 const EFFECT_LABELS = {
+  /* ── 凡人侧 ── */
   estateDiscount: (v) => `地产价格 −${Math.round(v * 100)}%`,
-  birthFlat: (v) => `基础出生率 +${(v * 100).toFixed(2)}%/秒`,
-  incomeMult: (v) => `银两产出 +${Math.round(v * 100)}%`,
+  birthFlat: (v) => `基础出生率 ${signedFlat(v)}%/秒`,
+  incomeMult: (v) => `银两产出 ${signedPct(v)}`,
   tradeSpeed: (v) => `商队耗时 −${Math.round(v * 100)}%`,
   fieldBonus: (v) => `田地效果 +${Math.round(v * 100)}%`,
-  tradeIncome: (v) => `商路银两收益 ${v < 0 ? '−' : '+'}${Math.abs(Math.round(v * 100))}%`,
-  deathFlat: (v) => `死亡率 +${(v * 100).toFixed(2)}%/秒`,
-  secretChance: (v) => `秘闻概率 +${Math.round(v * 100)}%`,
+  tradeIncome: (v) => `商路银两收益 ${signedPct(v)}`,
+  deathFlat: (v) => `死亡率 ${signedFlat(v)}%/秒`,
+  secretChance: (v) => `秘闻概率 ${signedPct(v)}`,
+  explorePerSecFlat: (v) => `修士自动寻秘 +${(v * 100000).toFixed(1)} 条/万秒`,
+  vaultMult: (v) => `银两上限 ${signedPct(v)}`,
+
+  /* ── 仙道侧 ── */
+  immortalCapFlat: (v) => `名册容量 ${signedAbs(v)} 人`,
+  innateBirthMult: (v) => `天生灵根诞生率 ${signedPct(v)}`,
+  mineDeathMult: (v) => `矿工死亡 ${signedPct(v)}`,
+  mineYieldMult: (v) => `灵脉矿场出石 ${signedPct(v)}`,
+  territoryYieldMult: (v) => `领地赋税与材料 ${signedPct(v)}`,
+  territoryHoldMult: (v) => `领地镇守所需战力 ${signedPct(v)}`,
+  garrisonCapFlat: (v) => `可同时镇守 ${signedAbs(v)} 处`,
+  exploreSurviveBonus: (v) => `洞天生还率 ${signedPoint(v)} 个百分点`,
+  breakBonusFlat: (v) => `大境界冲关成功率 ${signedPoint(v)} 个百分点`,
+  tradeStoneMult: (v) => `银两换灵石兑率 ${signedPct(v)}`,
+  cityMaterialMult: (v) => `城中作坊（药材/矿料/符料）产出 ${signedPct(v)}`,
+  runeBenchFree: (v) => `符台免费升 ${signedAbs(v)} 阶`,
+  alchemyRateBonus: (v) => `炼丹成功率 ${signedPoint(v)} 个百分点`,
+  trainMult: (v) => `全族修炼速度 ${signedPct(v)}`,
+  familyPowerMult: (v) => `家族战力 ${signedPct(v)}`,
 };
 
-/** 一项科技的全部收益文案。 */
-function techGainText(tech, buildingName) {
+/** 一项科技的全部收益文案（凡人侧与仙道侧共用）。 */
+function techGainText(tech, buildingName, pillName) {
   const out = [];
   if (tech.unlocksBuilding) out.push(`解锁营造「${buildingName || tech.unlocksBuilding}」`);
-  if (tech.unlocksPill) out.push(`解锁「${tech.unlocksPillName || tech.unlocksPill}」`);
+  if (tech.unlocksPill) out.push(`解锁「${pillName || tech.unlocksPillName || tech.unlocksPill}」`);
+  for (const [key, val] of Object.entries(tech.effect || {})) {
+    if (EFFECT_LABELS[key]) out.push(EFFECT_LABELS[key](val));
+  }
+  return out;
+}
+
+/* ══════════ src/data/immortal-techs.js ══════════ */
+/**
+ * 仙道科技线。
+ *
+ * 与 techs.js（凡人篇）是**两条平行但互相咬合**的线：
+ *
+ *   · 凡人篇花**银两**，长在城里：人口、房产、商路、营造。
+ *   · 仙道篇花**灵石**，长在修士身上：境界、战力、镇守、洞天。
+ *
+ * 咬合点（本文件最重要的部分，也是 auditTechs 会逐条列出来的）：
+ *
+ *   凡人 → 仙道：多个仙道科技把凡人科技写进 requires。
+ *      · 灵田、养炉、悬壶、聚灵阵 都要「屯田」「营造术」「户籍」这类城里的本事，
+ *        理由是同一条：**仙家不是凭空修出来的，要有城供着**。
+ *      · 灵脉感应要「探秘者」——找矿脉是凡人打听出来的风声。
+ *   仙道 → 凡人：见 techs.js 里的 requiresImmortal（祛障、集贤馆、仙凡互市）。
+ *
+ * 与凡人侧的第二个区别：仙道科技**兼容旧存档**。
+ *   凡人侧靠 techs 数组，老存档里没有的 id 就是没研习。
+ *   仙道侧靠 immortalTechs 数组，字段不存在时 repairCultivation 补一个空数组，
+ *   所以 1.0 的老存档读进来就是「仙道篇未开启」，不会崩。
+ *
+ * effect 支持的键（全部在 core/formulas.js 的 techEffects / cultivationEffects
+ * 里真实结算，并在 EFFECT_LABELS 里登记，否则界面上显示不出来）：
+ *   immortalCapFlat    名册容量 +N（仙道是「能养多少人」，不是「炼多快」）
+ *   innateBirthMult    凡人生育中诞生天生灵根的倍率
+ *   mineDeathMult      灵脉矿场矿工死亡倍率
+ *   mineYieldMult      灵脉矿场出石倍率
+ *   territoryYieldMult 领地赋税/材料产出倍率（乘法叠加）
+ *   territoryHoldMult  领地镇守所需战力的倍率（越低越省人）
+ *   garrisonCapFlat    可同时镇守的领地数 +N
+ *   exploreSurviveBonus 洞天生还率加成（加到生还率上）
+ *   breakBonusFlat     大境界冲关成功率加成（加到成功率上）
+ *   tradeStoneMult     坊市银两→灵石 的兑率倍率（城市越强，换得越多）
+ *   cityMaterialMult   城中作坊（药圃/矿寮/纸坊）的产出倍率
+ *   runeBenchFree      符台等级 +N（免费升阶，不花灵石银两）
+ *   alchemyRateBonus   炼丹成功率加成
+ *
+ * 成本口径：cost 是**银两**，stones 是**灵石**。两者都必须付。
+ * 设计上灵石是主门槛（银两只是「城里拿得出这笔钱」的资格线），
+ * 因为银两在中期会撞上限，灵石才是真正稀缺的那一种。
+ */
+
+const IMMORTAL_TECH_TIERS = [
+  { tier: 1, name: '一 · 开脉', hint: '破障之后，先要能养得住人' },
+  { tier: 2, name: '二 · 筑基', hint: '立起根基，方谈攻守' },
+  { tier: 3, name: '三 · 结丹', hint: '一丹既成，术法始有锋芒' },
+  { tier: 4, name: '四 · 元婴', hint: '神通离体，山川皆可往来' },
+  { tier: 5, name: '五 · 化神', hint: '化神之后，族与城都不必再分开算' },
+];
+
+const IMMORTAL_TECHS = [
+  /* ══════════════ 一 · 开脉 ══════════════ */
+  {
+    id: 'kaimai',
+    name: '开脉',
+    icon: '脉',
+    tier: 1,
+    cost: 3000,
+    stones: 12,
+    requires: [],
+    effect: { immortalCapFlat: 150, mineYieldMult: 0.25 },
+    desc: '把祛障散出来的那口浊气理顺，替后来者把经脉先开一寸。'
+      + '名册能多挂一百五十人，山里的矿脉也认得出谁是自家人。',
+  },
+  {
+    id: 'yinling',
+    name: '引灵',
+    icon: '引',
+    tier: 1,
+    cost: 4500,
+    stones: 18,
+    requires: [],
+    effect: { innateBirthMult: 0.6, cityMaterialMult: 0.25 },
+    desc: '在祠堂后园起一座引灵台，把山中逸散的灵气往族里引。'
+      + '灵根落进婴儿身上的机会多些，园里种的药也长得壮些。',
+  },
+  {
+    id: 'lingtian',
+    name: '灵田',
+    icon: '畦',
+    tier: 1,
+    cost: 6000,
+    stones: 25,
+    requires: ['tuntian', 'yinling'],
+    unlocksBuilding: 'herbhouse',
+    effect: { cityMaterialMult: 0.5 },
+    desc: '屯田的法子搬到灵田上用——引灵台的水先浇过一遍，'
+      + '再分畦种药。从此族中自有的药材不必全指着山外那几处商路。',
+  },
+
+  /* ══════════════ 二 · 筑基 ══════════════ */
+  {
+    id: 'zhuji',
+    name: '筑基之道',
+    icon: '筑',
+    tier: 2,
+    cost: 12000,
+    stones: 45,
+    requires: ['kaimai', 'lingtian'],
+    effect: { breakBonusFlat: 0.06, immortalCapFlat: 100 },
+    desc: '把炼气九层冲关的那一步讲明白，写成册子发给全族。'
+      + '此后冲关不再是各人摸黑，成功率高出一截。'
+      + '——册子里头一半讲的是「药从哪来」，所以它要灵田先立起来。',
+  },
+  {
+    id: 'lingxu',
+    name: '灵枢',
+    icon: '枢',
+    tier: 2,
+    cost: 15000,
+    stones: 55,
+    requires: ['yinling'],
+    effect: { innateBirthMult: 0.9, mineDeathMult: -0.35 },
+    desc: '灵枢者，一身气机之总汇。教族人调息、教矿工换气——'
+      + '生下来的孩子资质好些，死在矿下的人也少些。',
+  },
+  {
+    id: 'zhenyue',
+    name: '镇岳',
+    icon: '岳',
+    tier: 2,
+    cost: 18000,
+    stones: 70,
+    requires: ['kaimai'],
+    effect: { territoryHoldMult: -0.30, garrisonCapFlat: 2 },
+    desc: '镇守一地，不必以力压人。立祠、定契、许以岁给，'
+      + '凡人自会替你看着这片山——守一处所需的人手因此少三成。',
+  },
+  {
+    id: 'danfang',
+    name: '丹药房',
+    icon: '炉',
+    tier: 2,
+    cost: 21000,
+    stones: 85,
+    requires: ['lingtian', 'lingxu'],
+    effect: { cityMaterialMult: 0.70, alchemyRateBonus: 0.05 },
+    desc: '把药圃、丹炉、库房排到一条线上：采下来就入炉，出炉就上架。'
+      + '城里的作坊从此不是各自为政，而是一条线。',
+  },
+
+  /* ══════════════ 三 · 结丹 ══════════════ */
+  {
+    id: 'yujian',
+    name: '御剑术',
+    icon: '剑',
+    tier: 3,
+    cost: 26000,
+    stones: 110,
+    requires: ['zhenyue'],
+    effect: { breakBonusFlat: 0.05, familyPowerMult: 0.20 },
+    desc: '剑修入门的那一手。族中子弟学过之后，'
+      + '出门不必再带一队人——一个人就是一队人。',
+  },
+  {
+    id: 'qidao',
+    name: '器道',
+    icon: '锻',
+    tier: 3,
+    cost: 29000,
+    stones: 125,
+    requires: ['danfang'],
+    effect: { cityMaterialMult: 0.45, alchemyRateBonus: 0.04 },
+    desc: '矿寮敲出来的碎料，原本大半是废的。器道一成，'
+      + '同一批料能多出几件趁手的家伙——城外的碎石也就有了去处。',
+  },
+  {
+    id: 'xuanhu',
+    name: '悬壶',
+    icon: '壶',
+    tier: 3,
+    cost: 30000,
+    stones: 130,
+    requires: ['lingxu'],
+    unlocksBuilding: 'minestop',
+    effect: { cityMaterialMult: 0.35 },
+    desc: '丹道里最不起眼的一路：不炼长生丹，只炼救人的药。'
+      + '族中设一壶堂，凡人病了有药、伤了有医，做工的手也就稳了。',
+  },
+  {
+    id: 'julingzhen',
+    name: '聚灵阵',
+    icon: '阵',
+    tier: 3,
+    cost: 33000,
+    stones: 150,
+    requires: ['lingxu'],
+    effect: { trainMult: 0.15, runeBenchFree: 1 },
+    desc: '以三十六块引灵石为眼，圈住一方灵气。'
+      + '人在阵中闭关，一日抵得两日；画符的案子也连上了阵眼，不必另起炉灶。',
+  },
+
+  /* ══════════════ 四 · 元婴 ══════════════ */
+  {
+    id: 'jindan',
+    name: '金丹大道',
+    icon: '丹',
+    tier: 3,
+    cost: 52000,
+    stones: 260,
+    requires: ['yujian', 'julingzhen', 'zhuji'],
+    effect: { breakBonusFlat: 0.08, alchemyRateBonus: 0.08 },
+    unlocksPill: 'ningdan',
+    unlocksPillName: '凝丹丸',
+    desc: '气凝成丹的关窍，连同炉温火候一并写定。'
+      + '丹房从此少炸几炉，冲关的人也总算有依凭。',
+  },
+  {
+    id: 'fudi',
+    name: '福地',
+    icon: '福',
+    tier: 3,
+    cost: 46000,
+    stones: 230,
+    requires: ['qidao'],
+    effect: { cityMaterialMult: 0.60, innateBirthMult: 0.35 },
+    desc: '把城外的几处泉眼、风口、土坡圈起来，按地势改一改。'
+      + '一方水土养一方人——作坊出得多了，孩子生下来也带着点灵气。',
+  },
+  {
+    id: 'tanxue',
+    name: '探穴',
+    icon: '穴',
+    tier: 3,
+    cost: 41000,
+    stones: 210,
+    requires: ['xuanhu'],
+    effect: { mineYieldMult: 0.30, exploreSurviveBonus: 0.04 },
+    desc: '悬壶的医者最先学会的是看人，其次就是看地——'
+      + '哪一处山腹可以进、哪一处进去就出不来。',
+  },
+  {
+    id: 'dongfu',
+    name: '洞府',
+    icon: '府',
+    tier: 4,
+    cost: 58000,
+    stones: 300,
+    requires: ['xuanhu', 'julingzhen'],
+    effect: { exploreSurviveBonus: 0.06, territoryYieldMult: 0.20 },
+    desc: '在灵脉上头凿一处洞府，前接商路、后倚山险。'
+      + '出门探洞天的人有个退路，守在山里的领地也多出一份出息。',
+  },
+  {
+    id: 'lingmai',
+    name: '灵脉感应',
+    icon: '脉',
+    tier: 4,
+    cost: 66000,
+    stones: 340,
+    requires: ['seeker', 'zhenyue'],
+    unlocksBuilding: 'spiritmine',
+    effect: { mineYieldMult: 0.45, cityMaterialMult: 0.45 },
+    desc: '寻龙尺终究只是凡器。感应既成，闭目便知哪一处山腹里有光——'
+      + '城里可以正经开一座灵石矿场，不必再靠零星探脉。',
+  },
+
+  /* ══════════════ 五 · 化神 ══════════════ */
+  {
+    // ⚠ 故意**没有** unlocksBuilding：仙凡坊市由凡人侧的「仙凡互市」解锁。
+    //   一座建筑只能有一个解锁科技，而「仙家肯开市」这件事
+    //   更应该由城里的那条线来兑现 —— 界墟给的是兑率与消息，不是铺面。
+    //   （这条约束由 smoke.mjs 的「解锁建筑类科技都有配套的真实建筑（双向对齐）」守着。）
+    id: 'jiexu',
+    name: '界墟',
+    icon: '墟',
+    tier: 5,
+    cost: 120000,
+    stones: 720,
+    requires: ['lingmai', 'yuanying'],
+    effect: { tradeStoneMult: 0.6, secretChance: 0.02 },
+    desc: '云深谷那头的坊市终于认了本家的字号。'
+      + '银钱过手能换回更多灵石，往来的人也捎带些不该说的风声。',
+  },
+  {
+    id: 'yuanying',
+    name: '元婴大道',
+    icon: '婴',
+    tier: 5,
+    cost: 92000,
+    stones: 520,
+    requires: ['jindan', 'dongfu'],
+    effect: { breakBonusFlat: 0.10, immortalCapFlat: 150, trainMult: 0.20 },
+    desc: '元婴出窍，从此不惧一城一地的得失。'
+      + '这篇道书传给全族，闭关的效率也就跟着上了一层。',
+  },
+  {
+    id: 'lingzhi',
+    name: '灵植术',
+    icon: '植',
+    tier: 5,
+    cost: 98000,
+    stones: 560,
+    requires: ['fudi', 'yuanying'],
+    effect: { cityMaterialMult: 0.80, innateBirthMult: 0.30 },
+    desc: '药圃里那一套「引灵台的水先浇过一遍」的土法子，'
+      + '到这里才成了学问：一株药该在什么时辰采、配哪一路灵气，都有定数。',
+  },
+  {
+    id: 'jiuzhuan',
+    name: '九转丹房',
+    icon: '转',
+    tier: 5,
+    cost: 118000,
+    stones: 680,
+    requires: ['lingzhi', 'jiexu', 'tanxue'],
+    effect: { alchemyRateBonus: 0.10, cityMaterialMult: 0.50 },
+    unlocksPill: 'jiuzhuandan',
+    unlocksPillName: '九转丹',
+    desc: '九转之意不在次数，而在「每一转都换一味主药」。'
+      + '炼到第九转，整座城的药圃都成了这炉丹的药引。',
+  },
+  {
+    id: 'zhoutian',
+    name: '周天搬运',
+    icon: '周',
+    tier: 5,
+    cost: 105000,
+    stones: 620,
+    requires: ['dongfu', 'lingmai'],
+    effect: { territoryYieldMult: 0.35, mineYieldMult: 0.35 },
+    desc: '把周天星斗的走势与山川的走势对上，气便在两地之间自流。'
+      + '领地赋税与矿场出石，都随之厚了一层。',
+  },
+  {
+    id: 'huashen',
+    name: '化神大道',
+    icon: '神',
+    tier: 5,
+    cost: 165000,
+    stones: 1050,
+    requires: ['yuanying', 'jiexu'],
+    effect: { breakBonusFlat: 0.12, immortalCapFlat: 250 },
+    desc: '化神那一关，前人多半死在这里。这一篇把前面几道门槛的得失'
+      + '合在一处讲——名册上能挂的人也多出二百五十。',
+  },
+  {
+    id: 'jielu',
+    name: '结庐',
+    icon: '庐',
+    tier: 5,
+    cost: 200000,
+    stones: 1500,
+    requires: ['zhuji', 'huashen', 'zhoutian', 'jiuzhuan'],
+    terminal: true,
+    effect: { territoryHoldMult: -0.25, territoryYieldMult: 0.30, tradeStoneMult: 0.4 },
+    desc: '化神之后，人已经不必住在城里了。在山中结一座草庐，'
+      + '四野的灵气、赋税、矿脉自来——族里只需把契书续上。'
+      + '这一篇的要诀是「以约代力」，所以它仍要回看筑基那本册子。',
+  },
+];
+
+const IMMORTAL_TECH_MAP = Object.fromEntries(IMMORTAL_TECHS.map((t) => [t.id, t]));
+
+/**
+ * 仙道科技的效果键 → 展示文案。
+ *
+ * ⚠ 与凡人侧的 EFFECT_LABELS **共用同一张表**（见 techs.js 末尾的合并），
+ *   所以这里不重复定义，只在这里声明命名约定：键名一律可读，
+ *   不出现 x1 / m2 这种缩写。
+ */
+
+/** 一项仙道科技的全部收益文案。 */
+function immortalTechGainText(tech, buildingName, pillName) {
+  const out = [];
+  if (tech.unlocksBuilding) out.push(`解锁营造「${buildingName || tech.unlocksBuilding}」`);
+  if (tech.unlocksPill) out.push(`解锁丹方「${pillName || tech.unlocksPill}」`);
   for (const [key, val] of Object.entries(tech.effect || {})) {
     if (EFFECT_LABELS[key]) out.push(EFFECT_LABELS[key](val));
   }
@@ -3673,22 +4475,67 @@ const SECRETS = [
 /* ══════════ src/core/formulas.js ══════════ */
 /* ────────────────────────── 科技 ────────────────────────── */
 
-/** 把已研习科技的效果累加起来。 */
+/**
+ * 凡人侧科技的全部合法 effect 键。
+ *
+ * ⚠ **加新键必须同时改三处**，缺一处就是静默失败：
+ *   1. 这里的累加器（否则数值根本不生效）
+ *   2. data/techs.js 的 EFFECT_LABELS（否则界面显示不出这一项收益）
+ *   3. 真正消费它的地方（formulas.derive / cultivationEffects / systems/*）
+ * scripts/smoke.mjs 里有断言逐项检查这三处是否对齐。
+ */
+const MORTAL_EFFECT_KEYS = [
+  'estateDiscount', 'birthFlat', 'incomeMult', 'tradeSpeed', 'fieldBonus',
+  'tradeIncome', 'deathFlat', 'secretChance', 'explorePerSecFlat', 'vaultMult',
+];
+
+/**
+ * 仙道侧科技的全部合法 effect 键。
+ * 与凡人侧分开列，是因为两者的结算位置不同：凡人侧基本都进 derive()，
+ * 仙道侧有一部分进 cultivationEffects()（镇守、洞天、冲关）。
+ */
+const IMMORTAL_EFFECT_KEYS = [
+  'immortalCapFlat', 'innateBirthMult', 'mineDeathMult', 'mineYieldMult',
+  'territoryYieldMult', 'territoryHoldMult', 'garrisonCapFlat',
+  'exploreSurviveBonus', 'breakBonusFlat', 'tradeStoneMult',
+  'cityMaterialMult', 'runeBenchFree', 'alchemyRateBonus', 'trainMult',
+  'familyPowerMult',
+];
+
+const ALL_EFFECT_KEYS = [...MORTAL_EFFECT_KEYS, ...IMMORTAL_EFFECT_KEYS];
+
+/**
+ * 把已研习科技的效果累加起来。
+ *
+ * 两条线**共用一个累加器**：凡人科技读 state.techs，仙道科技读 state.immortalTechs。
+ * 之所以不分成两个函数，是因为下游（derive / cultivationEffects）本来就希望
+ * 「不管是哪条线给的，都在这儿一起算」—— 分开只会让每个消费点写两遍。
+ */
 function techEffects(state) {
-  const acc = {
-    estateDiscount: 0,
-    birthFlat: 0,
-    incomeMult: 0,
-    tradeSpeed: 0,
-    fieldBonus: 0,
-    tradeIncome: 0,
-    deathFlat: 0,
-    secretChance: 0,
+  const acc = {};
+  for (const k of ALL_EFFECT_KEYS) acc[k] = 0;
+  const eat = (list, map) => {
+    for (const id of list || []) {
+      const tech = map[id];
+      if (!tech || !tech.effect) continue;
+      for (const key of ALL_EFFECT_KEYS) {
+        if (typeof tech.effect[key] === 'number') acc[key] += tech.effect[key];
+      }
+    }
   };
+  eat(state.techs, TECH_MAP);
+  eat(state.immortalTechs, IMMORTAL_TECH_MAP);
+  return acc;
+}
+
+/** 只取凡人侧的效果（少数地方需要区分来源，例如「撑大坊市胃口」的计数）。 */
+function mortalTechEffects(state) {
+  const acc = {};
+  for (const k of ALL_EFFECT_KEYS) acc[k] = 0;
   for (const id of state.techs || []) {
     const tech = TECH_MAP[id];
     if (!tech || !tech.effect) continue;
-    for (const key of Object.keys(acc)) {
+    for (const key of ALL_EFFECT_KEYS) {
       if (typeof tech.effect[key] === 'number') acc[key] += tech.effect[key];
     }
   }
@@ -3725,20 +4572,45 @@ function tradeSecretChance(state, route) {
   return Math.min(1, Math.max(0, (route.secretChance || 0) + fx.secretChance + cultivationBonuses(state).exploreTradeBonus));
 }
 
-/** 科技是否已研习。 */
+/** 科技是否已研习（凡人侧）。 */
 function isResearched(state, techId) {
   return (state.techs || []).includes(techId);
 }
 
-/** 科技的前置是否全部满足。 */
-function isTechUnlocked(state, tech) {
-  return tech.requires.every((r) => isResearched(state, r));
+/** 仙道科技是否已研习。老存档没有这个字段，所以必须 || []。 */
+function isImmortalTechResearched(state, techId) {
+  return (state.immortalTechs || []).includes(techId);
 }
 
 /**
- * 科技当前状态：
+ * 凡人科技的前置是否全部满足。
+ *
+ * 凡人侧科技可以被仙道侧 gate 住（tech.requiresImmortal）——
+ * 例如「祛障」要求仙道侧的「引灵」。这是仙凡咬合的一半，见 docs/15-科技线.md。
+ *
+ * ⚠ 用 (tech.requiresImmortal || []) 而不是直接读：老存档与数据缺失
+ *   都要退化成「无前置」，而不是静默锁死一项科技。
+ */
+function isTechUnlocked(state, tech) {
+  if (!(tech.requires || []).every((r) => isResearched(state, r))) return false;
+  return (tech.requiresImmortal || []).every((r) => isImmortalTechResearched(state, r));
+}
+
+/**
+ * 仙道科技的前置是否满足。
+ * 仙道科技的 requires 里**可以混凡人科技的 id** —— 这就是跨树咬合的另一半
+ * （例：灵田 requires ['tuntian', 'yinling']）。所以这里逐项判断该 id 属于哪条线。
+ */
+function isImmortalTechUnlocked(state, tech) {
+  return (tech.requires || []).every((r) => (IMMORTAL_TECH_MAP[r]
+    ? isImmortalTechResearched(state, r)
+    : isResearched(state, r)));
+}
+
+/**
+ * 凡人科技当前状态：
  *  done   已研习
- *  locked 前置未满足（缺前置科技，或缺秘闻）
+ *  locked 前置未满足（缺前置科技，或缺秘闻，或缺跨树的仙道前置）
  *  open   可研习但银两不够
  *  ready  银两充足，可以研习
  */
@@ -3752,18 +4624,173 @@ function techStatus(state, tech) {
   return state.silver >= tech.cost ? 'ready' : 'open';
 }
 
-/** 建筑是否已解锁。 */
-function isBuildingUnlocked(state, def) {
-  return !def.tech || isResearched(state, def.tech);
+/**
+ * 仙道科技当前状态。与 techStatus 同构，区别是**灵石与银两双付**。
+ *
+ * 灵石是主门槛（银两只是「城里拿得出这笔钱」的资格线），
+ * 所以缺哪一样就报哪一样，界面直接拿去显示。
+ */
+function immortalTechStatus(state, tech) {
+  if (!tech) return 'locked';
+  if (isImmortalTechResearched(state, tech.id)) return 'done';
+  if (!isImmortalTechUnlocked(state, tech)) return 'locked';
+  const silverOk = state.silver >= (tech.cost || 0);
+  const stoneOk = (state.spiritStones || 0) >= (tech.stones || 0);
+  return silverOk && stoneOk ? 'ready' : 'open';
 }
 
-/** 可研习（前置满足且未研习）的科技数量。 */
+/** 仙道科技的缺口说明（界面与日志共用，保证「写的」与「扣的」一致）。 */
+function immortalTechMissing(state, tech) {
+  const out = [];
+  if (!isImmortalTechUnlocked(state, tech)) {
+    const names = (tech.requires || []).map((r) => IMMORTAL_TECH_MAP[r]?.name || TECH_MAP[r]?.name || r);
+    out.push(`须先研习 ${names.join('、')}`);
+  }
+  if (state.silver < (tech.cost || 0)) out.push(`银两不足，需 ${Math.round(tech.cost || 0)} 两`);
+  if ((state.spiritStones || 0) < (tech.stones || 0)) out.push(`灵石不足，需 ${tech.stones || 0} 枚`);
+  return out;
+}
+
+/** 建筑是否已解锁。def.tech 可能是凡人侧 id，也可能是仙道侧 id。 */
+function isBuildingUnlocked(state, def) {
+  if (!def.tech) return true;
+  if (IMMORTAL_TECH_MAP[def.tech]) return isImmortalTechResearched(state, def.tech);
+  return isResearched(state, def.tech);
+}
+
+/** 可研习（前置满足且买得起）的凡人科技数量。 */
 function researchableCount(state) {
   let n = 0;
   for (const id of Object.keys(TECH_MAP)) {
     const tech = TECH_MAP[id];
     if (techStatus(state, tech) === 'ready') n += 1;
   }
+  return n;
+}
+
+/** 可研习的仙道科技数量。 */
+function researchableImmortalCount(state) {
+  let n = 0;
+  for (const id of Object.keys(IMMORTAL_TECH_MAP)) {
+    if (immortalTechStatus(state, IMMORTAL_TECH_MAP[id]) === 'ready') n += 1;
+  }
+  return n;
+}
+
+/* ────────────────────────── 城中作坊（仙凡经济的城市一侧） ────────────────────────── */
+
+/** 全部作坊的**用工需求**（不受人口限制的名义需求）。 */
+const CITY_WORKSHOP_IDS = ['herbhouse', 'minestop', 'papermill', 'immortalmarket'];
+
+/** 名义用工需求：座数 × 每座用工。这是「想派多少人」，不是「派得出多少人」。 */
+function cityWorkshopDemand(state) {
+  const b = state.buildings || {};
+  let demand = 0;
+  for (const k of CITY_WORKSHOP_IDS) demand += (b[k] || 0) * CITY_WORKSHOP_WORKERS;
+  return demand;
+}
+
+/**
+ * 全市作坊实际派上的用工人数 = min(人口, 名义需求)。
+ *
+ * ⚠ **人是共用的一份**：同一批凡人不会同时在药圃和矿寮做工。
+ *   这个数是「有多少人在做工」，所以它决定了做工的死亡率
+ *   （见 derive 里的 laborDeath）——人是被抽走的，抽走就有折损。
+ */
+function cityWorkshopWorkers(state) {
+  return Math.min(Math.max(0, state.population || 0), cityWorkshopDemand(state));
+}
+
+/**
+ * 某一类作坊实际分到的用工人数。
+ *
+ *   人够（人口 ≥ 全部需求）：每座满员。
+ *   人不够：按需求的格局分摊 —— 各让一步，谁也别想独占人手。
+ *
+ * 这就是「抽走劳力 → 别的产出下降」那条张力的实现：
+ * 作坊铺得越多，每一座分到的人就越少，产量按比例摊薄，而人口也就那么多。
+ */
+function cityWorkersOf(state, buildingId) {
+  const b = state.buildings || {};
+  const n = b[buildingId] || 0;
+  if (n <= 0) return 0;
+  const pop = Math.max(0, state.population || 0);
+  const demand = cityWorkshopDemand(state);
+  if (demand <= 0) return 0;
+  const mine = n * CITY_WORKSHOP_WORKERS;
+  if (pop >= demand) return mine;                 // 人够，每座满员
+  return pop * (mine / demand);                   // 人不够，按需求分摊
+}
+
+/**
+ * 某一类作坊的每秒产出当量 = 实际用工 × 单产。
+ *
+ * ⚠ 「座数」通过 cityWorkersOf 进入公式，所以**作坊多而人少会摊薄**。
+ */
+function cityWorkshopRate(state, buildingId, perSec) {
+  return cityWorkersOf(state, buildingId) * perSec;
+}
+
+/**
+ * 坊市用工：这类建筑不产原料，只把银钱做硬。
+ * 口径与作坊一致（同样按人口分摊），只是它有自己的一份用工上限。
+ */
+function cityMarketWorkers(state) {
+  const b = state.buildings || {};
+  const n = b.immortalmarket || 0;
+  if (n <= 0) return 0;
+  const pop = Math.max(0, state.population || 0);
+  const demand = CITY_WORKSHOP_IDS.reduce(
+    (acc, k) => acc + (b[k] || 0) * (k === 'immortalmarket' ? CITY_MARKET_WORKERS_MAX : CITY_WORKSHOP_WORKERS),
+    0,
+  );
+  if (demand <= 0) return 0;
+  const mine = n * CITY_MARKET_WORKERS_MAX;
+  return pop >= demand ? mine : pop * (mine / demand);
+}
+
+/**
+ * 云深谷坊市的**第 n 次**兑换报价（n 从 0 起）。
+ *
+ * 银两按 COST_GROWTH 递增、灵石按 YIELD_GROWTH 递增，两者同速，
+ * 所以「兑率」本身不变，变的是**这一笔的规模**——想换更多就得先攒更多。
+ * tradeStoneMult 直接乘在灵石那一侧，这就是城市科技对兑率的杠杆。
+ */
+function marketExchangeQuote(state, n = marketExchangeCount(state)) {
+  const i = Math.max(0, Math.floor(Number(n) || 0));
+  const fx = techEffects(state);
+  const costGrowth = Math.pow(MARKET_EXCHANGE_COST_GROWTH, i);
+  const yieldGrowth = Math.pow(MARKET_EXCHANGE_YIELD_GROWTH, i);
+  return {
+    index: i,
+    silver: Math.round(MARKET_EXCHANGE_BASE_SILVER * costGrowth),
+    stones: +(MARKET_EXCHANGE_BASE_STONES * yieldGrowth * (1 + fx.tradeStoneMult)).toFixed(4),
+  };
+}
+
+/** 已兑换次数（老存档没有这个字段，所以 || 0）。 */
+function marketExchangeCount(state) {
+  return Math.max(0, Math.floor(Number(state.exchangeCount) || 0));
+}
+
+/**
+ * 坊市一共还能吃下几笔银钱。
+ *
+ * 基础量 MARKET_EXCHANGE_MAX，再按「撑胃口的科技」增加：
+ *   · tradeStoneMult > 0 的科技（坊市扩建、仙凡互市、界墟、结庐）
+ *   · 每项 +MARKET_EXCHANGE_BONUS_PER_TECH 笔
+ * 这样「把城做大」会实打实地延长这条动脉，而不是只把单价压低。
+ */
+function marketExchangeLimit(state) {
+  let n = MARKET_EXCHANGE_MAX;
+  const count = (list, map) => {
+    for (const id of list || []) {
+      const t = map[id];
+      if (t && t.effect && typeof t.effect.tradeStoneMult === 'number' && t.effect.tradeStoneMult > 0) n += MARKET_EXCHANGE_BONUS_PER_TECH;
+    }
+  };
+  count(state.techs, TECH_MAP);
+  count(state.immortalTechs, IMMORTAL_TECH_MAP);
   return n;
 }
 
@@ -3797,19 +4824,45 @@ function derive(state) {
     * schoolBirthMult(state);
 
   /**
-   * 死亡率 = 基础 + 拥挤 + 对外扩张的代价。
-   * 演武台与商队驿站各按座数计——走出去的人回不来，人口基就薄一层。
+   * 死亡率 = 基础 + 拥挤 + 对外扩张的代价 + **城市做工的代价**。
+   * 演武台与商队驿站各按座数计——走出去的人回不来，人口基就薄一层；
+   * 药圃/矿寮/纸坊/坊市则是「留在城里做工的人也会折损」，
+   * 这是仙凡咬合里**凡人对仙道的付出**那一半。
    * 最后再乘一层「流派倍率」——血煞魔功养功要拿人填。
    */
   const expandDeath = (b.arena || 0) * ARENA_DEATH + (b.caravan || 0) * CARAVAN_DEATH;
   const crowdDeath = CROWD.k * crowdOver * crowdOver;
-  const deathRate = (BASE.deathRate + crowdDeath + expandDeath + fx.deathFlat) * schoolDeathMult(state);
+  const laborWorkers = cityWorkshopWorkers(state);
+  const laborDeath = laborWorkers * CITY_LABOR_DEATH;
+  const deathRate = (BASE.deathRate + crowdDeath + expandDeath + laborDeath + fx.deathFlat) * schoolDeathMult(state);
   const netRate = birthRate - deathRate;
 
   // ── 银两 ──────────────────────────────────────────────────
-  const silverCap = BASE.silverCap + (b.bank || 0) * BANK_CAPACITY;
+  /**
+   * 库房：钱庄之外的第二条「抬高银两上限」的路。
+   *
+   * 上限 = (基础 + 钱庄×容量) × (1 + 库房)。
+   * 乘数放在括号外：库房是「把同一批仓库管得更好」，所以它对
+   * 「已经堆了多少间钱庄」是放大的 —— 多盖与研习两条路互相加强。
+   *
+   * ⚠ 上限不只是个显示数字：云深谷坊市的第 n 笔报价一旦超过上限，
+   *   那一笔就**永远换不了**。所以 vaultMult 是仙道进度的一部分。
+   */
+  const vaultMult = Math.max(0, fx.vaultMult || 0);
+  const silverCap = Math.round(
+    (BASE.silverCap + (b.bank || 0) * BANK_CAPACITY) * (1 + vaultMult),
+  );
   const cultivateFx = cultivationBonuses(state);
-  const silverPerSec = state.population * BASE.silverPerPop * (1 + fx.incomeMult) * (1 + cultivateFx.laborMult);
+  // 坊市用工：人多的一方在兑率上占便宜 —— 城里做工的凡人直接加银两产出
+  const marketWorkerBonus = cityMarketWorkers(state) * CITY_MARKET_YIELD_PER_WORKER;
+  const silverPerSec = state.population * BASE.silverPerPop
+    * (1 + fx.incomeMult + marketWorkerBonus) * (1 + cultivateFx.laborMult);
+
+  // ── 城中作坊：把人口换成仙道生产线的原料 ───────────────────
+  const cityMaterialMult = 1 + fx.cityMaterialMult;
+  const cityHerbPerSec = cityWorkshopRate(state, 'herbhouse', CITY_HERB_PER_SEC) * cityMaterialMult;
+  const cityOrePerSec = cityWorkshopRate(state, 'minestop', CITY_ORE_PER_SEC) * cityMaterialMult;
+  const cityRunePerSec = cityWorkshopRate(state, 'papermill', CITY_RUNE_PER_SEC) * cityMaterialMult;
 
   // ── 造价 ──────────────────────────────────────────────────
   /** 全局通胀：房产愈多，地产以外的营造愈贵。 */
@@ -3847,6 +4900,9 @@ function derive(state) {
     secretCount,
     secretGoal,
     marketUnlocked,
+    marketExchangeCount: marketExchangeCount(state),
+    marketExchangeLimit: marketExchangeLimit(state),
+    marketExchange: marketExchangeQuote(state),
     stones,
     qi,
     cultivateFx,
@@ -3865,11 +4921,22 @@ function derive(state) {
     deathRate,
     crowdDeath,
     expandDeath,
+    laborDeath,
+    laborWorkers,
     netRate,
     netPerSec: state.population * netRate,
 
     silverCap,
     silverPerSec,
+    marketWorkerBonus,
+
+    cityMaterialMult,
+    cityHerbPerSec,
+    cityOrePerSec,
+    cityRunePerSec,
+
+    immortalTechs: (state.immortalTechs || []).slice(),
+    immortalCapBonus: fx.immortalCapFlat,
 
     inflation,
     estateDiscount,
@@ -4025,9 +5092,12 @@ function maxSellable(state, d, def) {
 /**
  * 修仙侧的物品。
  *
- * 目前只有一枚「祛障丹」——它是凡人篇的最后一道门：
- * 用灵石买丹，服下后有概率诞生炼气人口，世家自此踏入炼气篇。
- * 后续功法、灵根、法器之类都会长在这个文件旁边。
+ * 「祛障丹」是凡人篇的最后一道门：用灵石买丹，服下后有概率诞生炼气人口，
+ * 世家自此踏入炼气篇。
+ *
+ * ⚠ 目前只有祛障丹是**坊市可买**的丹（走 planPill/commitPill）。
+ *   其余丹药都在 data/alchemy.js 的丹方表里，要自己采药、起炉、炼出来。
+ *   两者的存量出口统一在 systems/alchemy.js 的 pillCount/addPills。
  */
 
 const PILLS = [
@@ -4036,7 +5106,7 @@ const PILLS = [
     name: '祛障丹',
     icon: '丹',
     desc: '服之可祛凡俗之障。成与不成，看各人的命数。',
-    /** 需要研习的科技。 */
+    /** 需要研习的科技（凡人侧）。 */
     requiresTech: 'quzhang',
     /** 价格（灵石）。 */
     stoneCost: PILL_STONE_COST,
@@ -4878,10 +5948,12 @@ function caveSurvival(state, person, cave) {
   const meta = metaSurvivalBonus(state);
   // 道心（低则天谴）与剑修流派（好斗，进洞天反而吃亏）
   const moral = moralityCaveBonus(state) + schoolFx(state, 'caveBonus');
+  // 仙道科技「洞府」：在山里凿出退路，全族进洞天都多一分生还
+  const tech = techEffects(state).exploreSurviveBonus;
   // 层差按全局 realmIndex 算。炼气期的 index 与「层数」同值，所以既有的配平不变。
   const levelGap = Math.max(0, (cave?.realm || 1) - (person?.realmIndex || 1));
   const base = .82 * Math.exp(-.78 * levelGap) * (person?.talent || 1);
-  return Math.max(.015, Math.min(.98, base + mb.survive + art.survive + rune + meta + moral));
+  return Math.max(.015, Math.min(.98, base + mb.survive + art.survive + rune + meta + moral + tech));
 }
 
 /** 该道途当前是否已被某个位置占用（同途不可两立）。 */function manualDaoTaken(state, dao, exceptId) {
@@ -5368,6 +6440,19 @@ const CULTIVATOR_GIVEN = ['清衡','云岚','知微','怀瑾','望舒','玄澈',
  */
 function cultivateLevelCap(person) { return rootLevelCap(person); }
 
+/**
+ * 名册容量。
+ *
+ * 基础 CULTIVATOR_LIMIT，仙道科技再加 immortalCapFlat。
+ * 之所以要有这层：名册容量是**玩家唯一能靠科技推高的「人数上限」**，
+ * 而修士数又同时决定领地镇守、材料产出与全局战力，
+ * 所以「开脉」「化神大道」这类科技给的是**产能**，不是数值贴纸。
+ */
+function cultivatorLimit(state) {
+  const fx = state && state.immortalTechs ? techEffects(state) : null;
+  return CULTIVATOR_LIMIT + Math.max(0, Math.round(fx ? fx.immortalCapFlat : 0));
+}
+
 /** 从 index 升到 index+1 需要多少修为（转发 data/realms.js 的曲线）。 */
 function cultivateXpNeeded(realmIndex) { return realmXpNeeded(realmIndex); }
 
@@ -5376,6 +6461,15 @@ function cultivateBasePower(realmIndex) { return realmPower(realmIndex); }
 function averageTalent(state) { const ps=state.cultivation?.cultivators||[]; return ps.length ? ps.reduce((a,p)=>a+Math.max(1,Number(p.talent)||1),0)/ps.length : 1; }
 function repairCultivation(state) {
   const c=state.cultivation; if(!c)return;
+  // ── 仙道科技与坊市兑换次数：老存档没有这两个字段 ──
+  // 1.0 的存档读进来就是「仙道篇未开启」，而不是崩在 undefined.includes 上。
+  // 同时把已经不存在于表中的 id 清掉 —— 改了数据表之后旧存档仍然能 load。
+  // ⚠ 这两个字段挂在**顶层 state**上，与 techs 并列，不在 cultivation 里：
+  //   凡人与仙道是同一层级的「已研习清单」，放一起才好对照着看。
+  if(!Array.isArray(state.immortalTechs)) state.immortalTechs=[];
+  state.immortalTechs=state.immortalTechs.filter(id=>IMMORTAL_TECH_MAP[id]);
+  const ec=Number(state.exchangeCount);
+  state.exchangeCount=Number.isFinite(ec)&&ec>0?Math.floor(ec):0;
   // ── 境界：把旧的 person.realm（1..9 的炼气层数）迁移到全局 realmIndex ──
   // 炼气一层~九层在新体系里正好也是 index 1..9，所以旧值可以直接用。
   // 保底：负数、NaN、超界的都夹回合法范围。
@@ -5426,7 +6520,7 @@ function cultivateName(id) {
 function addCultivator(state, origin='awakened', now=Date.now(), silent=false, parentage='', rng=Math.random) {
   const c=state.cultivation;
   if (!Array.isArray(c.cultivators)) c.cultivators=[];
-  if (c.cultivators.length >= CULTIVATOR_LIMIT || (parentage!=='cultivator-cultivator' && state.population < 1)) return null;
+  if (c.cultivators.length >= cultivatorLimit(state) || (parentage!=='cultivator-cultivator' && state.population < 1)) return null;
   const id = Math.max(1,Math.floor(c.nextId || 1));
   const innate=origin==='innate';
   const person={
@@ -5456,6 +6550,18 @@ function addCultivator(state, origin='awakened', now=Date.now(), silent=false, p
   }
   return person;
 }
+/**
+ * 灵气池给**天生灵根诞生率**的加成。
+ *
+ * 灵池是「以秘闻换来的修行世界入口」：池子越深，灵气越浓，
+ * 灵根落在新生儿身上的机会就越大。这是「仙养凡」最直接的一条 ——
+ * 玩家在山那边花的灵石，会变成城里婴儿身上的一副好根骨。
+ */
+function innatePoolBonus(state) {
+  const pools = Math.max(0, Number(state.cultivation?.pool) || 0);
+  return Math.min(INNATE_POOL_BONUS_MAX, pools * INNATE_POOL_BONUS_PER);
+}
+
 function cultivationBonuses(state) {
   const people=state.cultivation?.cultivators || [];
   // 家族层面的加成（不过滤灵根），用于界面上展示「这套功法一共值多少」
@@ -5463,13 +6569,15 @@ function cultivationBonuses(state) {
   // 法器加成是全族共享的（装备在家族名下，不是某个人身上）。
   // 耐久为 0 的法器不计入 —— 这是炼器的负面对价。
   const art=artifactBonus(state);
+  const fx = techEffects(state);
   let corePower=0, guardBonus=0, workUnits=0, exploreUnits=0, retreat=0, innate=0;
   for(const p of people){
     // 每个人吃自己灵根能修的那一份；天灵根对本系功法还有专精
     const mb=manualBonusFor(state,p);
     // 法器与功法加成相加（都是「百分比加成」，相加比相乘更好解释给玩家）；
-    // 主修流派的战力加成也加在这里 —— 剑修就是靠这一项吃饭的
-    const powerMult=1+mb.power+art.power+schoolFx(state,'power');
+    // 主修流派的战力加成也加在这里 —— 剑修就是靠这一项吃饭的。
+    // 仙道科技「御剑术」给的是家族层面的 familyPowerMult，直接加在这里。
+    const powerMult=1+mb.power+art.power+schoolFx(state,'power')+fx.familyPowerMult;
     // 劳作与探索按「层数」计，所以这里用大档内的层号而不是全局序号，
     // 否则筑基的 10 层会直接把 laborMult 顶到上限。
     const idx=Math.max(0,Math.min(cultivateLevelCap(p),p.realmIndex||0));
@@ -5486,19 +6594,33 @@ function cultivationBonuses(state) {
     manual:familyManual, artifact:art,
     laborMult:Math.min(2,workUnits*.08),
     exploreTradeBonus:Math.min(.50,exploreUnits*.02),
-    explorePerSec:(exploreUnits/9600)};
+    // 仙道科技「集贤馆」这类给的是**常驻**的自主寻秘，与修士在岗无关
+    explorePerSec:(exploreUnits/9600)+Math.max(0,fx.explorePerSecFlat),
+    // 仙道科技给的常驻修炼倍率。界面拿它显示「全族修炼 +N%」，
+    // 与 progressCultivators 里真正乘上去的那一项是同一个来源。
+    techTrainMult:Math.max(0.1, 1 + (fx.trainMult || 0))};
 }
 function progressCultivators(state,dt,now=Date.now(),rng=Math.random,births=0) {
   const c=state.cultivation;
   if(!c || !(dt>0)) return;
   const people=c.cultivators||[];
+  const LIMIT = cultivatorLimit(state);
+  // 仙道科技的加成在整个循环里取一次即可（不是每人一份）
+  const fxTech = techEffects(state);
   // 天生灵根来自本次自然出生的凡人；已有修士不参与凡人死亡率
-  if(births>0 && people.length>0 && people.length<CULTIVATOR_LIMIT && state.population>=1) {
-    // 泊松事件近似。小步模拟时避免逐一枚举上千名婴儿
-    const eventChance=1-Math.exp(-births*INNATE_CHANCE_PER_BIRTH*Math.min(5,people.length/10));
+  if(births>0 && people.length>0 && people.length<LIMIT && state.population>=1) {
+    // 泊松事件近似。小步模拟时避免逐一枚举上千名婴儿。
+    //
+    // innateMult 是**城市能对仙道施加的最强杠杆**：
+    //   仙道科技「引灵」「灵枢」提高它，灵气池（灵池）也提高它。
+    // 所以「城越大 → 生得越多 → 天生灵根越多」这条正反馈是有实体的，
+    // 而不是一句宣传语。见 docs/15-科技线.md 的反馈循环图。
+    const innateMult = Math.max(0, 1 + (fxTech.innateBirthMult || 0) + innatePoolBonus(state));
+    const perBirth = INNATE_CHANCE_PER_BIRTH * innateMult;
+    const eventChance=1-Math.exp(-births*perBirth*Math.min(5,people.length/10));
     if(rng()<eventChance) addCultivator(state,'innate',now,false,'cultivator-mortal',rng);
   }
-  if(people.length>=2 && c.cultivators.length<CULTIVATOR_LIMIT){
+  if(people.length>=2 && c.cultivators.length<LIMIT){
     const pairChance=1-Math.exp(-Math.floor(people.length/2)*dt/3000000);
     if(rng()<pairChance)addCultivator(state,'innate',now,false,'cultivator-cultivator',rng);
   }
@@ -5521,8 +6643,12 @@ function progressCultivators(state,dt,now=Date.now(),rng=Math.random,births=0) {
     const metaMult = metaTrainMult(state);
     // 主修流派的修炼加成/减益 —— 合欢快、剑修慢
     const schoolMult = 1 + schoolFx(state, 'training');
+    // 仙道科技「聚灵阵」「元婴大道」给的全族修炼加成。
+    // 它是**全族常驻**的（与聚灵符那种限时符箓不同），所以乘在这里。
+    // 下限夹到 0.1，防止以后加「以寿元换修为」那类节点时把速度压成负数。
+    const techTrainMult = Math.max(0.1, 1 + (fxTech.trainMult || 0));
     // 灵根是第四个乘数：天灵根 ×2.0，五灵根 ×0.7
-    person.xp += REALM_XP_RATE*dt*manualMult*runeMult*metaMult*schoolMult*rootSpeedMult(person)*(Number(person.talent)||1)*(person.job==='sect'?3.5:1);
+    person.xp += REALM_XP_RATE*dt*manualMult*runeMult*metaMult*schoolMult*techTrainMult*rootSpeedMult(person)*(Number(person.talent)||1)*(person.job==='sect'?3.5:1);
 
     // 同一大档内自动晋升；带瓶颈的那一层停住（交给 systems/breakthrough.js）
     while(person.realmIndex<cap){
@@ -5620,10 +6746,13 @@ function breakthroughPlan(state, personId) {
     return { ok: false, reason: `冲关需 ${gate.clues} 条秘闻线索（现有 ${clues}）` };
   }
 
-  // 冲关符挂着的「下一次」加成（百分点）；金手指「戒中老者」是常驻加成
+  // 冲关符挂着的「下一次」加成（百分点）；金手指「戒中老者」是常驻加成；
+  // 仙道科技（筑基之道/金丹大道/元婴大道/化神大道）给的是**永久**加成，
+  // 所以越到后面，「备足材料再冲」这件事越有意义 —— 而不再是纯赌命。
   const rune = runePending(state, 'break');
   const meta = metaBreakBonus(state);
-  const rate = Math.min(0.99, realmBreakRate(person.realmIndex, person.talent, person.breakFailures, rootBreakBonus(person)) + rune + meta);
+  const tech = techEffects(state).breakBonusFlat;
+  const rate = Math.min(0.99, realmBreakRate(person.realmIndex, person.talent, person.breakFailures, rootBreakBonus(person)) + rune + meta + tech);
   return {
     ok: true,
     kind: 'breakthrough',
@@ -5638,6 +6767,7 @@ function breakthroughPlan(state, personId) {
     rate,
     runeBonus: rune,
     metaBonus: meta,
+    techBonus: tech,
     /** 失败时回退的修为点数。 */
     loss: Math.floor(st.need * gate.failLoss),
     currency: 'stones',
@@ -5809,8 +6939,19 @@ const MAP_CALM_PER_SEC = 1 / 300;
 
 function mapNode(id) { return MAP_NODE_MAP[id] || null; }
 
-/** 该节点需要的镇守战力。 */
-function mapHoldPower(node) { return Math.round((node?.power || 0) * MAP_HOLD_RATIO); }
+/**
+ * ⚠ 这里原来有一个 mapHoldPower()。
+ *   加了「镇岳 / 结庐」这类下调镇守门槛的仙道科技之后，镇守门槛有了
+ *   两个版本（基础值 / 含修正值），两个都必须住在 systems/exploration.js
+ *   里才不会走偏 —— 所以它搬走了。
+ *
+ *   搬走还有一个更硬的理由：同名函数分居两个区块时，
+ *   `new Function` 拼装（仿真器走的路径）能以「后者覆盖前者」跑过去，
+ *   但浏览器里的 ES module 会直接抛
+ *   「Identifier 'mapHoldPower' has already been declared」，
+ *   于是整段脚本不执行、界面变成空壳，而冒烟测试**照样全绿**。
+ *   这个坑已经踩过一次，所以 smoke.mjs 现在有一条顶层重名检查。
+ */
 
 /**
  * 相邻节点：上下左右（不越界）。
@@ -5915,6 +7056,27 @@ const ALCHEMY_RECIPES = [
     materials: { flame: 4, iron: 2, grass: 2 }, baseRate: 0.20, yield: 1, months: 9,
     effect: '元婴圆满冲关化神时，提高成功率。',
     desc: '传说中的丹药。整个凡尘地界，能炼出它的丹炉不超过三座。',
+  },
+  {
+    // 与「金丹」同阶的低成率版本：金丹是冲关主药，凝丹丸是平日的养气之物。
+    // 归到 tier 3（同阶）而不是更高，是为了让「越高级的丹方成功率越低」
+    // 这条曲线仍然单调 —— 加丹方不该打破既有的配平关系。
+    id: 'ningdan', name: '凝丹丸', tier: 3, furnace: 3,
+    requiresImmortalTech: 'jindan',
+    materials: { grass: 6, iron: 3, flame: 1 }, baseRate: 0.40, yield: 2, months: 5,
+    effect: '金丹圆满冲关元婴时亦可用；平日服之养气。',
+    desc: '玄铁芝的坚、赤焰花的烈，再以青灵草收束。'
+      + '「金丹大道」那篇册子里写定的火候，炼的就是它。',
+  },
+  {
+    // 化神之后才炼得出的丹：化神关的门槛药，同时是「城里的药圃」最终的去处。
+    // 归 tier 4、成功率低于化神丹，保证同阶单调。
+    id: 'jiuzhuandan', name: '九转丹', tier: 4, furnace: 5,
+    requiresImmortalTech: 'jiuzhuan',
+    materials: { grass: 12, flame: 3, iron: 3 }, baseRate: 0.18, yield: 2, months: 12,
+    effect: '化神圆满冲关时的最后一道依凭（本版最高境界尚在化神，故为储备）。',
+    desc: '九转九换主药，最后一转用的是自家药圃里最寻常的一味青灵草。'
+      + '「九转丹房」那篇说：使城里的药成了药引，这一炉才算炼成。',
   },
 ];
 const ALCHEMY_RECIPE_MAP = Object.fromEntries(ALCHEMY_RECIPES.map((r) => [r.id, r]));
@@ -6995,6 +8157,48 @@ function cultivatorPower(state, person) {
   return cultivateBasePower(idx) * (1 + manualBonusFor(state, person).power);
 }
 
+/**
+ * 镇守某节点所需的**基础**战力（不含任何科技修正）。
+ *
+ * ⚠ 这个函数原来住在 data/map.js 里。搬到本文件是因为它下游多了一个
+ *   带修正的版本（mapHoldPowerFor），两者必须放在一起才不会走偏。
+ *   —— 顺带修掉一个真 bug：两处同名声明在 `new Function` 下能跑
+ *   （后者覆盖前者），但在真正的 ES module 里直接抛
+ *   「Identifier 'mapHoldPower' has already been declared」，
+ *   整段脚本不执行、界面成了空壳。冒烟测试当时查不出来，
+ *   所以现在 smoke.mjs 里加了一条「顶层声明不得重名」的断言。
+ */
+function mapHoldPower(node) {
+  return Math.round((node?.power || 0) * MAP_HOLD_RATIO);
+}
+
+/**
+ * 镇守所需战力的**实际**门槛（已计入仙道科技与城中凡人的供养）。
+ *
+ * territoryHoldMult 是负的减负系数（「镇岳」「结庐」给），
+ * 所以科技越靠后，守同一块地要的人越强得少 —— 这是「治下有人」的兑现：
+ * 凡人肯替你看着这片山，修士就不必以力压人。
+ */
+function mapHoldPowerFor(state, node) {
+  const fx = techEffects(state);
+  const mult = Math.max(0.1, 1 + (fx.territoryHoldMult || 0));
+  return Math.max(1, Math.round(mapHoldPower(node) * mult));
+}
+
+/** 可同时镇守的领地数（ garrisonCapFlat 抬高它）。 */
+function mapGarrisonLimit(state) {
+  const fx = techEffects(state);
+  return Math.max(1, 3 + Math.max(0, Math.round(fx.garrisonCapFlat || 0)));
+}
+
+/** 当前是否已达镇守数上限。 */
+function mapGarrisonFull(state, nodeId) {
+  const w = worldOf(state);
+  const assigned = Object.keys(w.garrison).filter((id) => w.garrison[id] !== undefined).length;
+  if (w.garrison[nodeId] !== undefined) return false;   // 已在守这里，只是换人
+  return assigned >= mapGarrisonLimit(state);
+}
+
 /** 某节点当前的镇守战力。 */
 function mapHoldStrength(state, nodeId) {
   const w = worldOf(state);
@@ -7009,19 +8213,35 @@ function mapHoldStrength(state, nodeId) {
 function mapIsPacified(state, nodeId) {
   const node = mapNode(nodeId);
   if (!node || node.kind !== 'foe') return false;
-  return mapHoldStrength(state, nodeId) >= mapHoldPower(node);
+  return mapHoldStrength(state, nodeId) >= mapHoldPowerFor(state, node);
 }
 
-/** 所有已占领节点的产出合计（灵石/秒）。镇守不足的不产出。 */
+/**
+ * 所有已占领节点的产出合计（灵石/秒）。镇守不足的不产出。
+ * 已含仙道科技的 territoryYieldMult —— 见 mapYieldOf。
+ */
 function mapYieldPerSec(state) {
   const w = worldOf(state);
   const tax = moralityTaxMult(state);
   let total = 0;
   for (const id of w.held) {
     if (!mapIsPacified(state, id)) continue;
-    total += (mapNode(id)?.yield || 0) * tax;
+    total += mapYieldOf(state, id) * tax;
   }
   return total;
+}
+
+/**
+ * 单块领地每秒的赋税灵石（已含 territoryYieldMult）。
+ *
+ * 「周天搬运」「结庐」这类科技加的正是这一项 ——
+ * 所以打下来的地会**随仙道进度一起变肥**，而不是越到后面越不值钱。
+ */
+function mapYieldOf(state, nodeId) {
+  const node = mapNode(nodeId);
+  if (!node) return 0;
+  const fx = techEffects(state);
+  return (node.yield || 0) * (1 + (fx.territoryYieldMult || 0));
 }
 
 /* ── 镇守指派 ── */
@@ -7033,6 +8253,10 @@ function mapGarrisonCandidates(state) {
 
 /**
  * 派人镇守某节点。会自动把他从原来的位置调过来（原先镇守别处则解除）。
+ *
+ * 两处受仙道科技影响，都写在 reason 里，保证「界面上写的」与「实际算的」一致：
+ *   · 所需战力（mapHoldPowerFor）——「镇岳」「结庐」减负
+ *   · 可同时镇守的处数（mapGarrisonLimit）——「镇岳」加位
  */
 function mapAssignGarrison(state, nodeId, personId) {
   const node = mapNode(nodeId);
@@ -7042,13 +8266,16 @@ function mapAssignGarrison(state, nodeId, personId) {
   const p = findCultivator(state, personId);
   if (!p) return { ok: false, reason: '修士不存在' };
   if (p.job === 'sect') return { ok: false, reason: '宗门修士不可调回' };
+  if (mapGarrisonFull(state, nodeId)) {
+    return { ok: false, reason: `至多同时镇守 ${mapGarrisonLimit(state)} 处（仙道「镇岳」可加位）` };
+  }
   // 一个人只能镇守一处
   for (const id of Object.keys(w.garrison)) {
     if (w.garrison[id] === p.id) delete w.garrison[id];
   }
   w.garrison[nodeId] = p.id;
   p.job = 'garrison';
-  return { ok: true, reason: `${p.name}前往${node.name}镇守（战力 ${Math.round(cultivatorPower(state, p))} / 需 ${mapHoldPower(node)}）` };
+  return { ok: true, reason: `${p.name}前往${node.name}镇守（战力 ${Math.round(cultivatorPower(state, p))} / 需 ${mapHoldPowerFor(state, node)}）` };
 }
 
 /** 撤掉某节点的镇守。 */
@@ -7071,15 +8298,21 @@ function mapClearGarrison(state, nodeId) {
 function advanceTerritories(state, dt, now = Date.now()) {
   const w = worldOf(state);
   if (!w.held.length || !(dt > 0)) return;
+  const fx = techEffects(state);
+  // 领地整体产出倍率：仙道科技「周天搬运」「结庐」等给。
+  // 赋税与草药/矿料/符料**同倍率**，因为它们是同一件事的四种形态：
+  // 这块地现在归本家管，它出什么就都厚一层。
+  const yieldMult = 1 + (fx.territoryYieldMult || 0);
   for (const id of w.held.slice()) {
     const node = mapNode(id);
     if (!node) continue;
     if (mapIsPacified(state, id)) {
       // 金手指：掌天瓶翻材料、气运加身砍灵石；再乘一层道心的民心倍率
       // —— 魔道能打，但治下的人不肯交粮
-      state.spiritStones = (state.spiritStones || 0) + (node.yield || 0) * dt * metaStoneMult(state) * moralityTaxMult(state);
+      state.spiritStones = (state.spiritStones || 0)
+        + (node.yield || 0) * yieldMult * dt * metaStoneMult(state) * moralityTaxMult(state);
       // 药材、矿料、符文跟赋税同规则：只有当有效镇守时才产出
-      const matMult = metaMaterialMult(state);
+      const matMult = metaMaterialMult(state) * yieldMult;
       if (node.herb) addHerbs(state, node.herb, (node.herbYield || 0) * dt * matMult);
       if (node.ore) addOres(state, node.ore, (node.oreYield || 0) * dt * matMult);
       if (node.rune) addRuneMats(state, node.rune, (node.runeYield || 0) * dt * matMult);
@@ -7149,7 +8382,10 @@ function mapPlan(state, nodeId) {
     name: node.name, tier: node.tier,
     enemyPower: node.power, rate, runeBonus: rune,
     power, stones: node.stones,
-    holdPower: mapHoldPower(node), yield: node.yield,
+    holdPower: mapHoldPowerFor(state, node),
+    holdPowerBase: mapHoldPower(node),
+    garrisonLimit: mapGarrisonLimit(state),
+    yield: mapYieldOf(state, node),
     cost: 0, currency: 'none',
   };
 }
@@ -7349,7 +8585,9 @@ function recipeRate(state, recipeId) {
     + proficiency(state, recipeId) * ALCHEMY_PROFICIENCY_STEP
     + alchemyWoodBonus(state)
     // 丹修流派：专精这一行，代价是战力
-    + schoolFx(state, 'alchemyRate');
+    + schoolFx(state, 'alchemyRate')
+    // 仙道科技「金丹大道」：把火候写定，全族少炸几炉
+    + techEffects(state).alchemyRateBonus;
   return Math.max(ALCHEMY_RATE_MIN, Math.min(ALCHEMY_RATE_MAX, rate));
 }
 
@@ -7367,6 +8605,15 @@ function recipeYield(state, recipeId) {
 function recipePlan(state, recipeId) {
   const r = ALCHEMY_RECIPE_MAP[recipeId];
   if (!r) return { ok: false, reason: '并无此方' };
+  // 丹方也能被仙道科技 gate 住（例：凝丹丸要「金丹大道」）。
+  // 与 techs.js 的 requiresImmortal 是同一套约定，只是长在丹方上。
+  if (r.requiresImmortalTech && !isImmortalTechResearched(state, r.requiresImmortalTech)) {
+    return {
+      ok: false,
+      reason: `此方尚未参透（须仙道「${IMMORTAL_TECH_MAP[r.requiresImmortalTech]?.name || r.requiresImmortalTech}」）`,
+      recipe: r,
+    };
+  }
   const a = alchemyOf(state);
   if (furnaceAt(a.furnace).level < r.furnace) {
     return { ok: false, reason: `需 ${ALCHEMY_FURNACE[r.furnace - 1].name}（丹炉 ${r.furnace} 级）`, recipe: r };
@@ -7894,11 +9141,23 @@ function runeProficiency(state, id) {
   return Math.max(0, Math.min(RUNE_PROFICIENCY_MAX, Math.floor(Number(runesOf(state).prof[id]) || 0)));
 }
 
-/** 成功率。符台等级同样夹到至少该符的要求。 */
+/**
+ * 成功率。符台等级同样夹到至少该符的要求。
+ *
+ * 「聚灵阵」这类仙道科技会让符台免费升 runeBenchFree 阶 ——
+ * 那是**等效等级**，所以加在这里而不是去改 runesOf().bench：
+ * 玩家自己买的符台等级不能被科技覆盖掉，否则「升符台」就白花了灵石。
+ */
+function runeEffectiveBench(state) {
+  const own = runesOf(state).bench;
+  const free = Math.max(0, Math.round(techEffects(state).runeBenchFree || 0));
+  return Math.max(1, Math.min(RUNE_BENCH_MAX, own + free));
+}
+
 function runeRate(state, id) {
   const item = RUNE_ITEM_MAP[id];
   if (!item) return 0;
-  const lv = Math.max(runesOf(state).bench, item.bench);
+  const lv = Math.max(runeEffectiveBench(state), item.bench);
   const rate = item.baseRate
     + runeBenchAt(lv).rateBonus
     + runeProficiency(state, id) * RUNE_PROFICIENCY_STEP
@@ -7909,7 +9168,7 @@ function runeRate(state, id) {
 function runePlan(state, id) {
   const item = RUNE_ITEM_MAP[id];
   if (!item) return { ok: false, reason: '并无此符' };
-  if (runeBenchAt(runesOf(state).bench).level < item.bench) {
+  if (runeEffectiveBench(state) < item.bench) {
     return { ok: false, reason: `需 ${RUNE_BENCH_LEVELS[item.bench - 1].name}（符台 ${item.bench} 级）`, item };
   }
   const missing = [];
@@ -8479,31 +9738,73 @@ function anyCraftingVisible(state) {
 /* ══════════ src/systems/immortal-economy.js ══════════ */
 
 /* ────────────────────────────────────────────────────────────────
- * 区块：炼气经济：灵池与灵脉矿场结算
+ * 区块：炼气经济：灵池、灵脉矿场与城市作坊的结算
  * 原属 src/data/cultivation.js 第 378–397 行
+ *
+ * 这里同时是**仙凡咬合**的三处结算点：
+ *   1. 灵池   —— 花灵石维持，换来更多天生灵根的孩子（仙养凡）
+ *   2. 灵脉矿场 —— 修士探明矿脉、凡人下去挖，凡人会死（凡养仙，代价在人）
+ *   3. 城市作坊 —— 人口换成药材/矿料/符料（凡养仙，代价是劳力被抽走）
+ * 数值口径全在 core/config.js 的「仙凡经济」一节，本文件不含魔法数字。
  * ──────────────────────────────────────────────────────────────── */
 function advanceImmortalEconomy(state,dt,now,rng){
  const c=state.cultivation; if(!c)return;
  // 领地赋税与民怨（占领的势力节点）
  advanceTerritories(state,dt,now);
+ // 城市作坊：把人口换成仙道生产线的原料。
+ // 放在这里而不是 simulate() 里，是因为它与灵池、矿场共用同一批凡人 ——
+ // 「人只有那么多」这条约束要靠三处一起看才成立。
+ advanceCityWorkshops(state,dt);
+ const fx=techEffects(state);
+ // ── 灵池 ──
+ // 灵池的产出是「觉醒的修士」，同时它拉高天生灵根的诞生率（见 innatePoolBonus）。
  if(c.pool>0 && state.population>=1){
    const cost=c.pool*.00013*dt;
    const operating=Math.min(1,cost>0?state.spiritStones/cost:0);
    state.spiritStones=Math.max(0,state.spiritStones-cost*operating);
-   if(operating>0 && (c.cultivators||[]).length<CULTIVATOR_LIMIT){
+   // 灵池不吃 immortalCapFlat 吗？—— 吃的。名册满了就不再产人，
+   // 所以「开脉」「化神大道」对灵池同样有意义。
+   if(operating>0 && (c.cultivators||[]).length<cultivatorLimit(state)){
      const chance=1-Math.exp(-c.pool*dt*operating/4800);
      if(rng()<chance)addCultivator(state,'awakened',now,false,'',rng);
    }
  }
+ // ── 灵脉矿场：修士探明，凡人开挖 ──
+ // 出石受两级科技加成：
+ //   mineYieldMult   仙道侧（开脉/灵脉感应/周天搬运）
+ //   灵石矿场建筑    凡人侧的采掘队（core/formulas.js 的 SPIRIT_MINE 计数）
+ // 两者必须同时存在才出石 —— 一条矿脉，两班人。
  const mine=c.veins?.find(v=>v.reserve>0);
  if(mine && c.mineLevel>0 && c.mineWorkers>0 && state.population>=c.mineWorkers){
-   const yieldRate=Math.min(mine.reserve,c.mineWorkers*(.000012*mine.grade)*dt);
+   const cityCrew=1+(state.buildings?.spiritmine||0)*SPIRIT_MINE_CITY_BONUS_PER;
+   const yieldRate=Math.min(mine.reserve,c.mineWorkers*STONE_MINE_BASE_RATE*mine.grade*cityCrew*(1+fx.mineYieldMult)*dt);
    mine.reserve=Math.max(0,mine.reserve-yieldRate);
    state.spiritStones+=yieldRate;
-   const deaths=Math.min(state.population,c.mineWorkers*(.0000025+mine.grade*.000001)*dt);
+   // 矿工的命是凡人在填。mineDeathMult 是仙道科技给的减负（引灵/灵枢通气）。
+   const deathMult=Math.max(0,1+fx.mineDeathMult);
+   const deaths=Math.min(state.population,c.mineWorkers*(.0000025+mine.grade*.000001)*deathMult*dt);
    state.population-=deaths; state.stats.deaths+=deaths;
  }
 }
+
+/**
+ * 城中作坊的产出结算。
+ *
+ * 药材/矿料/符料按秒累积成小数，所以这里不做取整；
+ * 真正消耗它们的地方（炼丹/炼器/炼符）会按整数取用 ——
+ * 与「灵石是小数」是同一套口径（STONE_DECIMALS）。
+ *
+ * 用地如此直接的原因：这三样东西在其它地方是**地图领地的专利**，
+ * 城里能自产一点点，就足以让「城越大，仙道上限越高」这句话落地。
+ */
+function advanceCityWorkshops(state,dt){
+  if(!(dt>0))return;
+  const d=derive(state);
+  if(d.cityHerbPerSec>0) addHerbs(state,'grass',d.cityHerbPerSec*dt);
+  if(d.cityOrePerSec>0) addOres(state,'lingmu',d.cityOrePerSec*dt);
+  if(d.cityRunePerSec>0) addRuneMats(state,'paper',d.cityRunePerSec*dt);
+}
+
 /* ══════════ src/systems/immortal-actions.js ══════════ */
 
 /* ────────────────────────────────────────────────────────────────
@@ -8759,6 +10060,79 @@ function research(state, techId, now = Date.now()) {
   return commitResearch(state, techId, now);
 }
 
+/* ────────────────────── 仙道科技：灵石与银两双付 ────────────────────── */
+
+/**
+ * 询价：研习一项仙道科技要什么。不改动状态。
+ *
+ * 与凡人侧的 planResearch 是两个函数而不是一个带分支的函数，
+ * 因为两者的**货币不同**（仙道是灵石 + 银两双付），硬合在一起
+ * 会让「界面写的代价」与「实际扣的代价」很容易走偏。
+ */
+function planImmortalResearch(state, techId) {
+  const tech = IMMORTAL_TECH_MAP[techId];
+  if (!tech) return { ok: false, reason: '并无此术' };
+  if (isImmortalTechResearched(state, techId)) return { ok: false, reason: '此术已研习' };
+  const missing = immortalTechMissing(state, tech);
+  if (missing.length) return { ok: false, reason: missing[0], missing };
+  return {
+    ok: true,
+    kind: 'immortalResearch',
+    id: tech.id,
+    name: tech.name,
+    cost: tech.cost || 0,
+    stones: tech.stones || 0,
+    currency: 'stones',
+    label: `参悟「${tech.name}」`,
+  };
+}
+
+/**
+ * 兑现一次仙道研习。
+ *
+ * 注意**扣两样**：灵石与银两。灵石是主门槛，银两是「城里拿得出这笔钱」
+ * 的资格线 —— 这条设计本身就是仙凡咬合：仙道再高，也要城供着。
+ */
+function commitImmortalResearch(state, techId, now = Date.now()) {
+  const tech = IMMORTAL_TECH_MAP[techId];
+  if (!tech) return { ok: false, reason: '并无此术' };
+  const plan = planImmortalResearch(state, techId);
+  if (!plan.ok) return plan;
+
+  state.silver -= plan.cost;
+  state.spiritStones = Math.max(0, (state.spiritStones || 0) - plan.stones);
+  if (!Array.isArray(state.immortalTechs)) state.immortalTechs = [];
+  state.immortalTechs.push(tech.id);
+
+  const gains = techGainText(
+    tech,
+    BUILDING_MAP[tech.unlocksBuilding]?.name,
+    ALCHEMY_RECIPE_MAP[tech.unlocksPill]?.name || PILL_MAP[tech.unlocksPill]?.name,
+  );
+  pushLog(
+    state,
+    `参悟「${tech.name}」成，耗灵石 ${fmtStones(plan.stones)} 枚、银 ${fmt(plan.cost)} 两。`
+      + (gains.length ? `${gains.join('；')}` : ''),
+    'tech',
+    null,
+    now,
+  );
+
+  return { ok: true, tech, cost: plan.cost, stones: plan.stones };
+}
+
+/** 一站式研习仙道科技（供测试与仿真使用）。 */
+function researchImmortal(state, techId, now = Date.now()) {
+  const plan = planImmortalResearch(state, techId);
+  if (!plan.ok) return plan;
+  return commitImmortalResearch(state, techId, now);
+}
+
+/** 仙道科技是否已研习（对外的查询口，仿真与界面都用它）。 */
+function isImmortalTechResearchedPublic(state, techId) {
+  return isImmortalTechResearched(state, techId);
+}
+
 /* ────────────────────────────── 购置 ────────────────────────────── */
 
 /** 计算一次购置的代价与规模；不改动状态。 */
@@ -8898,7 +10272,21 @@ function sell(state, id, count = 1, now = Date.now()) {
 
 /* ────────────────────── 云深谷坊市：银两换灵石 ────────────────────── */
 
-/** 询价：兑 count 份灵石要多少银两。不改动状态。 */
+/**
+ * 询价：再兑一笔灵石要多少银两、给多少灵石。不改动状态。
+ *
+ * ⚠ 兑率是**递进**的（见 core/config.js 的 MARKET_EXCHANGE_*）：
+ *   第 n 笔比第 n-1 笔贵 COST_GROWTH 倍，但给的石子也多 YIELD_GROWTH 倍。
+ *   所以「换过几次」本身是一条进度线，而不是可以无限刷的兑换按钮。
+ *
+ * 灵石那一侧还乘 (1 + tradeStoneMult) ——
+ * 这就是**城中科技对兑率的杠杆**（坊市扩建 / 仙凡互市 / 界墟 / 结庐）。
+ * 「城越像样，银钱越值灵石」，这句设计话术的全部实现就在这里。
+ *
+ * @param {number} count 这一次要兑几笔（默认 1）。批量时逐笔累加，
+ *                       所以「一次换三笔」与「分三次换」代价完全相同——
+ *                       报价与实际扣除共用这一个函数，不可能对不上。
+ */
 function planExchange(state, count = 1) {
   const n = Math.max(1, Math.floor(count));
 
@@ -8909,9 +10297,34 @@ function planExchange(state, count = 1) {
     };
   }
 
-  const cost = CULTIVATOR_MARKET.silver * n;
+  const limit = marketExchangeLimit(state);
+  const done = marketExchangeCount(state);
+  if (done >= limit) {
+    return {
+      ok: false,
+      reason: `云深谷坊市已吃不下更多银钱（${done}/${limit} 笔）——扩建坊市或通仙凡互市可再开胃口`,
+      exhausted: true,
+    };
+  }
+
+  const batches = Math.min(n, limit - done);
+  let cost = 0;
+  let stones = 0;
+  for (let i = 0; i < batches; i += 1) {
+    const q = marketExchangeQuote(state, done + i);
+    cost += q.silver;
+    stones += q.stones;
+  }
+  stones = +stones.toFixed(4);
+
   if (state.silver < cost) {
-    return { ok: false, reason: `银两不足，需 ${fmt(cost)} 两` };
+    return {
+      ok: false,
+      reason: `银两不足，需 ${fmt(cost)} 两（第 ${done + 1} 笔起）`,
+      need: cost,
+      quote: marketExchangeQuote(state, done),
+      remaining: limit - done,
+    };
   }
 
   return {
@@ -8919,11 +10332,15 @@ function planExchange(state, count = 1) {
     kind: 'exchange',
     id: CULTIVATOR_MARKET.id,
     name: CULTIVATOR_MARKET.name,
-    count: n,
+    count: batches,
     cost,
     currency: 'silver',
-    stones: CULTIVATOR_MARKET.stones * n,
-    label: `云深谷坊市兑灵石 ×${n}`,
+    stones,
+    index: done,
+    remaining: limit - done - batches,
+    limit,
+    quote: marketExchangeQuote(state, done),
+    label: `云深谷坊市兑灵石 ×${batches}`,
   };
 }
 
@@ -8934,10 +10351,12 @@ function commitExchange(state, count = 1, now = Date.now()) {
 
   state.silver -= plan.cost;
   state.spiritStones += plan.stones;
+  state.exchangeCount = marketExchangeCount(state) + plan.count;
 
   pushLog(
     state,
-    `于云深谷坊市兑得灵石 ${fmtStones(plan.stones)} 枚，耗银 ${fmt(plan.cost)} 两。`,
+    `于云深谷坊市兑得灵石 ${fmtStones(plan.stones)} 枚，耗银 ${fmt(plan.cost)} 两`
+      + `（第 ${plan.index + plan.count}/${plan.limit} 笔）。`,
     'spirit',
     null,
     now,
@@ -8959,7 +10378,7 @@ function planPill(state, pillId = 'quzhangdan') {
   }
 
   if (state.population < 1) return { ok: false, reason:'族中暂无可祛障的凡人' };
-  if ((state.cultivation.cultivators||[]).length>=CULTIVATOR_LIMIT) return { ok:false,reason:'名册已达本版人数上限' };
+  if ((state.cultivation.cultivators||[]).length>=cultivatorLimit(state)) return { ok:false,reason:'名册已达上限（仙道「开脉」「化神大道」可扩容）' };
   if (state.spiritStones < pill.stoneCost) {
     return { ok: false, reason: `灵石不足，需 ${fmtStones(pill.stoneCost)} 枚` };
   }
@@ -9150,9 +10569,10 @@ function commitTradeFleet(state, routeId, count, now = Date.now()) {
 function planStatus(state, kind, id, mode = '1') {
   if (kind === 'buy') return planBuy(state, id, mode);
   if (kind === 'research') return planResearch(state, id);
+  if (kind === 'immortalResearch') return planImmortalResearch(state, id);
   if (kind === 'trade') return planTrade(state, id);
   if (kind === 'tradeFleet') return planTradeFleet(state, id, mode);
-  if (kind === 'exchange') return planExchange(state, 1);
+  if (kind === 'exchange') return planExchange(state, mode === '1' ? 1 : Number(mode) || 1);
   if (kind === 'pill') return planPill(state, id);
   return { ok: false, reason: '未知操作' };
 }
@@ -9162,6 +10582,7 @@ function commitPlan(state, plan, now = Date.now(), rng = Math.random) {
   if (!plan || !plan.ok) return { ok: false, reason: '操作无效' };
   if (plan.kind === 'buy') return commitBuy(state, plan.id, plan.count, now);
   if (plan.kind === 'research') return commitResearch(state, plan.id, now);
+  if (plan.kind === 'immortalResearch') return commitImmortalResearch(state, plan.id, now);
   if (plan.kind === 'trade') return commitTrade(state, plan.id, now);
   if (plan.kind === 'tradeFleet') return commitTradeFleet(state, plan.id, plan.count, now);
   if (plan.kind === 'exchange') return commitExchange(state, plan.count, now);
@@ -12429,6 +13850,10 @@ function createUI({ getState, actions, rng }) {
   const cards = {};
   const techRefs = {};
   const techGroups = [];
+  /** 仙道科技的行引用。与 techRefs 分开，这样「凡人科技有几项」的计数不会被污染。 */
+  const immortalTechRefs = {};
+  /** 上一次同步过的「正在看哪条线」。用来避免每帧重排 DOM。 */
+  let techLineSig = null;
   const metricRefs = {};
   const routeRefs = {};
   const studyRefs = {};
@@ -12545,6 +13970,47 @@ function createUI({ getState, actions, rng }) {
     }
   }
 
+  /**
+   * 建一行科技。凡人侧与仙道侧**共用这一个函数** ——
+   * 两条线的差别只有「花什么货币」与「按钮写什么字」，
+   * 所以把它们写成两份是没必要的重复，改一处总比改两处安全。
+   *
+   * @param {HTMLElement} host   挂到哪个容器
+   * @param {object} tech        科技定义
+   * @param {string[]} gains     收益文案
+   * @param {object} refs        行引用的登记表
+   * @param {object} opts        { immortal:boolean }
+   */
+  function buildTechRow(host, tech, gains, refs, opts = {}) {
+    const immortal = Boolean(opts.immortal);
+    const costText = immortal
+      ? `${tech.stones || 0} 石 · ${fmt(tech.cost || 0)} 两`
+      : `${fmt(tech.cost)} 两`;
+    const row = document.createElement('div');
+    row.className = immortal ? 'tech is-immortal' : 'tech';
+    row.dataset.tech = tech.id;
+    row.title = tech.desc;
+    row.innerHTML = `
+      <div class="tech-mark">${tech.icon}</div>
+      <div class="tech-body">
+        <div class="tech-title">
+          <span class="tech-name">${tech.name}</span>
+          <span class="tech-cost" data-role="cost">${costText}</span>
+        </div>
+        <div class="tech-gain">${gains.join(' · ')}</div>
+        <div class="tech-req" data-role="req"></div>
+      </div>
+      <button class="btn tech-btn" data-action="${immortal ? 'researchImmortal' : 'research'}"
+              data-tech="${tech.id}">${immortal ? '参悟' : '研习'}</button>`;
+    host.appendChild(row);
+    refs[tech.id] = {
+      root: row,
+      cost: row.querySelector('[data-role="cost"]'),
+      req: row.querySelector('[data-role="req"]'),
+      btn: row.querySelector('button.tech-btn'),
+    };
+  }
+
   function buildTechs() {
     const host = $('tech-list');
     host.innerHTML = '';
@@ -12592,6 +14058,42 @@ function createUI({ getState, actions, rng }) {
 
       host.appendChild(group);
       techGroups.push({ root: group, ids: groupIds });
+    }
+  }
+
+  /**
+   * 建仙道科技树。与 buildTechs 同构，差别：
+   *   · 分组用 IMMORTAL_TECH_TIERS
+   *   · 货币是「灵石 · 银两」
+   *   · 前置换算走 immortalTechMissing()，所以「须先研习 XX」里
+   *     会同时出现凡人科技与仙道科技的名字 —— 这就是咬合点最直观的展示
+   */
+  function buildImmortalTechs() {
+    const host = $('immortal-tech-list');
+    if (!host) return;
+    host.innerHTML = '';
+
+    for (const tier of IMMORTAL_TECH_TIERS) {
+      const items = IMMORTAL_TECHS.filter((t) => t.tier === tier.tier);
+      if (!items.length) continue;
+
+      const group = document.createElement('div');
+      group.className = 'tech-group';
+
+      const head = document.createElement('div');
+      head.className = 'tech-tier';
+      head.innerHTML = `<span class="tier-name">${tier.name}</span><span class="tier-hint">${tier.hint}</span>`;
+      group.appendChild(head);
+
+      for (const tech of items) {
+        const gains = techGainText(
+          tech,
+          BUILDING_MAP[tech.unlocksBuilding]?.name,
+          ALCHEMY_RECIPE_MAP[tech.unlocksPill]?.name,
+        );
+        buildTechRow(group, tech, gains, immortalTechRefs, { immortal: true });
+      }
+      host.appendChild(group);
     }
   }
 
@@ -12819,6 +14321,10 @@ function createUI({ getState, actions, rng }) {
   /**
    * 页面同步：既要切换高亮，也要把**还没到时候出现的栏目藏起来**。
    * 可见性一变就顺手兜一次底 —— 当前页若被藏了，退回「家业」。
+   *
+   * ⚠ 唯一的例外是 `#techs`：格物页**开局就允许直接看**（见 visiblePages），
+   *   但这一条仍然保留，因为「轮回到一半」之类的中间态会把它藏掉。
+   *   调试时用 `location.hash === '#techs'` 强制看一眼，见 main.js 的启动段。
    */
   let pageVisSig = null;
   function syncPage() {
@@ -12854,6 +14360,37 @@ function createUI({ getState, actions, rng }) {
     }
   }
 
+  /**
+   * 切换「凡人 · 格物」/「仙道 · 参悟」两条线。
+   *
+   * 用 is-hidden 切换而不是重建 DOM —— 两条线的行引用（techRefs /
+   * immortalTechRefs）在 build 阶段一次性建好，切换时只是改 class，
+   * 所以是零成本的，也不会打断滚动位置。
+   */
+  function setTechLine(line) {
+    const imm = line === 'immortal';
+    $('tech-list')?.classList.toggle('is-hidden', imm);
+    $('immortal-tech-list')?.classList.toggle('is-hidden', !imm);
+    $('line-mortal-btn')?.classList.toggle('is-active', !imm);
+    $('line-immortal-btn')?.classList.toggle('is-active', imm);
+    // 记住看的是哪一条线（界面偏好，随存档走），刷新后还停在原处
+    const s = state();
+    if (s?.ui) s.ui.techLine = imm ? 'immortal' : 'mortal';
+    syncHideDone();
+  }
+
+  /** 按 state 里记着的偏好把两条线摆对。build 之后与每次 render 都调一次。 */
+  function syncTechLine() {
+    const want = state()?.ui?.techLine === 'immortal' ? 'immortal' : 'mortal';
+    if (want === techLineSig) return;
+    techLineSig = want;
+    const imm = want === 'immortal';
+    $('tech-list')?.classList.toggle('is-hidden', imm);
+    $('immortal-tech-list')?.classList.toggle('is-hidden', !imm);
+    $('line-mortal-btn')?.classList.toggle('is-active', !imm);
+    $('line-immortal-btn')?.classList.toggle('is-active', imm);
+  }
+
   /** 「隐藏已研习」：把 done 的科技收起，免得列表越拉越长。 */
   function syncHideDone() {
     const hide = Boolean(state()?.ui?.hideDoneTechs);
@@ -12874,6 +14411,13 @@ function createUI({ getState, actions, rng }) {
     for (const group of techGroups) {
       const anyVisible = group.ids.some((id) => !techRefs[id].root.classList.contains('is-hidden'));
       group.root.classList.toggle('is-hidden', !anyVisible);
+    }
+
+    // 仙道侧同规则。它不在 techGroups 里，所以单独走一遍。
+    for (const tech of IMMORTAL_TECHS) {
+      const ref = immortalTechRefs[tech.id];
+      if (!ref) continue;
+      ref.root.classList.toggle('is-hidden', hide && ref.root.classList.contains('is-done'));
     }
   }
 
@@ -12951,13 +14495,21 @@ function createUI({ getState, actions, rng }) {
 
       ref.cost.textContent = status === 'done' ? '已研习' : `${fmt(tech.cost)} 两`;
 
-      // 前置可能是科技，也可能是「见过世面」（秘闻），两者都要说清楚
+      /**
+       * 前置可能是三类：凡人科技、仙道科技（跨树前置）、或是「见过世面」（秘闻）。
+       * ⚠ 三条必须都说清楚，否则玩家会以为界面漏了东西 ——
+       *   「祛障」的跨树前置就是这样：不写出来，玩家只会看到它一直锁着。
+       */
       const blockers = [];
       if (status === 'locked' && !isResearched(s, tech.id)) {
-        const missing = tech.requires
+        const missing = (tech.requires || [])
           .filter((r) => !isResearched(s, r))
           .map((r) => `「${TECH_MAP[r]?.name || r}」`);
         if (missing.length) blockers.push(`须先研习 ${missing.join('、')}`);
+        const missingImm = (tech.requiresImmortal || [])
+          .filter((r) => !isImmortalTechResearched(s, r))
+          .map((r) => `「${IMMORTAL_TECH_MAP[r]?.name || r}」（仙道）`);
+        if (missingImm.length) blockers.push(`须先参悟 ${missingImm.join('、')}`);
       }
       if (tech.requiresSecrets && s.secrets.length < CULTIVATOR_MARKET.requiresSecrets) {
         blockers.push(
@@ -12971,6 +14523,8 @@ function createUI({ getState, actions, rng }) {
       ref.btn.title = status === 'open' ? `还缺 ${fmt(Math.ceil(Math.max(0,tech.cost - s.silver)))} 两` : tech.desc;
     }
 
+    updateImmortalTechs(s);
+
     const chip = $('tech-chip');
     const ready = researchableCount(s);
     chip.textContent = ready > 0
@@ -12978,7 +14532,53 @@ function createUI({ getState, actions, rng }) {
       : `已研习 ${s.techs.length} / ${TECHS.length}`;
     chip.className = `chip${ready > 0 ? ' chip-open' : ''}`;
     const techNav = document.querySelector('.pagetab[data-page="techs"]');
-    if (techNav) techNav.dataset.ready = String(ready > 0);
+    if (techNav) techNav.dataset.ready = String(ready > 0 || researchableImmortalCount(s) > 0);
+  }
+
+  /**
+   * 刷新仙道科技树。与 updateTechs 同构，但三处不同：
+   *   · 货币是「灵石 · 银两」，所以「不够」要分开报
+   *   · 前置缺口走 immortalTechMissing()，跨树前置的名字在里面
+   *   · 未踏入炼气篇（没有修士）时整条线显示为「尚未开脉」——
+   *     这是**软门槛**：不锁死，但告诉玩家「先去服一枚祛障丹」
+   */
+  function updateImmortalTechs(s) {
+    const on = Boolean(s.cultivation?.cultivators?.length);
+    for (const tech of IMMORTAL_TECHS) {
+      const ref = immortalTechRefs[tech.id];
+      if (!ref) continue;
+      const status = immortalTechStatus(s, tech);
+
+      ref.root.classList.toggle('is-done', status === 'done');
+      ref.root.classList.toggle('is-locked', status === 'locked');
+      ref.root.classList.toggle('is-ready', status === 'ready');
+      ref.root.classList.toggle('is-open', status === 'open');
+
+      ref.cost.textContent = status === 'done'
+        ? '已参悟'
+        : `${tech.stones || 0} 石 · ${fmt(tech.cost || 0)} 两`;
+
+      ref.req.textContent = status === 'locked'
+        ? immortalTechMissing(s, tech).join(' · ')
+        : (on ? '' : '尚未有修士，仙道无处落地');
+
+      ref.btn.disabled = status !== 'ready';
+      ref.btn.textContent = status === 'done' ? '已参悟'
+        : status === 'locked' ? '需前置'
+          : status === 'open' ? '资源不足' : '参悟';
+      ref.btn.title = status === 'open'
+        ? immortalTechMissing(s, tech).join('；') || tech.desc
+        : tech.desc;
+    }
+
+    const chip = $('immortal-tech-chip');
+    if (!chip) return;
+    const owned = (s.immortalTechs || []).length;
+    const ready = researchableImmortalCount(s);
+    chip.textContent = ready > 0
+      ? `仙道 ${owned} / ${IMMORTAL_TECHS.length} · ${ready} 项可参悟`
+      : `仙道 ${owned} / ${IMMORTAL_TECHS.length}`;
+    chip.className = `chip${ready > 0 ? ' chip-open' : ''}`;
   }
 
   function updatePopulation(s, d) {
@@ -13685,6 +15285,8 @@ function createUI({ getState, actions, rng }) {
         if (action === 'buy') actions.buy(actEl.dataset.id);
         else if (action === 'sell') actions.sell(actEl.dataset.id);
         else if (action === 'research') actions.research(actEl.dataset.tech);
+        else if (action === 'researchImmortal') actions.researchImmortal(actEl.dataset.tech);
+        else if (action === 'tech-line') setTechLine(actEl.dataset.line);
         else if (action === 'trade') actions.trade(actEl.dataset.route);
         else if (action === 'trade-fleet') actions.tradeFleet(actEl.dataset.route, actEl.dataset.fleet);
         else if (action === 'exchange') actions.exchange();
@@ -13748,6 +15350,8 @@ function createUI({ getState, actions, rng }) {
 
   buildCards();
   buildTechs();
+  buildImmortalTechs();
+  syncTechLine();
   buildMetrics();
   buildStudy();
   buildImmortal();
@@ -13811,6 +15415,7 @@ function createUI({ getState, actions, rng }) {
     syncCollapsed,
     syncPage,
     syncHideDone,
+    setTechLine,
     askQuiz,
     quiz: quizView,
     /** 暴露给调试用：控制台里能直接调 ui.actions.buy('field') 之类。 */
@@ -13904,6 +15509,14 @@ ui = createUI({
       return requestOperation('research', techId);
     },
 
+    /**
+     * 参悟仙道科技。与 research 同构，但代价是**灵石 + 银两双付**，
+     * 所以走自己的 plan/commit 一对（见 core/engine.js 的 planImmortalResearch）。
+     */
+    researchImmortal(techId) {
+      return requestOperation('immortalResearch', techId);
+    },
+
     trade(routeId) {
       return requestOperation('trade', routeId);
     },
@@ -13932,6 +15545,11 @@ ui = createUI({
       ui.syncPage();
       ui.render();
       window.scrollTo({ top: 0, behavior: 'instant' in window ? 'instant' : 'auto' });
+    },
+
+    /** 格物页的两条线：'mortal' 或 'immortal'。 */
+    setTechLine(line) {
+      ui.setTechLine(line);
     },
 
     /** 格物页：隐藏 / 显示已研习的科技。*/
@@ -14232,6 +15850,64 @@ window.__xiuxian = {
   seedRng: (seed) => { rng = createRng(seed); return rng; },
   /** 造一个新的可播种随机源（不改全局的），测试里用来做大样本。*/
   makeRng: (seed) => createRng(seed),
+  /** 凡人科技：与人脑里那张「格物」表一一对应。 */
+  tech: {
+    tiers: () => TECH_TIERS,
+    catalog: () => TECHS,
+    status: (id) => techStatus(state, TECH_MAP[id]),
+    researched: (id) => isResearched(state, id),
+    unlocked: (id) => isTechUnlocked(state, TECH_MAP[id]),
+    researchable: () => researchableCount(state),
+    /** 界面上的收益文案（与 commitResearch 记进纪事的那一份是同一个函数）。 */
+    gains: (id) => techGainText(TECH_MAP[id], BUILDING_MAP[TECH_MAP[id]?.unlocksBuilding]?.name),
+  },
+  /** 仙道科技：两条线咬合的另一半。查询与研习都从这里走。*/
+  immortal: {
+    tiers: () => IMMORTAL_TECH_TIERS,
+    catalog: () => IMMORTAL_TECHS,
+    map: () => IMMORTAL_TECH_MAP,
+    owned: () => (state.immortalTechs || []).slice(),
+    researched: (id) => isImmortalTechResearched(state, id),
+    status: (id) => immortalTechStatus(state, IMMORTAL_TECH_MAP[id]),
+    plan: (id) => planImmortalResearch(state, id),
+    missing: (id) => immortalTechMissing(state, IMMORTAL_TECH_MAP[id]),
+    research: (id) => researchImmortal(state, id),
+    /** 两条线的全部咬合点：谁 require 了谁。文档与审计都读这个。*/
+    crossLinks: () => {
+      const mortalIds = new Set(TECHS.map((t) => t.id));
+      const out = [];
+      for (const t of IMMORTAL_TECHS) {
+        for (const r of t.requires || []) {
+          if (mortalIds.has(r)) out.push({ from: r, fromTree: 'mortal', to: t.id, toTree: 'immortal' });
+        }
+      }
+      for (const t of TECHS) {
+        for (const r of t.requiresImmortal || []) {
+          out.push({ from: r, fromTree: 'immortal', to: t.id, toTree: 'mortal' });
+        }
+      }
+      return out;
+    },
+  },
+  /** 仙凡经济：城里的作坊、坊市的兑率、矿场。一条命令看全咬合面。*/
+  cityEconomy: () => {
+    const d = derive(state);
+    return {
+      laborWorkers: d.laborWorkers,
+      laborDeath: d.laborDeath,
+      marketWorkerBonus: d.marketWorkerBonus,
+      cityMaterialMult: d.cityMaterialMult,
+      herbPerSec: d.cityHerbPerSec,
+      orePerSec: d.cityOrePerSec,
+      runePerSec: d.cityRunePerSec,
+      workshopWorkers: (id) => cityWorkersOf(state, id),
+      exchange: marketExchangeQuote(state),
+      exchangeCount: marketExchangeCount(state),
+      exchangeLimit: marketExchangeLimit(state),
+      immortalCap: cultivatorLimit(state),
+      innatePoolBonus: innatePoolBonus(state),
+    };
+  },
   /** 秘籍：目录、当前加成、掉落、换装、参悟。控制台与测试都用它。*/
   manual: {
     catalog: () => CULTIVATION_MANUALS,
@@ -14365,6 +16041,13 @@ window.__xiuxian = {
   /** 各数据表。调试与测试。—。也方便在控制台里直接核对数值—*/
   data: {
     buildings: BUILDINGS, techs: TECHS, map: MAP_NODES,
+    /** 仙道科技：两条线咬合的那一半。 */
+    immortalTechs: IMMORTAL_TECHS, immortalTechTiers: IMMORTAL_TECH_TIERS,
+    /** 效果键 → 展示文案。测试用来自查「每个键都登记了文案」。 */
+    effectLabels: EFFECT_LABELS,
+    /** 合法的 effect 键清单（凡人侧 / 仙道侧）。测试用来自查「数据表里没有野键」。 */
+    mortalEffectKeys: MORTAL_EFFECT_KEYS,
+    immortalEffectKeys: IMMORTAL_EFFECT_KEYS,
     realms: REALM_TIERS, gates: REALM_GATES, roots: ROOT_GRADES,
     herbs: ALCHEMY_HERBS, recipes: ALCHEMY_RECIPES, furnace: ALCHEMY_FURNACE,
     ores: FORGE_ORES, artifacts: FORGE_ITEMS, smithLevels: FORGE_LEVELS,

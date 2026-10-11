@@ -16,6 +16,19 @@ const CULTIVATOR_GIVEN = ['清衡','云岚','知微','怀瑾','望舒','玄澈',
  */
 function cultivateLevelCap(person) { return rootLevelCap(person); }
 
+/**
+ * 名册容量。
+ *
+ * 基础 CULTIVATOR_LIMIT，仙道科技再加 immortalCapFlat。
+ * 之所以要有这层：名册容量是**玩家唯一能靠科技推高的「人数上限」**，
+ * 而修士数又同时决定领地镇守、材料产出与全局战力，
+ * 所以「开脉」「化神大道」这类科技给的是**产能**，不是数值贴纸。
+ */
+function cultivatorLimit(state) {
+  const fx = state && state.immortalTechs ? techEffects(state) : null;
+  return CULTIVATOR_LIMIT + Math.max(0, Math.round(fx ? fx.immortalCapFlat : 0));
+}
+
 /** 从 index 升到 index+1 需要多少修为（转发 data/realms.js 的曲线）。 */
 function cultivateXpNeeded(realmIndex) { return realmXpNeeded(realmIndex); }
 
@@ -24,6 +37,15 @@ function cultivateBasePower(realmIndex) { return realmPower(realmIndex); }
 function averageTalent(state) { const ps=state.cultivation?.cultivators||[]; return ps.length ? ps.reduce((a,p)=>a+Math.max(1,Number(p.talent)||1),0)/ps.length : 1; }
 function repairCultivation(state) {
   const c=state.cultivation; if(!c)return;
+  // ── 仙道科技与坊市兑换次数：老存档没有这两个字段 ──
+  // 1.0 的存档读进来就是「仙道篇未开启」，而不是崩在 undefined.includes 上。
+  // 同时把已经不存在于表中的 id 清掉 —— 改了数据表之后旧存档仍然能 load。
+  // ⚠ 这两个字段挂在**顶层 state**上，与 techs 并列，不在 cultivation 里：
+  //   凡人与仙道是同一层级的「已研习清单」，放一起才好对照着看。
+  if(!Array.isArray(state.immortalTechs)) state.immortalTechs=[];
+  state.immortalTechs=state.immortalTechs.filter(id=>IMMORTAL_TECH_MAP[id]);
+  const ec=Number(state.exchangeCount);
+  state.exchangeCount=Number.isFinite(ec)&&ec>0?Math.floor(ec):0;
   // ── 境界：把旧的 person.realm（1..9 的炼气层数）迁移到全局 realmIndex ──
   // 炼气一层~九层在新体系里正好也是 index 1..9，所以旧值可以直接用。
   // 保底：负数、NaN、超界的都夹回合法范围。
@@ -74,7 +96,7 @@ function cultivateName(id) {
 function addCultivator(state, origin='awakened', now=Date.now(), silent=false, parentage='', rng=Math.random) {
   const c=state.cultivation;
   if (!Array.isArray(c.cultivators)) c.cultivators=[];
-  if (c.cultivators.length >= CULTIVATOR_LIMIT || (parentage!=='cultivator-cultivator' && state.population < 1)) return null;
+  if (c.cultivators.length >= cultivatorLimit(state) || (parentage!=='cultivator-cultivator' && state.population < 1)) return null;
   const id = Math.max(1,Math.floor(c.nextId || 1));
   const innate=origin==='innate';
   const person={
@@ -104,6 +126,18 @@ function addCultivator(state, origin='awakened', now=Date.now(), silent=false, p
   }
   return person;
 }
+/**
+ * 灵气池给**天生灵根诞生率**的加成。
+ *
+ * 灵池是「以秘闻换来的修行世界入口」：池子越深，灵气越浓，
+ * 灵根落在新生儿身上的机会就越大。这是「仙养凡」最直接的一条 ——
+ * 玩家在山那边花的灵石，会变成城里婴儿身上的一副好根骨。
+ */
+function innatePoolBonus(state) {
+  const pools = Math.max(0, Number(state.cultivation?.pool) || 0);
+  return Math.min(INNATE_POOL_BONUS_MAX, pools * INNATE_POOL_BONUS_PER);
+}
+
 function cultivationBonuses(state) {
   const people=state.cultivation?.cultivators || [];
   // 家族层面的加成（不过滤灵根），用于界面上展示「这套功法一共值多少」
@@ -111,13 +145,15 @@ function cultivationBonuses(state) {
   // 法器加成是全族共享的（装备在家族名下，不是某个人身上）。
   // 耐久为 0 的法器不计入 —— 这是炼器的负面对价。
   const art=artifactBonus(state);
+  const fx = techEffects(state);
   let corePower=0, guardBonus=0, workUnits=0, exploreUnits=0, retreat=0, innate=0;
   for(const p of people){
     // 每个人吃自己灵根能修的那一份；天灵根对本系功法还有专精
     const mb=manualBonusFor(state,p);
     // 法器与功法加成相加（都是「百分比加成」，相加比相乘更好解释给玩家）；
-    // 主修流派的战力加成也加在这里 —— 剑修就是靠这一项吃饭的
-    const powerMult=1+mb.power+art.power+schoolFx(state,'power');
+    // 主修流派的战力加成也加在这里 —— 剑修就是靠这一项吃饭的。
+    // 仙道科技「御剑术」给的是家族层面的 familyPowerMult，直接加在这里。
+    const powerMult=1+mb.power+art.power+schoolFx(state,'power')+fx.familyPowerMult;
     // 劳作与探索按「层数」计，所以这里用大档内的层号而不是全局序号，
     // 否则筑基的 10 层会直接把 laborMult 顶到上限。
     const idx=Math.max(0,Math.min(cultivateLevelCap(p),p.realmIndex||0));
@@ -134,19 +170,33 @@ function cultivationBonuses(state) {
     manual:familyManual, artifact:art,
     laborMult:Math.min(2,workUnits*.08),
     exploreTradeBonus:Math.min(.50,exploreUnits*.02),
-    explorePerSec:(exploreUnits/9600)};
+    // 仙道科技「集贤馆」这类给的是**常驻**的自主寻秘，与修士在岗无关
+    explorePerSec:(exploreUnits/9600)+Math.max(0,fx.explorePerSecFlat),
+    // 仙道科技给的常驻修炼倍率。界面拿它显示「全族修炼 +N%」，
+    // 与 progressCultivators 里真正乘上去的那一项是同一个来源。
+    techTrainMult:Math.max(0.1, 1 + (fx.trainMult || 0))};
 }
 function progressCultivators(state,dt,now=Date.now(),rng=Math.random,births=0) {
   const c=state.cultivation;
   if(!c || !(dt>0)) return;
   const people=c.cultivators||[];
+  const LIMIT = cultivatorLimit(state);
+  // 仙道科技的加成在整个循环里取一次即可（不是每人一份）
+  const fxTech = techEffects(state);
   // 天生灵根来自本次自然出生的凡人；已有修士不参与凡人死亡率
-  if(births>0 && people.length>0 && people.length<CULTIVATOR_LIMIT && state.population>=1) {
-    // 泊松事件近似。小步模拟时避免逐一枚举上千名婴儿
-    const eventChance=1-Math.exp(-births*INNATE_CHANCE_PER_BIRTH*Math.min(5,people.length/10));
+  if(births>0 && people.length>0 && people.length<LIMIT && state.population>=1) {
+    // 泊松事件近似。小步模拟时避免逐一枚举上千名婴儿。
+    //
+    // innateMult 是**城市能对仙道施加的最强杠杆**：
+    //   仙道科技「引灵」「灵枢」提高它，灵气池（灵池）也提高它。
+    // 所以「城越大 → 生得越多 → 天生灵根越多」这条正反馈是有实体的，
+    // 而不是一句宣传语。见 docs/15-科技线.md 的反馈循环图。
+    const innateMult = Math.max(0, 1 + (fxTech.innateBirthMult || 0) + innatePoolBonus(state));
+    const perBirth = INNATE_CHANCE_PER_BIRTH * innateMult;
+    const eventChance=1-Math.exp(-births*perBirth*Math.min(5,people.length/10));
     if(rng()<eventChance) addCultivator(state,'innate',now,false,'cultivator-mortal',rng);
   }
-  if(people.length>=2 && c.cultivators.length<CULTIVATOR_LIMIT){
+  if(people.length>=2 && c.cultivators.length<LIMIT){
     const pairChance=1-Math.exp(-Math.floor(people.length/2)*dt/3000000);
     if(rng()<pairChance)addCultivator(state,'innate',now,false,'cultivator-cultivator',rng);
   }
@@ -169,8 +219,12 @@ function progressCultivators(state,dt,now=Date.now(),rng=Math.random,births=0) {
     const metaMult = metaTrainMult(state);
     // 主修流派的修炼加成/减益 —— 合欢快、剑修慢
     const schoolMult = 1 + schoolFx(state, 'training');
+    // 仙道科技「聚灵阵」「元婴大道」给的全族修炼加成。
+    // 它是**全族常驻**的（与聚灵符那种限时符箓不同），所以乘在这里。
+    // 下限夹到 0.1，防止以后加「以寿元换修为」那类节点时把速度压成负数。
+    const techTrainMult = Math.max(0.1, 1 + (fxTech.trainMult || 0));
     // 灵根是第四个乘数：天灵根 ×2.0，五灵根 ×0.7
-    person.xp += REALM_XP_RATE*dt*manualMult*runeMult*metaMult*schoolMult*rootSpeedMult(person)*(Number(person.talent)||1)*(person.job==='sect'?3.5:1);
+    person.xp += REALM_XP_RATE*dt*manualMult*runeMult*metaMult*schoolMult*techTrainMult*rootSpeedMult(person)*(Number(person.talent)||1)*(person.job==='sect'?3.5:1);
 
     // 同一大档内自动晋升；带瓶颈的那一层停住（交给 systems/breakthrough.js）
     while(person.realmIndex<cap){

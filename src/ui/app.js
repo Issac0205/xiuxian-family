@@ -34,6 +34,10 @@ function createUI({ getState, actions, rng }) {
   const cards = {};
   const techRefs = {};
   const techGroups = [];
+  /** 仙道科技的行引用。与 techRefs 分开，这样「凡人科技有几项」的计数不会被污染。 */
+  const immortalTechRefs = {};
+  /** 上一次同步过的「正在看哪条线」。用来避免每帧重排 DOM。 */
+  let techLineSig = null;
   const metricRefs = {};
   const routeRefs = {};
   const studyRefs = {};
@@ -150,6 +154,47 @@ function createUI({ getState, actions, rng }) {
     }
   }
 
+  /**
+   * 建一行科技。凡人侧与仙道侧**共用这一个函数** ——
+   * 两条线的差别只有「花什么货币」与「按钮写什么字」，
+   * 所以把它们写成两份是没必要的重复，改一处总比改两处安全。
+   *
+   * @param {HTMLElement} host   挂到哪个容器
+   * @param {object} tech        科技定义
+   * @param {string[]} gains     收益文案
+   * @param {object} refs        行引用的登记表
+   * @param {object} opts        { immortal:boolean }
+   */
+  function buildTechRow(host, tech, gains, refs, opts = {}) {
+    const immortal = Boolean(opts.immortal);
+    const costText = immortal
+      ? `${tech.stones || 0} 石 · ${fmt(tech.cost || 0)} 两`
+      : `${fmt(tech.cost)} 两`;
+    const row = document.createElement('div');
+    row.className = immortal ? 'tech is-immortal' : 'tech';
+    row.dataset.tech = tech.id;
+    row.title = tech.desc;
+    row.innerHTML = `
+      <div class="tech-mark">${tech.icon}</div>
+      <div class="tech-body">
+        <div class="tech-title">
+          <span class="tech-name">${tech.name}</span>
+          <span class="tech-cost" data-role="cost">${costText}</span>
+        </div>
+        <div class="tech-gain">${gains.join(' · ')}</div>
+        <div class="tech-req" data-role="req"></div>
+      </div>
+      <button class="btn tech-btn" data-action="${immortal ? 'researchImmortal' : 'research'}"
+              data-tech="${tech.id}">${immortal ? '参悟' : '研习'}</button>`;
+    host.appendChild(row);
+    refs[tech.id] = {
+      root: row,
+      cost: row.querySelector('[data-role="cost"]'),
+      req: row.querySelector('[data-role="req"]'),
+      btn: row.querySelector('button.tech-btn'),
+    };
+  }
+
   function buildTechs() {
     const host = $('tech-list');
     host.innerHTML = '';
@@ -197,6 +242,42 @@ function createUI({ getState, actions, rng }) {
 
       host.appendChild(group);
       techGroups.push({ root: group, ids: groupIds });
+    }
+  }
+
+  /**
+   * 建仙道科技树。与 buildTechs 同构，差别：
+   *   · 分组用 IMMORTAL_TECH_TIERS
+   *   · 货币是「灵石 · 银两」
+   *   · 前置换算走 immortalTechMissing()，所以「须先研习 XX」里
+   *     会同时出现凡人科技与仙道科技的名字 —— 这就是咬合点最直观的展示
+   */
+  function buildImmortalTechs() {
+    const host = $('immortal-tech-list');
+    if (!host) return;
+    host.innerHTML = '';
+
+    for (const tier of IMMORTAL_TECH_TIERS) {
+      const items = IMMORTAL_TECHS.filter((t) => t.tier === tier.tier);
+      if (!items.length) continue;
+
+      const group = document.createElement('div');
+      group.className = 'tech-group';
+
+      const head = document.createElement('div');
+      head.className = 'tech-tier';
+      head.innerHTML = `<span class="tier-name">${tier.name}</span><span class="tier-hint">${tier.hint}</span>`;
+      group.appendChild(head);
+
+      for (const tech of items) {
+        const gains = techGainText(
+          tech,
+          BUILDING_MAP[tech.unlocksBuilding]?.name,
+          ALCHEMY_RECIPE_MAP[tech.unlocksPill]?.name,
+        );
+        buildTechRow(group, tech, gains, immortalTechRefs, { immortal: true });
+      }
+      host.appendChild(group);
     }
   }
 
@@ -424,6 +505,10 @@ function createUI({ getState, actions, rng }) {
   /**
    * 页面同步：既要切换高亮，也要把**还没到时候出现的栏目藏起来**。
    * 可见性一变就顺手兜一次底 —— 当前页若被藏了，退回「家业」。
+   *
+   * ⚠ 唯一的例外是 `#techs`：格物页**开局就允许直接看**（见 visiblePages），
+   *   但这一条仍然保留，因为「轮回到一半」之类的中间态会把它藏掉。
+   *   调试时用 `location.hash === '#techs'` 强制看一眼，见 main.js 的启动段。
    */
   let pageVisSig = null;
   function syncPage() {
@@ -459,6 +544,37 @@ function createUI({ getState, actions, rng }) {
     }
   }
 
+  /**
+   * 切换「凡人 · 格物」/「仙道 · 参悟」两条线。
+   *
+   * 用 is-hidden 切换而不是重建 DOM —— 两条线的行引用（techRefs /
+   * immortalTechRefs）在 build 阶段一次性建好，切换时只是改 class，
+   * 所以是零成本的，也不会打断滚动位置。
+   */
+  function setTechLine(line) {
+    const imm = line === 'immortal';
+    $('tech-list')?.classList.toggle('is-hidden', imm);
+    $('immortal-tech-list')?.classList.toggle('is-hidden', !imm);
+    $('line-mortal-btn')?.classList.toggle('is-active', !imm);
+    $('line-immortal-btn')?.classList.toggle('is-active', imm);
+    // 记住看的是哪一条线（界面偏好，随存档走），刷新后还停在原处
+    const s = state();
+    if (s?.ui) s.ui.techLine = imm ? 'immortal' : 'mortal';
+    syncHideDone();
+  }
+
+  /** 按 state 里记着的偏好把两条线摆对。build 之后与每次 render 都调一次。 */
+  function syncTechLine() {
+    const want = state()?.ui?.techLine === 'immortal' ? 'immortal' : 'mortal';
+    if (want === techLineSig) return;
+    techLineSig = want;
+    const imm = want === 'immortal';
+    $('tech-list')?.classList.toggle('is-hidden', imm);
+    $('immortal-tech-list')?.classList.toggle('is-hidden', !imm);
+    $('line-mortal-btn')?.classList.toggle('is-active', !imm);
+    $('line-immortal-btn')?.classList.toggle('is-active', imm);
+  }
+
   /** 「隐藏已研习」：把 done 的科技收起，免得列表越拉越长。 */
   function syncHideDone() {
     const hide = Boolean(state()?.ui?.hideDoneTechs);
@@ -479,6 +595,13 @@ function createUI({ getState, actions, rng }) {
     for (const group of techGroups) {
       const anyVisible = group.ids.some((id) => !techRefs[id].root.classList.contains('is-hidden'));
       group.root.classList.toggle('is-hidden', !anyVisible);
+    }
+
+    // 仙道侧同规则。它不在 techGroups 里，所以单独走一遍。
+    for (const tech of IMMORTAL_TECHS) {
+      const ref = immortalTechRefs[tech.id];
+      if (!ref) continue;
+      ref.root.classList.toggle('is-hidden', hide && ref.root.classList.contains('is-done'));
     }
   }
 
@@ -556,13 +679,21 @@ function createUI({ getState, actions, rng }) {
 
       ref.cost.textContent = status === 'done' ? '已研习' : `${fmt(tech.cost)} 两`;
 
-      // 前置可能是科技，也可能是「见过世面」（秘闻），两者都要说清楚
+      /**
+       * 前置可能是三类：凡人科技、仙道科技（跨树前置）、或是「见过世面」（秘闻）。
+       * ⚠ 三条必须都说清楚，否则玩家会以为界面漏了东西 ——
+       *   「祛障」的跨树前置就是这样：不写出来，玩家只会看到它一直锁着。
+       */
       const blockers = [];
       if (status === 'locked' && !isResearched(s, tech.id)) {
-        const missing = tech.requires
+        const missing = (tech.requires || [])
           .filter((r) => !isResearched(s, r))
           .map((r) => `「${TECH_MAP[r]?.name || r}」`);
         if (missing.length) blockers.push(`须先研习 ${missing.join('、')}`);
+        const missingImm = (tech.requiresImmortal || [])
+          .filter((r) => !isImmortalTechResearched(s, r))
+          .map((r) => `「${IMMORTAL_TECH_MAP[r]?.name || r}」（仙道）`);
+        if (missingImm.length) blockers.push(`须先参悟 ${missingImm.join('、')}`);
       }
       if (tech.requiresSecrets && s.secrets.length < CULTIVATOR_MARKET.requiresSecrets) {
         blockers.push(
@@ -576,6 +707,8 @@ function createUI({ getState, actions, rng }) {
       ref.btn.title = status === 'open' ? `还缺 ${fmt(Math.ceil(Math.max(0,tech.cost - s.silver)))} 两` : tech.desc;
     }
 
+    updateImmortalTechs(s);
+
     const chip = $('tech-chip');
     const ready = researchableCount(s);
     chip.textContent = ready > 0
@@ -583,7 +716,53 @@ function createUI({ getState, actions, rng }) {
       : `已研习 ${s.techs.length} / ${TECHS.length}`;
     chip.className = `chip${ready > 0 ? ' chip-open' : ''}`;
     const techNav = document.querySelector('.pagetab[data-page="techs"]');
-    if (techNav) techNav.dataset.ready = String(ready > 0);
+    if (techNav) techNav.dataset.ready = String(ready > 0 || researchableImmortalCount(s) > 0);
+  }
+
+  /**
+   * 刷新仙道科技树。与 updateTechs 同构，但三处不同：
+   *   · 货币是「灵石 · 银两」，所以「不够」要分开报
+   *   · 前置缺口走 immortalTechMissing()，跨树前置的名字在里面
+   *   · 未踏入炼气篇（没有修士）时整条线显示为「尚未开脉」——
+   *     这是**软门槛**：不锁死，但告诉玩家「先去服一枚祛障丹」
+   */
+  function updateImmortalTechs(s) {
+    const on = Boolean(s.cultivation?.cultivators?.length);
+    for (const tech of IMMORTAL_TECHS) {
+      const ref = immortalTechRefs[tech.id];
+      if (!ref) continue;
+      const status = immortalTechStatus(s, tech);
+
+      ref.root.classList.toggle('is-done', status === 'done');
+      ref.root.classList.toggle('is-locked', status === 'locked');
+      ref.root.classList.toggle('is-ready', status === 'ready');
+      ref.root.classList.toggle('is-open', status === 'open');
+
+      ref.cost.textContent = status === 'done'
+        ? '已参悟'
+        : `${tech.stones || 0} 石 · ${fmt(tech.cost || 0)} 两`;
+
+      ref.req.textContent = status === 'locked'
+        ? immortalTechMissing(s, tech).join(' · ')
+        : (on ? '' : '尚未有修士，仙道无处落地');
+
+      ref.btn.disabled = status !== 'ready';
+      ref.btn.textContent = status === 'done' ? '已参悟'
+        : status === 'locked' ? '需前置'
+          : status === 'open' ? '资源不足' : '参悟';
+      ref.btn.title = status === 'open'
+        ? immortalTechMissing(s, tech).join('；') || tech.desc
+        : tech.desc;
+    }
+
+    const chip = $('immortal-tech-chip');
+    if (!chip) return;
+    const owned = (s.immortalTechs || []).length;
+    const ready = researchableImmortalCount(s);
+    chip.textContent = ready > 0
+      ? `仙道 ${owned} / ${IMMORTAL_TECHS.length} · ${ready} 项可参悟`
+      : `仙道 ${owned} / ${IMMORTAL_TECHS.length}`;
+    chip.className = `chip${ready > 0 ? ' chip-open' : ''}`;
   }
 
   function updatePopulation(s, d) {
@@ -1290,6 +1469,8 @@ function createUI({ getState, actions, rng }) {
         if (action === 'buy') actions.buy(actEl.dataset.id);
         else if (action === 'sell') actions.sell(actEl.dataset.id);
         else if (action === 'research') actions.research(actEl.dataset.tech);
+        else if (action === 'researchImmortal') actions.researchImmortal(actEl.dataset.tech);
+        else if (action === 'tech-line') setTechLine(actEl.dataset.line);
         else if (action === 'trade') actions.trade(actEl.dataset.route);
         else if (action === 'trade-fleet') actions.tradeFleet(actEl.dataset.route, actEl.dataset.fleet);
         else if (action === 'exchange') actions.exchange();
@@ -1353,6 +1534,8 @@ function createUI({ getState, actions, rng }) {
 
   buildCards();
   buildTechs();
+  buildImmortalTechs();
+  syncTechLine();
   buildMetrics();
   buildStudy();
   buildImmortal();
@@ -1416,6 +1599,7 @@ function createUI({ getState, actions, rng }) {
     syncCollapsed,
     syncPage,
     syncHideDone,
+    setTechLine,
     askQuiz,
     quiz: quizView,
     /** 暴露给调试用：控制台里能直接调 ui.actions.buy('field') 之类。 */

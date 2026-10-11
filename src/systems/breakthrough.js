@@ -69,10 +69,13 @@ function breakthroughPlan(state, personId) {
     return { ok: false, reason: `冲关需 ${gate.clues} 条秘闻线索（现有 ${clues}）` };
   }
 
-  // 冲关符挂着的「下一次」加成（百分点）；金手指「戒中老者」是常驻加成
+  // 冲关符挂着的「下一次」加成（百分点）；金手指「戒中老者」是常驻加成；
+  // 仙道科技（筑基之道/金丹大道/元婴大道/化神大道）给的是**永久**加成，
+  // 所以越到后面，「备足材料再冲」这件事越有意义 —— 而不再是纯赌命。
   const rune = runePending(state, 'break');
   const meta = metaBreakBonus(state);
-  const rate = Math.min(0.99, realmBreakRate(person.realmIndex, person.talent, person.breakFailures, rootBreakBonus(person)) + rune + meta);
+  const tech = techEffects(state).breakBonusFlat;
+  const rate = Math.min(0.99, realmBreakRate(person.realmIndex, person.talent, person.breakFailures, rootBreakBonus(person)) + rune + meta + tech);
   return {
     ok: true,
     kind: 'breakthrough',
@@ -87,6 +90,7 @@ function breakthroughPlan(state, personId) {
     rate,
     runeBonus: rune,
     metaBonus: meta,
+    techBonus: tech,
     /** 失败时回退的修为点数。 */
     loss: Math.floor(st.need * gate.failLoss),
     currency: 'stones',

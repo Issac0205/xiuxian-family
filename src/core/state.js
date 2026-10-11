@@ -24,8 +24,24 @@ function createState(now = Date.now()) {
     population: BASE.population,
     buildings,
 
-    /** 已研习的科技 id。 */
+    /** 已研习的科技 id（凡人侧）。 */
     techs: [],
+
+    /**
+     * 已研习的科技 id（仙道侧）。
+     *
+     * 与 techs 并列而不是放进 cultivation 里：两条线是**同一层级**的清单，
+     * 放在一起才好对照「凡人到哪一步、仙道到哪一步」。
+     * 旧存档没有这个字段，repairCultivation 会补成空数组（见 systems/cultivation.js）。
+     */
+    immortalTechs: [],
+
+    /**
+     * 在云深谷坊市换过几次灵石。
+     * 兑率是**递进**的（见 core/config.js 的 MARKET_EXCHANGE_*），
+     * 所以这是一个「进度」而不是一个计数器 —— 界面会把它画成一条进度条。
+     */
+    exchangeCount: 0,
 
     /**
      * 进行中的商队。
@@ -121,6 +137,8 @@ function createState(now = Date.now()) {
       buyMode: '1',
       /** 当前页：home / techs / trade / immortal / study / codex */
       page: 'home',
+      /** 格物页当前看哪条线：'mortal' | 'immortal'。纯界面偏好，随存档走。 */
+      techLine: 'mortal',
       /** 百科：当前章节（'all' 或章节 id）与搜索词。 */
       codexChapter: 'all',
       codexQuery: '',
