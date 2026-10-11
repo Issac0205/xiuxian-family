@@ -5,7 +5,14 @@
  *   node scripts/balance.mjs greedy                # 只跑一条策略
  *   node scripts/balance.mjs --json                # 附带机读 JSON
  *   node scripts/balance.mjs --snap greedy         # 打印时间序列快照
+ *   node scripts/balance.mjs --hours 40 greedy     # 只跑到 40 游戏小时（默认 90）
  *   node scripts/balance.mjs --baseline            # 只做静态盘点（秒出，不跑仿真）
+ *
+ * ⚠ --hours 是**为了跑得动**而加的，不是新口径。
+ *   实测一条 90 小时的策略要 25–40 分钟（derive() 每 1 个游戏秒被调一次，
+ *   名册涨到 900+ 人时它是整局最贵的一段）。三条策略串行 = 一个半小时以上，
+ *   所以「三条策略并行跑、各自 --hours 截断」才是这个脚本的正常用法。
+ *   截断只会少掉尾部，不会改变前面任何一小时的数字。
  *
  * 本文件也可以被 import：脚本尾部整段入口代码被 `import.meta.main` 守着，
  * 所以 import 时只拿到 boot / run / auditTechs 等函数，不会顺带跑一局仿真。
@@ -1041,6 +1048,8 @@ if (import.meta.main) {
   const only = positional.find((a) => ALL_STRATEGIES.includes(a)) || null;
   const snapIdx = argv.indexOf('--snap');
   const snapFor = snapIdx >= 0 ? argv[snapIdx + 1] : null;
+  const hoursIdx = argv.indexOf('--hours');
+  const maxHours = hoursIdx >= 0 ? Math.max(1, Number(argv[hoursIdx + 1]) || 90) : 90;
 
   boot();   // 先把桥搭起来（静态盘点要用）
 
@@ -1061,9 +1070,10 @@ if (import.meta.main) {
   const results = [];
 
   for (const st of strategies) {
-    console.log(`\n… 正在跑「${st}」，最多 90 小时游戏时间`);
+    console.log(`\n… 正在跑「${st}」，最多 ${maxHours} 小时游戏时间`);
     const t0 = Date.now();
     const r = run(st, {
+      maxHours,
       snapEvery: 600,
       onSnap: snapFor === st ? (snap) => {
         if (Math.abs(snap.h % 1) < 1e-9) {
