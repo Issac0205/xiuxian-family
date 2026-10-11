@@ -4446,9 +4446,14 @@ const IMMORTAL_TECHS = [
     stones: 720,
     requires: ['lingmai', 'yuanying'],
     // 【策划 T-0 / docs/91-落地任务清单.md §三 T-0「涉及文件」】
-    // 数值出处：docs/91 T-0 供给侧表 —— 界墟 0.00025 条/秒 = 0.90 条/时，44.6 小时产出 40 条。
-    // 与两处合计 1.62 条/时（慢路），相对需求 59 条有 +56% 余量 —— 这是「不投帖也能通关」的保证。
-    effect: { tradeStoneMult: 0.6, secretChance: 0.02, cluePerSecFlat: 0.00025 },
+    // 数值出处：docs/91 §十二.4「裁决 ④ · 参悟口径」（**不是** §三 T-0 那张旧表）。
+    //   旧表把「参悟」按 10 本算 ⇒ 需求 59、余量 +56%；实测是 24 本 × 2 = 48，
+    //   旧口径的 +56% **已被设计师撤回**（§十二.4 明令禁止再复述该数字）。
+    // 现口径：`见 12.4` 的层级表 —— 硬需求 28、硬需求+洞天 39、一遍全参悟 87、满级 240。
+    //   本节点由 0.00025 提到 **0.0004**（+0.54 条/时）：慢路 2.16 条/时 →
+    //   全期 20 + 96.3 = 116.3 ⇒ vs 一遍全参悟 87 为 **+34%**（§十二.4 的 P1 建议，紧张点消失），
+    //   vs 硬需求 28 为 +315%。**不改变「投帖是加速器、不是必经之路」的定位**（不投帖仍有 +34%）。
+    effect: { tradeStoneMult: 0.6, secretChance: 0.02, cluePerSecFlat: 0.0004 },
     desc: '云深谷那头的坊市终于认了本家的字号。'
       + '银钱过手能换回更多灵石，往来的人也捎带些不该说的风声。',
   },
@@ -5598,16 +5603,32 @@ function foundationEntryMult(person, site, siteHeld = true) {
  *   文火 +1 纹 / 95% / **止于 6 纹** / 无额外消耗；
  *   武火 +3 纹 / 55% / 上限 12 纹 / 1 药材 + 10 灵石；
  *   三昧真火 +6 纹 / 25% / 无上限 / 3 药材 + 60 灵石。
- * ⚠ **三昧真火的数学期望是最低的（+0.75 vs 武火 +1.20）——这是刻意的**：
- *   它买的不是均值，是**上限与方差**（只有它能突破 12 纹）。
+ * ⚠ **不许再用连续式均值估这三档**（docs/91 §十二.9 + 新规则 numeric-verification.md）：
+ *   结算带 **cap**（文火止于 6）、**下限**（丹纹夹 0：0 纹时失败不掉纹）、**机会次数**（4 次），
+ *   三者叠加会让连续式算错。以**实现的状态机精确枚举 2⁴ 条序列**为准：
+ *     期望（护纹）：文火 **3.6575** / 武火 **5.80738125** / 真火 **5.33203125**
+ *     期望（无护纹）：文火 3.65524375 / 武火 5.5846 / 真火 5.05078125
+ *     ≥9 纹（五品）：文火 **0%** / 武火 **16.64%** / 真火 **26.17%**
+ * ⚠ **真火不是「期望最低」的那个** —— 最低的是**文火 3.6575**。
+ *   正确说法是：**在两个付费档之间**，真火主动**用均值换上限**
+ *   （5.33203125 < 武火 5.80738125，但只有它没有 cap、能突破 12 纹）。
+ *   （「真火期望最低」这个说法曾同时写错在注释与文档里，比较范围必须写清。）
+ * ⚠ 武火的 ≥9 纹是 **16.64%** 而不是 0.55⁴ = 9.15%：还要算上
+ *   「首败（0 纹不掉纹）+ 后三次全成 = 9 纹」那条 7.49% 的路径。
  * 丹纹档位表按「4 次尝试的真实分布」重排，五品门槛从点子库的 12 纹改成 **9 纹**
  *   （12 纹要 0.25⁴ = 0.39%，等于把后续内容锁死）。
  * ══════════════════════════════════════════════════════════════════ */
 
 /** 金丹大档的 id —— 结丹只在这里可用。 */
 const CORE_TIER_ID = 'jindan';
-/** 结丹失败给下一次冲关的补偿。出处：docs/91 §三 T-6（对照 REALM_FAIL_MERCY=0.08）。 */
-const CORE_FAIL_MERCY = 0.12;
+/** 结丹失败时记下的「一次护纹」的次数取值。**次数语义（0/1），不是百分点。**
+ *  出处：docs/91 §十二.3 裁决 —— mercy 的语义是**护纹**（失败时抵消掉一纹的损失）。
+ *  ⚠ 不许把它接进成率：接进去会让三档退化成两档（docs/91 §十二.3 的枚举表）。
+ *  ⚠ 也别把它写成 0.12 那种百分点 —— 它是「有没有一次护纹」，取值只有 0 / 1。 */
+const CORE_WARD_COUNT = 1;
+/** @deprecated 数值补偿语义已废除（会崩三档平衡）。保留常量只为兼容旧存档里的
+ *  `core.mercy` 标量读取；新代码一律用 `CORE_WARD_COUNT`。 */
+const CORE_FAIL_MERCY = CORE_WARD_COUNT;
 
 /** 三档火候。`cap` 为 null 表示无上限。 */
 const CORE_FOLDS = [
@@ -6918,7 +6939,8 @@ function ensurePersonFields(p, state) {
     // 品阶 1..5 —— 5 = 天品地块 + 已镇守越的那一档（见 data/realms.js 的 FOUNDATION_GRADES）
     grade: Math.max(1, Math.min(5, Math.floor(Number(p.foundation.grade) || 1))),
   };
-  // ── T-6：丹纹 / 补偿 / 本层是否已结过丹 ──
+  // ── T-6：丹纹 / 护纹 / 本层是否已结过丹 ──
+  // mercy 的语义见 docs/91 §十二.3：护纹（失败不掉纹），不是成率补偿。
   if (!(p.core && typeof p.core === 'object')) p.core = { marks: 0, mercy: 0, used: {} };
   p.core.marks = Math.max(0, Math.floor(Number(p.core.marks) || 0));
   p.core.mercy = Math.max(0, Number(p.core.mercy) || 0);
@@ -7403,8 +7425,12 @@ function findCultivator(state, personId) {
  * 【策划 C4 / 任务 T-5】新增第三个参数 `siteId`：炼气九层那道门槛要求「择地」，
  * 候选清单来自 worldOf(state).reached（只有**走到过**的地才能选）。
  * 出处：docs/91-落地任务清单.md §三 T-5 验收标准 1。
+ *
+ * 【修复 t4 缺陷②】再新增第四个参数 `force`（默认 false）：
+ * 金丹期「晋升」按钮走的就是 `force = true` —— 无风险直接进阶、不消耗本层的火候机会。
+ * ⚠ 形参只能往**后面**加：smoke 里仍按第 3 个位置传 siteId，改位置会静默错位。
  */
-function breakthroughPlan(state, personId, siteId) {
+function breakthroughPlan(state, personId, siteId, force = false) {
   const person = findCultivator(state, personId);
   if (!person) return { ok: false, reason: '修士不存在' };
 
@@ -7412,7 +7438,28 @@ function breakthroughPlan(state, personId, siteId) {
   if (st.kind === 'max') return { ok: false, reason: `${person.name}已至此界尽头` };
   if (st.kind === 'progressing') return { ok: false, reason: '同档内会自动晋阶，无需冲关' };
   // 【策划 C6 / 任务 T-6】金丹期修为满时走的是结丹那条路，不是冲关
-  if (st.kind === 'folding') return { ok: false, reason: `${person.name}已可结丹：晋升还是结丹，由你定`, folding: true };
+  if (st.kind === 'folding') {
+    // 【修复 t4 缺陷②】folding 是「晋升 or 结丹」的二选一，不是「只能结丹」。
+    // force 就是「晋升」那一支：无风险、无消耗、不占本层的火候机会。
+    if (force) {
+      return {
+        ok: true,
+        kind: 'promote',
+        force: true,
+        personId: person.id,
+        name: person.name,
+        fromName: realmName(person.realmIndex),
+        toName: realmName(person.realmIndex + 1),
+        stones: 0, clues: 0, pill: null, pillName: null,
+        rate: 1,
+        runeBonus: 0, metaBonus: 0, techBonus: 0,
+        loss: 0,
+        currency: 'stones',
+        cost: 0,
+      };
+    }
+    return { ok: false, reason: `${person.name}已可结丹：晋升还是结丹，由你定`, folding: true };
+  }
   if (st.kind === 'filling') {
     return {
       ok: false,
@@ -7500,7 +7547,31 @@ function breakthroughPlan(state, personId, siteId) {
  * 【策划 C4 / 任务 T-5】新增 siteId：择地筑基那一关成功后把
  * `person.foundation = { nodeId, element, grade }` 落库。
  */
-function commitBreakthrough(state, personId, now = Date.now(), rng = Math.random, siteId) {
+function commitBreakthrough(state, personId, now = Date.now(), rng = Math.random, siteId, force = false) {
+  // 【修复 t4 缺陷②】金丹期「晋升」：force 分支必须在 plan 之前拦下。
+  //   folding 的语义是「这一份修为拿去升境界，还是烧成丹纹」——**二选一，不是只能结丹**。
+  //   无风险、无消耗、且**不写 core.used**（火候机会留给别的层），这与 T-6 的
+  //   「同一层最多结丹一次」不冲突：玩家只是把这一层的机会放弃了而已。
+  //   ⚠ 若不修：修为停在 need、自动晋升又只吃「超出 need 的部分」（`xp -= need`），
+  //     于是 `xp === need` 永不自愈 ⇒ 金丹期满修为后不结丹就**永远出不去**，
+  //     4 次火候机会从「可选下注」变成「必经流程」，
+  //     反过来架空 docs/91 §三 T-6「绑成晋升的替代、防止反复结丹刷丹纹」那条硬上限论证。
+  if (force) {
+    const fp = breakthroughPlan(state, personId, siteId, true);
+    if (!fp.ok) return fp;
+    const p = findCultivator(state, personId);
+    p.realmIndex += 1;
+    p.xp = 0;
+    p.breakFailures = 0;
+    // 【策划 C14 / 任务 T-2b】晋升即重置「入此境之年」，寿量从满开始算
+    p.realmEnteredYear = Math.max(0, Number(state.clock?.year) || 0);
+    pushLog(state, `${p.name}自择晋升${realmName(p.realmIndex)}（未结丹）。`, 'cultivate', null, now);
+    return {
+      ok: true, success: true, promoted: true, name: p.name,
+      realm: realmName(p.realmIndex), realmIndex: p.realmIndex,
+    };
+  }
+
   const plan = breakthroughPlan(state, personId, siteId);
   if (!plan.ok) return plan;
 
@@ -7702,15 +7773,33 @@ function foldPlan(state, personId, foldId) {
   if (fold.herb > 0 && herbCount(state, 'grass') < fold.herb) {
     return { ...base, reason: `${fold.name}需 ${fold.herb} 份药草（现有 ${Math.floor(herbCount(state, 'grass'))}）` };
   }
+  // 【修复 t4 缺陷③ / 策划裁决 docs/91 §十二.3】`mercy` 的语义是**护纹**，不是成率补偿。
+  //   历史：原实现只累加 `mercy`、只写进文案，骰子从不读它 ⇒ 界面承诺「补偿 +12 个百分点」
+  //   而结算从不兑现（docs/92 §五 缺陷③）。
+  //   ⚠ **不能**把它接进成率：四次的累计期望会变成 武火 7.68 / 真火 8.04，
+  //   武火被真火全面压过、三档退化成两档（docs/91 §十二.3 的实算表）。
+  //   裁决采用「护纹」：失败时若 mercy > 0 → 本次**不掉纹**且清零，否则掉一纹并置 1。
+  //   成率因此**完全不碰**（三档次序与「五品概率」表都保住），
+  //   而 mercy 从「只写字段」变成**真实消费点在 commitFold 里**。
+  //   `rate` 是唯一来源：commitFold 的骰子读同一个 `plan.rate`。
+  const mercy = Math.max(0, Number(core.mercy) || 0);
   return {
     ok: true, kind: 'fold', personId: person.id, name: person.name,
     foldId: fold.id, foldName: fold.name,
-    rate: fold.rate, marks: fold.marks, cap: fold.cap,
+    rate: fold.rate,
+    /** 当前是否持有一次护纹（护纹在下次丹裂时抵消掉一纹的损失）。 */
+    mercy,
+    hasWard: mercy > 0,
+    marks: fold.marks, cap: fold.cap,
     herb: fold.herb, stones: fold.stones,
     coreMarks: core.marks, grade: grade.name, gradeId: grade.grade,
     chancesLeft: coreChancesLeft(person),
-    /** 失败后果明文（界面与 confirm 文案共用）。 */
-    failText: `丹裂掉一纹（当前 ${core.marks} → ${Math.max(0, core.marks - 1)}），补偿 +${Math.round(CORE_FAIL_MERCY * 100)} 个百分点`,
+    /** 失败后果明文（界面与 confirm 文案共用）。
+     *  【裁决 1 · 强制】这里**不许**再出现「补偿 +N 个百分点」——承诺了却不兑现
+     *  比没有承诺更糟，玩家会把失败归因成 bug。文案只描述**护纹**这个真实机制。 */
+    failText: mercy > 0
+      ? `丹裂：本次有护纹，不掉纹（当前 ${core.marks} 纹保住），护纹用掉`
+      : `丹裂掉一纹（当前 ${core.marks} → ${Math.max(0, core.marks - 1)}），并记下一次护纹`,
     desc: fold.desc,
     cost: fold.stones, currency: 'stones',
   };
@@ -7726,7 +7815,8 @@ function coreChancesLeft(person) {
 /**
  * 兑现一次结丹。
  * 成功：+marks（受 cap 限制，文火止于 6 纹）、mercy 归零；
- * 失败：丹纹 −1（最低 0）、mercy += 0.12。
+ * 失败：**护纹**语义 —— 有护纹则本次不掉纹且护纹用掉，无护纹则掉一纹并记下一次护纹。
+ *       （docs/91 §十二.3 裁决；不再写「mercy += 0.12」那种成率补偿。）
  * **无论成败都吃掉本层的唯一一次机会** —— 这是硬上限的数学保证。
  */
 function commitFold(state, personId, foldId, now = Date.now(), rng = Math.random) {
@@ -7757,15 +7847,24 @@ function commitFold(state, personId, foldId, now = Date.now(), rng = Math.random
     return { ok: true, success: true, name: person.name, gain: fold.marks, marks, grade: grade.name, gradeId: grade.grade, used };
   }
 
-  const marks = Math.max(0, core.marks - 1);
-  person.core = { marks, mercy: core.mercy + CORE_FAIL_MERCY, used };
+  // 【修复 t4 缺陷③ / 策划裁决 docs/91 §十二.3】失败分支 = **护纹**（不是成率补偿）。
+  //   若手上已有一次护纹（mercy > 0）→ 本次不掉纹、护纹用掉（mercy = 0）；
+  //   否则掉一纹、并记下一次护纹（mercy = CORE_WARD_COUNT）。
+  //   ⚠ `mercy` 是**次数**语义（有/无），不是可累积的百分点 —— 取值 0 / 1。
+  //     设计者按更新过程算过：这个语义下三档期望 文火 3.6575 / 武火 5.80738125 / 真火 5.33203125，
+  //     与「五品概率」0% / 16.64% / 26.17% 都经过 16 条序列的**精确枚举**双路径确认。
+  const warded = core.mercy > 0;
+  const marks = warded ? core.marks : Math.max(0, core.marks - 1);
+  person.core = { marks, mercy: warded ? 0 : CORE_WARD_COUNT, used };
   const grade = coreGradeOf(marks);
   pushLog(
     state,
-    `${person.name}以${fold.name}结丹失败，丹裂掉纹（余 ${marks} 纹 · ${grade.name}）。`,
+    warded
+      ? `${person.name}以${fold.name}结丹失败，丹裂 —— 但护纹挡下，${marks} 纹未损。`
+      : `${person.name}以${fold.name}结丹失败，丹裂掉纹（余 ${marks} 纹 · ${grade.name}）。`,
     'cultivate', null, now,
   );
-  return { ok: true, success: false, name: person.name, marks, grade: grade.name, gradeId: grade.grade, mercy: core.mercy + CORE_FAIL_MERCY, used };
+  return { ok: true, success: false, name: person.name, marks, warded, grade: grade.name, gradeId: grade.grade, mercy: person.core.mercy, used };
 }
 
 /** 丹图：给界面用的当前状态摘要。 */
@@ -8614,8 +8713,11 @@ const CODEX_MECHANICS = [
     prose: '进了金丹期，修为满了不再自动往上走。面板上给你两个按钮：'
       + '「晋升」无风险地进下一层，或者「结丹」留在本层，把这份修为烧成丹纹。'
       + '每层只有一次机会，所以四次机会是硬上限。'
-      + '三档火候里，**三昧真火的数学期望最低** —— 它买的不是均值，是上限：'
-      + '只有它能突破十二纹。丹纹攒出的品阶会一路带到元婴期。',
+      + '三档火候里，**三昧真火贵六倍、均值反而更低**，它买的是**上限**：'
+      + '只有它没有封顶、能突破十二纹。'
+      + '（精确枚举：文火 3.6575 / 武火 5.80738125 / 真火 5.33203125 纹 ——'
+      + '均值最低的是文火，真火是在两个付费档之间主动用均值换上限。）'
+      + '丹纹攒出的品阶会一路带到元婴期。',
     lines: (s) => [
       ...CORE_FOLDS.map((f) => `${f.name}：+${f.marks} 纹 / 成算 ${Math.round(f.rate * 100)}% / ${f.cap === null ? '无上限' : `止于 ${f.cap} 纹`}`),
       `五品门槛 = ${CORE_GRADES.find((g) => g.name === '五品').min} 纹（不是点子库原来写的 12 纹）`,
@@ -16336,6 +16438,24 @@ function createUI({ getState, actions, rng }) {
   }
 
   function updateCultivatorRoster(s,d) {
+    // 【策划 C1 / 任务 T-4-A4】勾选是**活的**：勾选框不重渲染（否则勾选会丢），
+    // 所以投帖入口的可用性必须由一次 `change` 就地刷新 —— 否则它永远停在
+    // 「渲染那一刻的勾选数」上，玩家勾了人也按不动（缺陷① 的第二种形态）。
+    // 用事件委托绑在容器上：容器不换、委托不丢。
+    if(!updateCultivatorRoster._wired){
+      updateCultivatorRoster._wired=true;
+      const listNode=$('cultivator-list');
+      listNode.addEventListener('change',(ev)=>{
+        const box=ev.target&&ev.target.closest?ev.target.closest('[data-errand-check]'):null;
+        if(!box)return;
+        const btns=listNode.querySelectorAll('[data-errand]');
+        const n=[...listNode.querySelectorAll('[data-errand-check]')].filter(x=>x.checked).length;
+        for(const b of btns){
+          b.disabled=n===0;
+          b.textContent=`投帖 · 派出门（已勾选 ${n} 人）`;
+        }
+      });
+    }
     const set=(id,value)=>{const el=$(id); if(el) el.textContent=value;};
     const formatPower=n=>Number(n).toLocaleString('zh-CN',{maximumFractionDigits:1,minimumFractionDigits:1});
     set('power-value',formatPower(d.totalPower));
@@ -16356,6 +16476,18 @@ function createUI({ getState, actions, rng }) {
       jobNode.innerHTML=Object.entries(CULTIVATOR_JOBS).map(([id,def])=>`<div class="job-stat"><strong>${counts[id]}</strong><span>${def.name}</span></div>`).join('');
     }
     const host=$('cultivator-list');
+    // 【策划 C1 / 任务 T-4-A4】勾选状态必须**活过重渲染**，否则投帖入口是个死按钮：
+    //   用户勾人 → 挂机时每几秒就有一次重渲染 → 勾选框被重建、勾选丢掉 →
+    //   「勾选 0 人 ⇒ 入口 disabled」永远成立，玩家永远按不动投帖。
+    //   做法：把「谁被勾了」并进下面的脏检查签名（它一变就重渲染），
+    //   渲染时再按这个集合回填 checked。于是勾选数、按钮的 disabled 文案都跟着走。
+    const checkedIds=[...document.querySelectorAll('[data-errand-check]')]
+      .filter(n=>n.checked)
+      .map(n=>Number(n.dataset.errandCheck))
+      .filter(n=>Number.isFinite(n)&&n>0);
+    const checkedCount=checkedIds.length;
+    const outCount=people.filter(p=>p.job==='errand').length;
+    const canErrand=people.some(p=>p.realmIndex>=1&&p.realmIndex<=9&&p.job!=='sect'&&p.job!=='garrison'&&p.job!=='errand');
     // 脏检查要把「会影响卡片上一切按钮状态的东西」都算进去：
     // 境界、修为、失败次数、灵石与线索（否则材料变少了按钮不会变灰），
     // 以及本轮新增的 push / stalled / 在外 / 道基 / 丹纹 / 年份
@@ -16370,14 +16502,25 @@ function createUI({ getState, actions, rng }) {
         + `:${coreOf(p).marks}:${Object.keys(coreOf(p).used).join('')}`
         + `:${p.realmEnteredYear||0}:${Math.floor((Number(p.stalled)||0)>0?1:0)}`;
     }).join('|')+`#${Math.floor(s.spiritStones||0)}:${s.cultivation?.clues||0}:${Math.floor(Number(s.clock?.year)||0)}`
-      +`:${worldOf(s).reached.join(',')}:${(s.cultivation?.alchemy?.herbs?.grass||0)>0?1:0}`;
+      +`:${worldOf(s).reached.join(',')}:${(s.cultivation?.alchemy?.herbs?.grass||0)>0?1:0}`
+      +`:errand-check=${checkedIds.join('.')}`;
     if(host.dataset.signature===sig) return;
     host.dataset.signature=sig;
     if(!people.length){
       host.innerHTML='<div class="cultivator-empty">尚无炼气修士。必须先通过祛障丹或灵池获得第一名修士；没有修士血脉时，绝不会天生修士。</div>';
       return;
     }
-    host.innerHTML=people.map(p=>{
+    // 【策划 C1 / 任务 T-4-A1/A4】投帖工具栏：**恰好一个** `[data-errand]`。
+    // A4 要求「勾选 0 人时按钮必须 disabled」—— 否则点下去只会得到一条
+    // 「请先勾选族人」的 toast，那个入口在语义上是死的。
+    const errandBar=canErrand
+      ? `<div class="errand-bar"><span class="errand-hint">勾选族人后可投帖问路（在外不涨修为，有去无回的风险，可随时召回）</span>`
+        +`<button class="btn errand" data-errand="1" ${checkedCount?'':'disabled'}`
+        +` title="把勾选的族人派出去打探秘闻线索">投帖 · 派出门（已勾选 ${checkedCount} 人）</button>`
+        +(outCount?`<span class="errand-out">在外 ${outCount} 人</span>`:'')
+        +`</div>`
+      : '';
+    host.innerHTML=errandBar+people.map(p=>{
       const cap=cultivateLevelCap(p);
       const st=breakthroughState(p);
       const pState=personState(p);
@@ -16414,8 +16557,15 @@ function createUI({ getState, actions, rng }) {
           +`${p.push?'猛进中':'缓修'} · 期望走火 ${exp.toFixed(1)} 次</button>`;
       }
 
-      // 【策划 C1 / 任务 T-4】投帖问路：勾选框 + 投帖 / 召回。
-      // 只对炼气族人与在外的人显示 —— 过了炼气期的人不该看见这个按钮。
+      // 【策划 C1 / 任务 T-4】投帖问路：勾选框（每张卡片一个）+ **一个**提交工具栏。
+      // 只对炼气族人与在外的人显示 —— 过了炼气期的人不该看见这个勾选框。
+      // ⚠【修复 t4 缺陷①】`p.job !== 'errand'` 这一支原来只渲染勾选框、**没有任何
+      //   `data-errand` 元素**，而处理器监听的是 `[data-errand]` ⇒ 勾选后点遍卡片上
+      //   所有按钮都不会触发投帖，整条 C1 玩法在真实游戏里不可用
+      //   （docs/92-调试报告.md §五 缺陷①，真浏览器复现）。
+      //   提交按钮**只渲染一次**（工具栏），不是每张卡片一个 —— 它是全局动作
+      //   （一次派一批），渲染成 N 个会让 `[data-errand]` 的数量随人数变化，
+      //   也会给出 N 个入口去做同一件事。docs/91 §十二 T-4-A1 要求它恰好 1 个。
       let errandBox='';
       if(p.realmIndex>=1&&p.realmIndex<=9&&p.job!=='sect'&&p.job!=='garrison'){
         if(p.job==='errand'){
@@ -16443,11 +16593,21 @@ function createUI({ getState, actions, rng }) {
             const plan=foldPlan(s,p.id,f.id);
             const capText=f.cap===null?'无上限':`止于 ${f.cap} 纹`;
             const costText=f.stones||f.herb?` · 耗 ${f.herb?`药草×${f.herb}`:''}${f.herb&&f.stones?' + ':''}${f.stones?`${f.stones} 灵石`:''}`:'';
+            // 【策划 C6 / 任务 T-6-C7「风险披露」，docs/91 §十二】按钮必须**同时**写出
+            // 「成率」与「上限纹数」。理由不是数值而是**公平性**：
+            //   真火贵 6 倍（60 灵石 vs 武火 10）却**均值更低**（枚举：真火 5.33203125 < 武火 5.80738125），
+            //   它买的是**上限**（无 cap，能突破 12 纹）。玩家若把「60 灵石」读成「更高级所以更好」，
+            //   就会觉得被坑 —— 界面不披露「上限更高、均值更低」就是在利用信息不对等，
+            //   违反 docs/00「不做隐藏公式」原则。
+            //   所以真火额外写「约三成概率只得九品」（0 次成功 = 0.75⁴ = 31.6%）。
+            const riskNote=f.id==='zhen'?' · 约三成概率只得九品':'';
             const title=plan.ok
-              ?`成算 ${(f.rate*100).toFixed(0)}%，成则 +${f.marks} 纹（${capText}）；失败丹裂掉一纹（当前 ${marks} → ${Math.max(0,marks-1)}）${costText}`
+              ?`成算 ${(f.rate*100).toFixed(0)}%，成则 +${f.marks} 纹（${capText}）；失败丹裂掉一纹（当前 ${marks} → ${Math.max(0,marks-1)}）${costText}${riskNote}`
               :plan.reason;
             return `<button class="btn fold ${plan.ok?'':'is-locked'}${f.id==='wen'?'':' fold-'+f.id}" data-fold="${f.id}" data-person="${p.id}" ${plan.ok?'':'disabled'}`
-              +` title="${title}">${f.name} ${(f.rate*100).toFixed(0)}% · ${f.marks>0?'+':''}${f.marks} 纹${f.cap!==null?` · 止于${f.cap===6?'六':f.cap}纹`:''}</button>`;
+              +` title="${title}">${f.name} ${(f.rate*100).toFixed(0)}% · ${f.marks>0?'+':''}${f.marks} 纹`
+              +`${f.cap!==null?` · 止于${f.cap===6?'六':f.cap}纹`:''}${f.cap===null?' · 无上限':''}`
+              +`${f.id==='zhen'?' · 三成只得九品':''}${costText}</button>`;
           }).join('')
           +`</div></div>`;
       }
@@ -16471,7 +16631,7 @@ function createUI({ getState, actions, rng }) {
           const relText=pv.relation==='match'?'相合 ×1.5':pv.relation==='clash'?'相冲 ×0.6':'无涉';
           siteRow=`<div class="site-box"><div class="site-head">择地筑基：先挑一块走到过的地</div>`
             +`<select class="site-select" data-site-for="${p.id}">${opts}</select>`
-            +`<div class="site-preview" data-site-preview="${p.id}">`
+            +`<div class="site-preview">`
             +`<span>地气 <b>${pv.elementName}</b>（${pv.label}）</span>`
             +`<span>品阶 <b>${pv.gradeName}</b> ×${pv.gradeMult.toFixed(2)}</span>`
             +`<span>词条 <b>×${pv.entryMult.toFixed(2)}</b>（${relText}）</span>`
@@ -16490,7 +16650,10 @@ function createUI({ getState, actions, rng }) {
         const tip=plan.ok
           ? `${plan.pillName?`需 ${plan.pillName} ×1，`:''}耗 ${plan.stones} 灵石 + ${plan.clues} 线索，成功率 ${(plan.rate*100).toFixed(0)}%；失败修为倒退 ${plan.loss} 点`
           : plan.reason;
-        gateBtn=`<button class="${cls}" data-breakthrough="${p.id}" data-force="1" ${plan.ok?'':'disabled'} title="${tip}">`
+        // ⚠【修复 t4 缺陷②】这里原来还挂着 `data-force="1"`，但**没有任何读取侧**
+        //   ⇒ 一个死属性。筑基冲关走的是正常冲关（不是强制晋升），所以直接删掉，
+        //   不要留一个「看起来能强制、其实没人读」的钩子（docs/92-调试报告.md §五 缺陷②）。
+        gateBtn=`<button class="${cls}" data-breakthrough="${p.id}" ${plan.ok?'':'disabled'} title="${tip}">`
           + `冲关 ${realmName(p.realmIndex+1)} · ${(rate*100).toFixed(0)}%</button>`;
         const pillTxt=plan.pillName?`<b>${plan.pillName}</b> + `:'';
         if(plan.ok) gateBtn+=`<span class="break-cost">${pillTxt}${plan.stones} 灵石 + ${plan.clues} 线索</span>`;
@@ -16511,6 +16674,10 @@ function createUI({ getState, actions, rng }) {
       const coreText=p.core&&coreOf(p).marks>0
         ?`<span class="core-tag">丹纹 ${coreOf(p).marks} · ${coreGradeOf(coreOf(p).marks).name}</span>`:'';
 
+      // 【修复 t4 缺陷②/⑦】`data-site-preview` 原本是渲染了却无人读的死属性，已删。
+      //   `data-pstate` 保留并**接上读取侧**：它现在既驱动卡片上的状态徽标（下面是同一份
+      //   `PERSON_STATE_LABELS[pState]`），也让样式能只靠属性选中非默认态的人。
+      //   死交互属性扫描（smoke §15.9 ⑦）会盯住这一类：渲染了就必须有人读。
       return `<article class="cultivator-card" data-person="${p.id}" data-pstate="${pState}">
         <div class="cultivator-card-top"><span class="cultivator-name">${p.name}</span><span class="cultivator-origin ${p.origin==='innate'?'is-innate':''}">${p.origin==='innate'?'天生':'后天'}</span>
           <span class="state-tag ${stateTag.cls}">${stateTag.text}</span></div>
@@ -18167,7 +18334,7 @@ document.addEventListener('click', ev => {
   if (cm && !cm.disabled) {
     const prog = reincarnationProgress(state);
     if (!prog.canEnd) { ui.toast(prog.reason, 'warn', 2600); return; }
-    if (!confirm(`确认重入轮回？家业、修士、境界、领地、丹房器坊符房全部归零，`
+    if (!window.confirm(`确认重入轮回？家业、修士、境界、领地、丹房器坊符房全部归零，`
       + `只保留轮回点与金手指（答题记录也会保留）。本世可得 ${prog.reward.total} 点轮回。`)) return;
     const r = commitReincarnation(state, metaOf(state).active);
     if (!r.ok) { ui.toast(r.reason, 'warn', 2800); return; }
@@ -18310,12 +18477,18 @@ document.addEventListener('click',ev=>{
  // 读的是 DOM 的当前值而不是重算一遍 —— 否则玩家看到的那一项与实际落库的可能不是同一块。
  const siteSel=document.querySelector(`[data-site-for="${btn.dataset.breakthrough}"]`);
  const siteId=siteSel?siteSel.value:'';
- const result=commitBreakthrough(state,Number(btn.dataset.breakthrough),Date.now(),rng,siteId||undefined);
+ // 【修复 t4 缺陷②】金丹期「晋升」按钮：读 data-force 走**无风险直接晋升**分支。
+ // 原实现渲染了 data-force 却没有任何读取侧 ⇒ 按钮点了什么都不发生；而修为停在 need、
+ // 自动晋升又只吃「超出 need 的部分」，玩家会被**永久卡在金丹期**。
+ // 这是「渲染侧给了属性、处理侧不读」的静默失效 —— 与投帖那个缺陷正好相反方向，同一类病。
+ const force=btn.dataset.force==='1';
+ const result=commitBreakthrough(state,Number(btn.dataset.breakthrough),Date.now(),rng,siteId||undefined,force);
  ui.toast(result.ok
-   ? (result.success?`${result.name}冲关成功，晋${result.realm}！`
-                    :`${result.name}冲关失败，修为倒退 ${result.loss} 点；下一次成功率 ${(result.nextRate*100).toFixed(0)}%`)
+   ? (result.promoted?`${result.name}选择晋升${result.realm}（本层未结丹）`
+      : result.success?`${result.name}冲关成功，晋${result.realm}！`
+                     :`${result.name}冲关失败，修为倒退 ${result.loss} 点；下一次成功率 ${(result.nextRate*100).toFixed(0)}%`)
    : result.reason,
-   result.ok&&result.success?'ok':'warn', 3600);
+   result.ok&&!result.promoted&&!result.success?'warn':'ok', 3600);
  if(result.ok){writeSave(state);ui.render();}
  repaintExpansion(true);
 });
@@ -18332,19 +18505,30 @@ document.addEventListener('click',ev=>{
 
 /* 【策划 C1 / 任务 T-4】投帖与召回。勾选框把 id 收集起来，一次提交一批。 */
 document.addEventListener('click',ev=>{
- const btn=ev.target.closest('[data-errand],[data-recall]');if(!btn||btn.disabled)return;
+ // 【修复 t4 缺陷①】选择器拆成两次 `closest`，**不用逗号选择器**。
+ // 原因：逗号选择器在无头垫片里永远匹配不到（`scripts/dom-shim.mjs` 的
+ // matchesCompound 只认单一复合选择器），于是这个处理器在 smoke 里
+ // **永远不会被触发**，任何「点一下按钮」的断言都会静默落空 ——
+ // 缺陷① 正是在这种「测试看起来覆盖了、其实一次都没跑」的情况下活下来的（docs/92 §五·缺陷⑦）。
+ // 拆开后这个处理器在垫片里也能真跑，入口断言才有意义。
+ const errandBtn=ev.target.closest('[data-errand]');
+ const recallBtn=errandBtn?null:ev.target.closest('[data-recall]');
+ const btn=errandBtn||recallBtn;if(!btn||btn.disabled)return;
  if(ui.quiz.isBusy())return;
  const ids=[...document.querySelectorAll('[data-errand-check]')]
    .filter(n=>n.checked)
    .map(n=>Number(n.dataset.errandCheck))
    .filter(n=>Number.isFinite(n)&&n>0);
  if(!ids.length){ui.toast('请先勾选族人，再点投帖 / 召回','warn',2600);return;}
- if(btn.dataset.errand!==undefined){
+ if(errandBtn){
    // 确认文案必须写明「在外的人有 X%/时 回不来」——风险要能算，不能只说「有风险」
    const perHour=(ERRAND_DEATH_PER_SEC*3600*100).toFixed(2);
-   if(!confirm(`派这 ${ids.length} 人出门投帖？他们在外的期间不涨修为、不能镇守或探险，每人每小时约有 ${perHour}% 回不来（可随时召回）。`))return;
+   // ⚠ 用 window.confirm：无头垫片把 confirm 挂在 window 上（没挂到 globalThis），
+   //   写裸 window.confirm() 会在 Node 里抛 ReferenceError，被垫片安静吞掉 —— 又是一次假覆盖。
+   const ask=typeof window!=='undefined'&&typeof window.confirm==='function'?window.confirm:(()=>true);
+   if(!ask(`派这 ${ids.length} 人出门投帖？他们在外的期间不涨修为、不能镇守或探险，每人每小时约有 ${perHour}% 回不来（可随时召回）。`))return;
  }
- const r=immortalAction(state,btn.dataset.errand!==undefined?'errand':'recall',ids.join(','),rng);
+ const r=immortalAction(state,errandBtn?'errand':'recall',ids.join(','),rng);
  ui.toast(r.reason,r.ok?'ok':'warn',3600);
  if(r.ok){writeSave(state);ui.render();}
  repaintExpansion(true);
@@ -18357,11 +18541,15 @@ document.addEventListener('click',ev=>{
  const foldId=btn.dataset.fold,pid=Number(btn.dataset.person);
  const plan=foldPlan(state,pid,foldId);
  if(!plan.ok){ui.toast(plan.reason,'warn',2800);return;}
- if(!confirm(`以${plan.foldName}结丹？成算 ${(plan.rate*100).toFixed(0)}%，成则 +${plan.marks} 纹（${plan.cap===null?'无上限':`止于 ${plan.cap} 纹`}）；失败${plan.failText}。本层这一次机会用完就没有了。`))return;
+ // ⚠ 用 window.confirm：无头垫片把 confirm 挂在 window 上（没挂 globalThis），
+ //   裸 window.confirm() 在 Node 里会抛 ReferenceError 并被垫片安静吞掉 —— 那是假覆盖。
+ const ask=typeof window!=='undefined'&&typeof window.confirm==='function'?window.confirm:(()=>true);
+ if(!ask(`以${plan.foldName}结丹？成算 ${(plan.rate*100).toFixed(0)}%，成则 +${plan.marks} 纹（${plan.cap===null?'无上限':`止于 ${plan.cap} 纹`}）；失败时：${plan.failText}。本层这一次机会用完就没有了。`))return;
  const r=commitFold(state,pid,foldId,Date.now(),rng);
  ui.toast(r.ok
    ? (r.success?`${r.name}结丹成功，得 ${r.gain} 纹（共 ${r.marks} 纹 · ${r.grade}）`
-              :`${r.name}结丹失败，丹裂掉纹（余 ${r.marks} 纹 · ${r.grade}）`)
+              : (r.warded?`${r.name}结丹失败 —— 护纹挡下，${r.marks} 纹未损`
+                         :`${r.name}结丹失败，丹裂掉纹（余 ${r.marks} 纹 · ${r.grade}）`))
    : r.reason,
    r.ok&&r.success?'ok':'warn',4200);
  if(r.ok){writeSave(state);ui.render();}
@@ -18374,7 +18562,7 @@ document.addEventListener('click',ev=>{
  if(ui.quiz.isBusy())return;
  const plan=dissolveFoundationPlan(state,Number(btn.dataset.dissolve));
  if(!plan.ok){ui.toast(plan.reason,'warn',2800);return;}
- if(!confirm(`${plan.name}散去${plan.nodeName}的地气，境界回退到炼气九层、修为清零、`
+ if(!window.confirm(`${plan.name}散去${plan.nodeName}的地气，境界回退到炼气九层、修为清零、`
    +`${plan.hours} 游戏小时不能修炼、家族道心 ${plan.morality}。功法与家业都保留。确认？`))return;
  const r=commitDissolveFoundation(state,Number(btn.dataset.dissolve),Date.now());
  ui.toast(r.ok?`${r.name}散功重修，择地之权仍在手`:'散功失败',r.ok?'warn':'warn',3600);
@@ -18419,7 +18607,7 @@ document.addEventListener('click',ev=>{
   if(!p||!c)return;
   if(!mapAccessible(state,nodeId)){ui.toast('与此地不相邻，需先打通沿途','warn',2600);return;}
   const survival=caveSurvival(state,p,c);
-  if(!confirm(`${p.name}将挑战${c.name}，预估生还率${(survival*100).toFixed(1)}%，失败永久失去修士！确认消耗 ${c.fee} 灵石、${c.clues} 线索吗？`))return;
+  if(!window.confirm(`${p.name}将挑战${c.name}，预估生还率${(survival*100).toFixed(1)}%，失败永久失去修士！确认消耗 ${c.fee} 灵石、${c.clues} 线索吗？`))return;
   param=`${id}:${nodeId}`;
  }
  if(kind==='attack'){
@@ -18429,7 +18617,7 @@ document.addEventListener('click',ev=>{
   if(!mapAccessible(state,param)){ui.toast('与此地不相邻，需先打通沿途','warn',2600);return;}
   const plan=mapPlan(state,param);
   if(!plan.ok){ui.toast(plan.reason,'warn',2600);return;}
-  if(!confirm(`确认攻伐${f.name}？胜算 ${(plan.rate*100).toFixed(1)}%，战败可能折损修士。`))return;
+  if(!window.confirm(`确认攻伐${f.name}？胜算 ${(plan.rate*100).toFixed(1)}%，战败可能折损修士。`))return;
  }
  if(kind==='garrison'){
   const nodeId=btn.dataset.mapNode;
@@ -18441,36 +18629,36 @@ document.addEventListener('click',ev=>{
   param=btn.dataset.rune;
   const plan=runePlan(state,param);
   if(!plan.ok){ui.toast(plan.reason,'warn',2600);return;}
-  if(!confirm(`画${plan.name}？成功率 ${(plan.rate*100).toFixed(0)}%，失败会损失全部符文；成品 ${RUNE_SHELF_HOURS} 小时内不用即作废。`))return;
+  if(!window.confirm(`画${plan.name}？成功率 ${(plan.rate*100).toFixed(0)}%，失败会损失全部符文；成品 ${RUNE_SHELF_HOURS} 小时内不用即作废。`))return;
  }
  if(kind==='rune-bench'){
   const plan=benchUpgradePlan(state);
   if(!plan.ok){ui.toast(plan.reason,'warn',2600);return;}
-  if(!confirm(`升级符台到${plan.next.name}？消耗 ${plan.stones} 灵石 + ${plan.next.silver} 两银。`))return;
+  if(!window.confirm(`升级符台到${plan.next.name}？消耗 ${plan.stones} 灵石 + ${plan.next.silver} 两银。`))return;
  }
  if(kind==='rune-use')param=btn.dataset.rune;
  if(kind==='forge'){
   param=btn.dataset.artifact;
   const plan=forgePlan(state,param);
   if(!plan.ok){ui.toast(plan.reason,'warn',2600);return;}
-  if(!confirm(`开炉铸${plan.name}（${plan.slot}）？成功率 ${(plan.rate*100).toFixed(0)}%，失败会损失全部矿料。`))return;
+  if(!window.confirm(`开炉铸${plan.name}（${plan.slot}）？成功率 ${(plan.rate*100).toFixed(0)}%，失败会损失全部矿料。`))return;
  }
  if(kind==='forge-level'){
   const plan=forgeUpgradePlan(state);
   if(!plan.ok){ui.toast(plan.reason,'warn',2600);return;}
-  if(!confirm(`升级锻造台到${plan.next.name}？消耗 ${plan.stones} 灵石 + ${plan.next.silver} 两银。`))return;
+  if(!window.confirm(`升级锻造台到${plan.next.name}？消耗 ${plan.stones} 灵石 + ${plan.next.silver} 两银。`))return;
  }
  if(kind==='artifact-equip'||kind==='artifact-repair')param=btn.dataset.artifact;
  if(kind==='craft'){
   param=btn.dataset.recipe;
   const plan=recipePlan(state,param);
   if(!plan.ok){ui.toast(plan.reason,'warn',2600);return;}
-  if(!confirm(`开炉炼${plan.name}？成功率 ${(plan.rate*100).toFixed(0)}%，失败会损失全部材料。`))return;
+  if(!window.confirm(`开炉炼${plan.name}？成功率 ${(plan.rate*100).toFixed(0)}%，失败会损失全部材料。`))return;
  }
  if(kind==='furnace'){
   const plan=furnaceUpgradePlan(state);
   if(!plan.ok){ui.toast(plan.reason,'warn',2600);return;}
-  if(!confirm(`升炉到${plan.next.name}？消耗 ${plan.stones} 灵石 + ${plan.next.silver} 两银。`))return;
+  if(!window.confirm(`升炉到${plan.next.name}？消耗 ${plan.stones} 灵石 + ${plan.next.silver} 两银。`))return;
  }
  if(kind==='use-human-pill')param=btn.dataset.person;
  if(kind==='mine-workers')param=document.getElementById('mine-workers')?.value;

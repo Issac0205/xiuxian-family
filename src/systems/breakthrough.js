@@ -92,8 +92,12 @@ function findCultivator(state, personId) {
  * 【策划 C4 / 任务 T-5】新增第三个参数 `siteId`：炼气九层那道门槛要求「择地」，
  * 候选清单来自 worldOf(state).reached（只有**走到过**的地才能选）。
  * 出处：docs/91-落地任务清单.md §三 T-5 验收标准 1。
+ *
+ * 【修复 t4 缺陷②】再新增第四个参数 `force`（默认 false）：
+ * 金丹期「晋升」按钮走的就是 `force = true` —— 无风险直接进阶、不消耗本层的火候机会。
+ * ⚠ 形参只能往**后面**加：smoke 里仍按第 3 个位置传 siteId，改位置会静默错位。
  */
-function breakthroughPlan(state, personId, siteId) {
+function breakthroughPlan(state, personId, siteId, force = false) {
   const person = findCultivator(state, personId);
   if (!person) return { ok: false, reason: '修士不存在' };
 
@@ -101,7 +105,28 @@ function breakthroughPlan(state, personId, siteId) {
   if (st.kind === 'max') return { ok: false, reason: `${person.name}已至此界尽头` };
   if (st.kind === 'progressing') return { ok: false, reason: '同档内会自动晋阶，无需冲关' };
   // 【策划 C6 / 任务 T-6】金丹期修为满时走的是结丹那条路，不是冲关
-  if (st.kind === 'folding') return { ok: false, reason: `${person.name}已可结丹：晋升还是结丹，由你定`, folding: true };
+  if (st.kind === 'folding') {
+    // 【修复 t4 缺陷②】folding 是「晋升 or 结丹」的二选一，不是「只能结丹」。
+    // force 就是「晋升」那一支：无风险、无消耗、不占本层的火候机会。
+    if (force) {
+      return {
+        ok: true,
+        kind: 'promote',
+        force: true,
+        personId: person.id,
+        name: person.name,
+        fromName: realmName(person.realmIndex),
+        toName: realmName(person.realmIndex + 1),
+        stones: 0, clues: 0, pill: null, pillName: null,
+        rate: 1,
+        runeBonus: 0, metaBonus: 0, techBonus: 0,
+        loss: 0,
+        currency: 'stones',
+        cost: 0,
+      };
+    }
+    return { ok: false, reason: `${person.name}已可结丹：晋升还是结丹，由你定`, folding: true };
+  }
   if (st.kind === 'filling') {
     return {
       ok: false,
@@ -189,7 +214,31 @@ function breakthroughPlan(state, personId, siteId) {
  * 【策划 C4 / 任务 T-5】新增 siteId：择地筑基那一关成功后把
  * `person.foundation = { nodeId, element, grade }` 落库。
  */
-function commitBreakthrough(state, personId, now = Date.now(), rng = Math.random, siteId) {
+function commitBreakthrough(state, personId, now = Date.now(), rng = Math.random, siteId, force = false) {
+  // 【修复 t4 缺陷②】金丹期「晋升」：force 分支必须在 plan 之前拦下。
+  //   folding 的语义是「这一份修为拿去升境界，还是烧成丹纹」——**二选一，不是只能结丹**。
+  //   无风险、无消耗、且**不写 core.used**（火候机会留给别的层），这与 T-6 的
+  //   「同一层最多结丹一次」不冲突：玩家只是把这一层的机会放弃了而已。
+  //   ⚠ 若不修：修为停在 need、自动晋升又只吃「超出 need 的部分」（`xp -= need`），
+  //     于是 `xp === need` 永不自愈 ⇒ 金丹期满修为后不结丹就**永远出不去**，
+  //     4 次火候机会从「可选下注」变成「必经流程」，
+  //     反过来架空 docs/91 §三 T-6「绑成晋升的替代、防止反复结丹刷丹纹」那条硬上限论证。
+  if (force) {
+    const fp = breakthroughPlan(state, personId, siteId, true);
+    if (!fp.ok) return fp;
+    const p = findCultivator(state, personId);
+    p.realmIndex += 1;
+    p.xp = 0;
+    p.breakFailures = 0;
+    // 【策划 C14 / 任务 T-2b】晋升即重置「入此境之年」，寿量从满开始算
+    p.realmEnteredYear = Math.max(0, Number(state.clock?.year) || 0);
+    pushLog(state, `${p.name}自择晋升${realmName(p.realmIndex)}（未结丹）。`, 'cultivate', null, now);
+    return {
+      ok: true, success: true, promoted: true, name: p.name,
+      realm: realmName(p.realmIndex), realmIndex: p.realmIndex,
+    };
+  }
+
   const plan = breakthroughPlan(state, personId, siteId);
   if (!plan.ok) return plan;
 
@@ -391,15 +440,33 @@ function foldPlan(state, personId, foldId) {
   if (fold.herb > 0 && herbCount(state, 'grass') < fold.herb) {
     return { ...base, reason: `${fold.name}需 ${fold.herb} 份药草（现有 ${Math.floor(herbCount(state, 'grass'))}）` };
   }
+  // 【修复 t4 缺陷③ / 策划裁决 docs/91 §十二.3】`mercy` 的语义是**护纹**，不是成率补偿。
+  //   历史：原实现只累加 `mercy`、只写进文案，骰子从不读它 ⇒ 界面承诺「补偿 +12 个百分点」
+  //   而结算从不兑现（docs/92 §五 缺陷③）。
+  //   ⚠ **不能**把它接进成率：四次的累计期望会变成 武火 7.68 / 真火 8.04，
+  //   武火被真火全面压过、三档退化成两档（docs/91 §十二.3 的实算表）。
+  //   裁决采用「护纹」：失败时若 mercy > 0 → 本次**不掉纹**且清零，否则掉一纹并置 1。
+  //   成率因此**完全不碰**（三档次序与「五品概率」表都保住），
+  //   而 mercy 从「只写字段」变成**真实消费点在 commitFold 里**。
+  //   `rate` 是唯一来源：commitFold 的骰子读同一个 `plan.rate`。
+  const mercy = Math.max(0, Number(core.mercy) || 0);
   return {
     ok: true, kind: 'fold', personId: person.id, name: person.name,
     foldId: fold.id, foldName: fold.name,
-    rate: fold.rate, marks: fold.marks, cap: fold.cap,
+    rate: fold.rate,
+    /** 当前是否持有一次护纹（护纹在下次丹裂时抵消掉一纹的损失）。 */
+    mercy,
+    hasWard: mercy > 0,
+    marks: fold.marks, cap: fold.cap,
     herb: fold.herb, stones: fold.stones,
     coreMarks: core.marks, grade: grade.name, gradeId: grade.grade,
     chancesLeft: coreChancesLeft(person),
-    /** 失败后果明文（界面与 confirm 文案共用）。 */
-    failText: `丹裂掉一纹（当前 ${core.marks} → ${Math.max(0, core.marks - 1)}），补偿 +${Math.round(CORE_FAIL_MERCY * 100)} 个百分点`,
+    /** 失败后果明文（界面与 confirm 文案共用）。
+     *  【裁决 1 · 强制】这里**不许**再出现「补偿 +N 个百分点」——承诺了却不兑现
+     *  比没有承诺更糟，玩家会把失败归因成 bug。文案只描述**护纹**这个真实机制。 */
+    failText: mercy > 0
+      ? `丹裂：本次有护纹，不掉纹（当前 ${core.marks} 纹保住），护纹用掉`
+      : `丹裂掉一纹（当前 ${core.marks} → ${Math.max(0, core.marks - 1)}），并记下一次护纹`,
     desc: fold.desc,
     cost: fold.stones, currency: 'stones',
   };
@@ -415,7 +482,8 @@ function coreChancesLeft(person) {
 /**
  * 兑现一次结丹。
  * 成功：+marks（受 cap 限制，文火止于 6 纹）、mercy 归零；
- * 失败：丹纹 −1（最低 0）、mercy += 0.12。
+ * 失败：**护纹**语义 —— 有护纹则本次不掉纹且护纹用掉，无护纹则掉一纹并记下一次护纹。
+ *       （docs/91 §十二.3 裁决；不再写「mercy += 0.12」那种成率补偿。）
  * **无论成败都吃掉本层的唯一一次机会** —— 这是硬上限的数学保证。
  */
 function commitFold(state, personId, foldId, now = Date.now(), rng = Math.random) {
@@ -446,15 +514,24 @@ function commitFold(state, personId, foldId, now = Date.now(), rng = Math.random
     return { ok: true, success: true, name: person.name, gain: fold.marks, marks, grade: grade.name, gradeId: grade.grade, used };
   }
 
-  const marks = Math.max(0, core.marks - 1);
-  person.core = { marks, mercy: core.mercy + CORE_FAIL_MERCY, used };
+  // 【修复 t4 缺陷③ / 策划裁决 docs/91 §十二.3】失败分支 = **护纹**（不是成率补偿）。
+  //   若手上已有一次护纹（mercy > 0）→ 本次不掉纹、护纹用掉（mercy = 0）；
+  //   否则掉一纹、并记下一次护纹（mercy = CORE_WARD_COUNT）。
+  //   ⚠ `mercy` 是**次数**语义（有/无），不是可累积的百分点 —— 取值 0 / 1。
+  //     设计者按更新过程算过：这个语义下三档期望 文火 3.6575 / 武火 5.80738125 / 真火 5.33203125，
+  //     与「五品概率」0% / 16.64% / 26.17% 都经过 16 条序列的**精确枚举**双路径确认。
+  const warded = core.mercy > 0;
+  const marks = warded ? core.marks : Math.max(0, core.marks - 1);
+  person.core = { marks, mercy: warded ? 0 : CORE_WARD_COUNT, used };
   const grade = coreGradeOf(marks);
   pushLog(
     state,
-    `${person.name}以${fold.name}结丹失败，丹裂掉纹（余 ${marks} 纹 · ${grade.name}）。`,
+    warded
+      ? `${person.name}以${fold.name}结丹失败，丹裂 —— 但护纹挡下，${marks} 纹未损。`
+      : `${person.name}以${fold.name}结丹失败，丹裂掉纹（余 ${marks} 纹 · ${grade.name}）。`,
     'cultivate', null, now,
   );
-  return { ok: true, success: false, name: person.name, marks, grade: grade.name, gradeId: grade.grade, mercy: core.mercy + CORE_FAIL_MERCY, used };
+  return { ok: true, success: false, name: person.name, marks, warded, grade: grade.name, gradeId: grade.grade, mercy: person.core.mercy, used };
 }
 
 /** 丹图：给界面用的当前状态摘要。 */

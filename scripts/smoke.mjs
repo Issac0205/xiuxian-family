@@ -10,7 +10,7 @@
  * 随机源播种，所以每次跑出的结果逐位相同。
  */
 import { readFileSync } from 'node:fs';
-import { installDOM } from './dom-shim.mjs';
+import { installDOM, walk } from './dom-shim.mjs';
 
 let failed = 0;
 function check(label, cond, detail = '') {
@@ -2174,10 +2174,12 @@ section('T-0 线索经济（产出侧守恒）');
     check('线索总产出（池 + 仙道科技可再生）≥ 四道门槛累计需求',
       oneShot + renewable >= cluesInfo.gateDemand,
       `${oneShot} 池 + ${renewable} 可再生 = ${oneShot + renewable} ≥ ${cluesInfo.gateDemand}（${cycleHours.toFixed(1)} 小时）`);
-    // 慢路的余量（docs/91 T-0 供给侧表要求 ≥ +50%）
-    check('慢路（不投帖）对门槛需求留有 ≥ 50% 余量',
+    // 慢路的余量。⚠【策划裁决 docs/91 §十二.4】口径已从「需求 59」改为**硬需求**：
+    //   旧口径把参悟按 10 本算（实为 24 本 × 2 = 48），「+56%」已被设计师撤回，
+    //   现在只对**硬需求 28**（四道门槛）要求余量，长期池（参悟）不再算进「必需」。
+    check('慢路（不投帖）对**硬需求**（四道门槛）留有 ≥ 50% 余量',
       oneShot + renewable >= cluesInfo.gateDemand * 1.5,
-      `余量 ${(((oneShot + renewable) / cluesInfo.gateDemand - 1) * 100).toFixed(0)}%`);
+      `硬需求 ${cluesInfo.gateDemand}，余量 ${(((oneShot + renewable) / cluesInfo.gateDemand - 1) * 100).toFixed(0)}%`);
   }
 
   // ④ 冲关失败不再扣线索（否则「缺线索」会变成死局）
@@ -2663,6 +2665,169 @@ section('T-4 投帖问路（拿族人的命换线索）');
       return document.querySelectorAll('#cultivator-list [data-recall]').length === 1;
     })());
   }
+
+  /* ── 【修复 t4 缺陷① / docs/91 §十二 T-4-A1 ~ A4】投帖入口的属性级与端到端断言 ──
+   * 缺陷① 的原形态：渲染侧只有勾选框、**没有任何 `data-errand` 元素**，
+   * 而处理器等的是 `[data-errand]` ⇒ 玩家勾了人却没人出门。
+   * 它之所以能活下来，是因为原来的断言只问「数据接没接上」（`immortalAction` 直调），
+   * **从没问「界面上那个按钮在不在、点了会不会动」**。
+   * ⚠ 这几条一律查**渲染结果的 DOM**，不查模板字符串 —— 查模板字符串就只能证明
+   *   「源码里写了这几个字」，证明不了「它在真实 DOM 里、且点击链路通」。 */
+  {
+    // ⚠ 所有查询都**限定在 `#cultivator-list` 内**，不用 `document.querySelector`。
+    //   原因（这一条是实测出来的坑）：垫片会把内联 `<script type="module">` 里的
+    //   文本当成 HTML 解析，于是 `data-errand-check="${p.id}"` 这种**模板字面量**
+    //   会在 BODY 下生成「幻影元素」，`document.querySelectorAll` 会把它们算进去。
+    //   限定作用域后只数真实渲染出来的那一个。
+    const listQ = () => document.getElementById('cultivator-list');
+
+    // ── T-4-A4：勾选 0 人时入口必须 disabled（否则那个入口是死的）──
+    setPeople(
+      person({ id: 1, realmIndex: 3, job: 'retreat', talent: 1 }),
+      person({ id: 2, realmIndex: 3, job: 'retreat', talent: 1 }),
+    );
+    state.population = 0;
+    X.ui.render();
+    check('T-4-A1：界面上恰好有 1 个投帖入口 `[data-errand]`',
+      listQ().querySelectorAll('[data-errand]').length === 1,
+      `${listQ().querySelectorAll('[data-errand]').length} 个`);
+    check('T-4-A4：勾选 0 人时投帖入口 disabled',
+      listQ().querySelector('[data-errand]').disabled === true);
+
+    // ── T-4-A2：端到端 —— 勾 2 人 → 派发真实 click → 这 2 人出门、其余人不变 ──
+    //    走的是「属性名 → 事件委托 → dispatcher」整条链路，正是缺陷① 断掉的那一段。
+    //    第 3 个人是宗门弟子 ⇒ 界面上不会给他勾选框，覆盖「其余人不变」。
+    setPeople(
+      person({ id: 1, realmIndex: 3, job: 'retreat', talent: 1 }),
+      person({ id: 2, realmIndex: 3, job: 'retreat', talent: 1 }),
+      person({ id: 3, realmIndex: 3, job: 'sect', talent: 1 }),
+    );
+    state.population = 0;
+    X.ui.render();
+    // 勾选框是**活的**：勾选后不重渲染（否则勾选会丢），
+    // 所以入口的可用性由容器上的 `change` 委托就地刷新。
+    // ⚠ 垫片限制（与「逗号选择器」同类，如实记在这里）：`Element.dispatch` **不冒泡**，
+    //   所以没法靠「在勾选框上派发事件」触发容器上的委托。
+    //   这里按垫片暴露的路径直接调容器上的 change 监听器（`dom.click` 也是这么做的），
+    //   并把 `target` 指向勾选框 —— 真实浏览器里这一步由冒泡完成。
+    for (const n of listQ().querySelectorAll('[data-errand-check]')) n.checked = true;
+    const cbTarget = listQ().querySelector('[data-errand-check]');
+    for (const fn of (listQ()._listeners?.change || [])) fn({ target: cbTarget });
+    const eb = listQ().querySelector('[data-errand]');
+    check('T-4-A2：勾选并派发 change 后入口不再 disabled —— 入口是活的',
+      eb.disabled === false, `disabled=${eb.disabled}`);
+    dom.click(eb);
+    check('T-4-A2：端到端点击投帖 → 勾选的 2 人 job 变成 errand',
+      state.cultivation.cultivators[0].job === 'errand'
+      && state.cultivation.cultivators[1].job === 'errand',
+      `${state.cultivation.cultivators.map((p) => p.job).join(',')}`);
+    check('T-4-A2：端到端点击投帖 → 没勾的宗门弟子不受影响',
+      state.cultivation.cultivators[2].job === 'sect');
+
+    // ── T-4-A3：召回后 job 回 retreat，且 errandSince 被删掉 ──
+    // ⚠ 召回是**按勾选取人**的（与投帖同一个处理器）：不勾选就只会得到
+    //   「请先勾选族人」的提示。所以这里必须先把他的框勾上 —— 这也正是真实的
+    //   操作路径（玩家在外的人身上勾一下，再点召回），测试要照着走。
+    setPeople(person({ id: 1, realmIndex: 3, job: 'errand', talent: 1, errandSince: 7 }));
+    state.population = 0;
+    X.ui.render();
+    check('T-4-A3：在外的人有 `[data-recall]`（恰好 1 个）',
+      listQ().querySelectorAll('[data-recall]').length === 1,
+      `${listQ().querySelectorAll('[data-recall]').length}`);
+    listQ().querySelector('[data-errand-check]').checked = true;
+    dom.click(listQ().querySelector('[data-recall]'));
+    check('T-4-A3：勾选后点召回 → job 回 retreat',
+      state.cultivation.cultivators[0].job === 'retreat',
+      state.cultivation.cultivators[0].job);
+    check('T-4-A3：点召回 → errandSince 被删掉',
+      !('errandSince' in state.cultivation.cultivators[0]));
+    check('T-4-A3：**没勾选**时点召回不会误召回（入口有守卫，不是无脑全召回）', (() => {
+      setPeople(person({ id: 1, realmIndex: 3, job: 'errand', talent: 1, errandSince: 7 }));
+      state.population = 0;
+      X.ui.render();
+      dom.click(listQ().querySelector('[data-recall]'));
+      return state.cultivation.cultivators[0].job === 'errand';
+    })());
+  }
+
+  /* ── 【修复 t4 缺陷⑦ / pre-push-review-gate.md R2⑤】死交互属性静态扫描（带阳性对照）──
+   * ① 和 ② 是同一个病的两个方向：
+   *   ① 处理侧在等一个**没人渲染**的属性（`[data-errand]` 永远匹配不到）；
+   *   ② 渲染侧给了一个**没人读**的属性（`data-force` 曾挂在筑基冲关按钮上）。
+   * 一条静态扫描能同时钉住两个方向的地方：`app.js` 渲染出的交互型 `data-*`，
+   * 都必须在 `main.js`/`app.js` 里有读取侧；反之亦然。
+   *
+   * ⚠ **这条扫描的能力边界（必须写清，否则会被过度信任）**：
+   *   它是**全局**的 —— 只问「这个属性名有没有人读」，**不问「是不是同一个按钮上的人读」**。
+   *   当初 `data-force` 恰好能骗过它：main.js 里确实读了 `dataset.force`（金丹那个按钮），
+   *   所以全局看它「有读取侧」，而筑基按钮上那一个是死的。
+   *   「同一个按钮上渲染与读取对得上」只能靠**行为级断言**（T-6-A1/A4、T-4-A2）兜住。
+   *   所以三种断言是一套：静态扫描管「有没有」、行为级管「对不对」、uicheck 管「看不看得见」。
+   */
+  {
+    /** 去掉注释，避免把**注释里提到的**属性名算成渲染点。
+     *  这一步是实测必需的：`// data-site-preview 已删` 这种说明文字会被
+     *  `data-([a-z]...)` 扫成「渲染了」，于是扫描器报一个已经不存在的属性。 */
+    const stripComments = (src) => src
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+    /** 渲染侧：`app.js` 里出现在 `data-xxx="` 或 `data-xxx}` 之类位置上的属性名。 */
+    const scanRendered = (src) => {
+      const out = new Set();
+      const re = /\bdata-([a-z][a-z0-9-]*)/g;
+      let m;
+      while ((m = re.exec(src))) out.add(`data-${m[1]}`);
+      return out;
+    };
+    /** 读取侧：`dataset.xxx` / `closest('[data-xxx…` / `querySelector*('[data-xxx…`。 */
+    const scanRead = (src) => {
+      const out = new Set();
+      for (const m of src.matchAll(/dataset\.([A-Za-z0-9_]+)/g)) {
+        out.add(`data-${m[1].replace(/_/g, '-').replace(/[A-Z]/g, (c) => `-${c.toLowerCase()}`)}`);
+      }
+      for (const m of src.matchAll(/(?:closest|querySelector|querySelectorAll)\(\s*[`'"]([^`'"]*)/g)) {
+        for (const a of m[1].matchAll(/\[(data-[a-z0-9-]+)/g)) out.add(a[1]);
+      }
+      return out;
+    };
+    const appSrc = stripComments(readFileSync('src/ui/app.js', 'utf8'));
+    const mainSrc = stripComments(readFileSync('src/main.js', 'utf8'));
+    const rendered = scanRendered(appSrc);
+    const read = scanRead(appSrc + '\n' + mainSrc);
+    /**
+     * 「语义标记」——渲染出来**只为给 CSS / 调试看**、不需要 JS 读取侧的属性。
+     * ⚠ 新加一项等于承认又多了一个没人读的属性，所以每加一项都要写清理由。
+     *   缺陷②（`data-force` 挂在筑基按钮上、读了也没用）之后，这两项是全部豁免。
+     */
+    const NON_INTERACTIVE = new Set([
+      // 卡片状态标记：供 CSS 选中「非默认态」的人，不是交互入口。
+      'data-pstate',
+      // 脏检查签名：由 `render()` 自己写给自己读（`host.dataset.signature`），
+      // 不是事件委托的入口，所以「没有读取侧」是设计如此。
+      'data-signature',
+    ]);
+    const orphanRendered = [...rendered].filter((a) => !read.has(a) && !NON_INTERACTIVE.has(a));
+    check('渲染出的每个交互型 data-* 都有读取侧（没有「渲染了但没人读」）',
+      orphanRendered.length === 0, orphanRendered.join(','));
+
+    /* 反向：只查**这次任务碰过的那几个交互属性**有没有渲染点。
+     * 为什么不查全部：`read` 里一大批属性的渲染点在**骨架**（`_shell-head.html`）
+     * 或别的模块里用**动态**写法生成（`dataset.x = …`、`setAttribute('data-x')`、
+     * `data-codex-chapter` 那种跨模块约定），静态扫 `app.js` 看不见它们 ——
+     * 全量比对会给出 20 条假阳性，那种断言没人会看，等于没写。
+     * 收窄到本任务真正修过的那几个，才是「缺陷① 会不会复发」的判据。 */
+    const TASK_ATTRS = ['data-errand', 'data-errand-check', 'data-recall'];
+    const orphanRead = TASK_ATTRS.filter((a) => read.has(a) && !rendered.has(a));
+    check('读取侧引用的投帖/召回属性都有渲染点（缺陷① 不会复发）',
+      orphanRead.length === 0, orphanRead.join(','));
+    check('扫描器真的扫到了东西（不是空集上的恒真）',
+      rendered.size > 20 && read.size > 20, `渲染 ${rendered.size} 个 / 读取 ${read.size} 个`);
+    // 阳性对照：把「一个必然无人读的属性名」注入渲染集合，扫描必须报出来 ——
+    // 没有这一步，上面两条可能是恒真的空检查（本项目已栽过两次）。
+    const probe = [...rendered, 'data-orphan-probe'].filter((a) => !read.has(a) && !NON_INTERACTIVE.has(a));
+    check('阳性对照：注入一个无人读的 data-* → 扫描器必须报出来',
+      probe.includes('data-orphan-probe'), probe.join(','));
+  }
 }
 
 /* ══════════════════════ 15.10 T-5 择地筑基 ══════════════════════ */
@@ -2916,6 +3081,65 @@ section('T-6 结丹（每一次修为满，都是一次下注）');
     check('丹成待决时卡片上有三档火候的「结丹」按钮', list.querySelectorAll('[data-fold]').length === 3);
   }
 
+  /* ── 【修复 t4 缺陷② / docs/91 §十二 T-6-A1 ~ A4】「晋升」按钮的**行为级**验证 ──
+   * 原形态：`app.js` 渲染了 `data-force="1"`，而 `main.js` 不读它，
+   * `commitBreakthrough` 又在 folding 态直接 `ok:false` ⇒ 按钮点了什么都不发生。
+   * 危害比「点不动」重：修为停在 need、自动晋升只吃「超出 need 的部分」，
+   * 于是 `xp === need` 永不自愈 ⇒ **金丹期满修为后不结丹就永远出不去**，
+   * 4 次火候机会从「可选下注」变成「必经流程」，
+   * 反过来架空 docs/91 §三 T-6「绑成晋升的替代、防止反复结丹刷丹纹」那条硬上限论证。
+   * ——一个静默失效，让另一处的设计论证变成空话。
+   * ⚠ 找 `force` 的钩子用 `[data-breakthrough]` + `dataset.force === '1'`，
+   *   **不能用 `[data-force="1"]`**：垫片的多属性复合选择器不支持，会静默匹配不到。
+   */
+  {
+    // ── T-6-A1：folding 态点晋升 → 进下一层、修为清零、丹纹不变、本层机会不消耗 ──
+    atJindan();
+    state.cultivation.cultivators[0].core = { marks: 4, mercy: 0, used: {} };
+    X.ui.render();
+    const promoteBtn = [...document.querySelectorAll('#cultivator-list [data-breakthrough]')]
+      .find((n) => n.dataset.force === '1');
+    check('T-6-A1：folding 态渲染出的晋升按钮带 data-force（且处理侧会读它）',
+      Boolean(promoteBtn), promoteBtn ? 'found' : 'missing');
+    dom.click(promoteBtn);
+    const pAfter = state.cultivation.cultivators[0];
+    check('T-6-A1：点晋升 → realmIndex = 本层 + 1（14 → 15）',
+      pAfter.realmIndex === 15, `realmIndex=${pAfter.realmIndex}`);
+    check('T-6-A1：点晋升 → xp 清零', pAfter.xp === 0, `xp=${pAfter.xp}`);
+    check('T-6-A1：点晋升 → 丹纹不变（放弃本层机会 ≠ 丢掉丹纹）',
+      X.realm.coreOf(1).marks === 4, `${X.realm.coreOf(1).marks} 纹`);
+    check('T-6-A1：点晋升 → **不写入** core.used[本层]（只是放弃，不是消耗）',
+      !Object.keys(X.realm.coreOf(1).used).includes('14'),
+      Object.keys(X.realm.coreOf(1).used).join(',') || '空');
+    check('T-6-A1：点晋升 → 不扣灵石 / 不扣药草（无风险）',
+      state.spiritStones === 1000000, `${state.spiritStones}`);
+
+    // ── T-6-A2：晋升后不再停在 folding（下一层照常积累）──
+    check('T-6-A2：晋升后不再回到 folding',
+      X.realm.stateOf(1).kind !== 'folding', X.realm.stateOf(1).kind);
+
+    // ── T-6-A3：不传 force 时，folding 仍返回 ok:false 且理由里点明「结丹」──
+    atJindan();
+    const noForce = X.realm.plan(1);
+    check('T-6-A3：不传 force 的 folding 仍被拒（保留「提醒玩家可以结丹」的行为）',
+      noForce.ok === false && /结丹/.test(noForce.reason || ''), noForce.reason);
+
+    // ── T-6-A4：force 只在 folding 被接受；blocked（材料不足）态必须**仍然被拒** ──
+    //    否则 force 会变成「跳过一切门槛」的后门 —— 这是本条最危险的写法。
+    setPeople(person({ id: 1, realmIndex: 9, xp: X.realm.xpNeeded(9), job: 'retreat', talent: 1 }));
+    state.spiritStones = 0;
+    state.cultivation.clues = 0;
+    check('T-6-A4：blocked（材料不足）态传 force 仍被拒（force 不是后门）',
+      X.realm.plan(1, undefined, true).ok === false
+      && X.realm.stateOf(1).kind === 'blocked', X.realm.stateOf(1).kind);
+    //    而且 force 也不能把「没到 folding」的人硬推上去
+    check('T-6-A4：修为未满（filling）时传 force 也被拒',
+      (() => {
+        setPeople(person({ id: 1, realmIndex: 10, xp: 0, job: 'retreat', talent: 1 }));
+        return X.realm.plan(1, undefined, true).ok === false;
+      })());
+  }
+
   // ③ 三档火候的数值逐位一致，且明文写在按钮上
   check('文火：+1 纹 / 95% / 止于 6 纹',
     X.realm.coreFolds()[0].marks === 1 && X.realm.coreFolds()[0].rate === 0.95 && X.realm.coreFolds()[0].cap === 6);
@@ -2923,10 +3147,22 @@ section('T-6 结丹（每一次修为满，都是一次下注）');
     X.realm.coreFolds()[1].marks === 3 && X.realm.coreFolds()[1].rate === 0.55 && X.realm.coreFolds()[1].cap === 12);
   check('三昧真火：+6 纹 / 25% / 无上限',
     X.realm.coreFolds()[2].marks === 6 && X.realm.coreFolds()[2].rate === 0.25 && X.realm.coreFolds()[2].cap === null);
-  check('按钮文本里出现 95% / 55% / 25% 与「止于六纹」', (() => {
+  // ⚠ 先重置本层状态再渲染：前面的用例已经把 14 层的唯一机会用掉了，
+  //   不清 `used` 的话 `foldPlan` 会返回 ok:false、三档按钮全 disabled，
+  //   按钮文案就查不到了（假失败）。
+  atJindan();
+  state.cultivation.cultivators[0].core = { marks: 0, mercy: 0, used: {} };
+  X.ui.render();
+  check('⑤ 按钮文本里出现 95% / 55% / 25%（三档成率明文写在按钮上）', (() => {
     const t = document.getElementById('cultivator-list').textContent;
-    return t.includes('95%') && t.includes('55%') && t.includes('25%') && t.includes('止于六纹');
+    return t.includes('95%') && t.includes('55%') && t.includes('25%');
   })());
+  check('⑤「止于六纹」写在按钮的 title 里（上限信息是给悬停看的，不在按钮正文）—— 同时校验 title 真的带上了上限',
+    (() => {
+      const btn = document.querySelector('#cultivator-list [data-fold="wen"]');
+      return btn && typeof btn.attrs.title === 'string'
+        && btn.attrs.title.includes('止于 6 纹') && btn.attrs.title.includes('成算 95%');
+    })(), (document.querySelector('#cultivator-list [data-fold="wen"]') || {}).attrs?.title?.slice(0, 90));
   check('三昧真火的数学期望最低（+0.75 < 武火 +1.20）——风险买的是上限不是均值',
     (0.25 * 6 - 0.75 * 1) < (0.55 * 3 - 0.45 * 1));
 
@@ -2947,26 +3183,205 @@ section('T-6 结丹（每一次修为满，都是一次下注）');
     check('剩余机会 4 → 3', X.realm.coreChancesLeft(1) === 3, `${X.realm.coreChancesLeft(1)}`);
   }
 
-  // ⑤ 失败：丹纹 −1（最低 0）、mercy += 0.12；成功：mercy 归零
+  // ⑤ 失败 = **护纹**语义（docs/91 §十二.3 裁决；不再是「mercy += 0.12」的成率补偿）
+  //   失败时：mercy > 0 → 本次不掉纹且护纹用掉；否则掉一纹并记下一次护纹。
+  //   文案承诺的因果必须与这两个分支逐字对得上（承诺与兑现同源）。
   {
-    atJindan();
-    state.cultivation.cultivators[0].core = { marks: 5, mercy: 0.4, used: {} };
-    const r = X.realm.fold(1, 'wu', () => 0.999);
-    check('失败：丹纹 −1', r.success === false && r.marks === 4, `${r.marks}`);
-    check('失败：mercy += 0.12', near(r.mercy, 0.52, 1e-9), `${r.mercy}`);
-    check('丹纹最低夹到 0', (() => {
-      state.cultivation.cultivators[0].realmIndex = 15;
-      state.cultivation.cultivators[0].xp = X.realm.xpNeeded(15);
-      state.cultivation.cultivators[0].core = { marks: 0, mercy: 0, used: {} };
-      const r2 = X.realm.fold(1, 'wu', () => 0.999);
-      return r2.marks === 0;
+    // 每次都要把 `used` 清空 —— 上一段测试已经用掉 14 层的唯一机会，
+    // 不清就会让 `foldPlan` 直接返回 `ok:false`、`failText` 变 undefined（把整个脚本打崩）。
+    const freshCore = (marks, mercy) => {
+      atJindan();
+      state.cultivation.cultivators[0].core = { marks, mercy, used: {} };
+    };
+
+    // ── T-6-B1（策划裁决 1 · 强制）：失败文案里不许再出现「补偿 / 个百分点」──
+    freshCore(3, 0);
+    const noWard = X.realm.foldPlan(1, 'wen').failText;
+    freshCore(3, 1);
+    const warded = X.realm.foldPlan(1, 'wen').failText;
+    check('T-6-B1：失败文案不再承诺「补偿 N 个百分点」（承诺了却不兑现比没有承诺更糟）',
+      !noWard.includes('补偿') && !noWard.includes('个百分点')
+      && !warded.includes('补偿') && !warded.includes('个百分点'),
+      `${noWard} | ${warded}`);
+
+    // ── 分支 A：mercy = 0 → 掉一纹、并记下一次护纹 ──
+    freshCore(5, 0);
+    const rA = X.realm.fold(1, 'wu', () => 0.999);   // 骰子必失败
+    check('护纹：mercy=0 失败 → 掉一纹（5 → 4）', rA.success === false && rA.marks === 4, `${rA.marks}`);
+    check('护纹：mercy=0 失败 → 记下一次护纹（mercy=1，次数语义不是 0.12）',
+      near(X.realm.coreOf(1).mercy, 1, 1e-9), `${X.realm.coreOf(1).mercy}`);
+    check('护纹：mercy=0 的失败文案承诺「掉一纹 + 记下护纹」，与结算一致',
+      noWard.includes('掉一纹') && noWard.includes('护纹'), noWard);
+
+    // ── 分支 B：mercy > 0 → 本次**不掉纹**、护纹用掉 ──
+    freshCore(5, 1);
+    const rB = X.realm.fold(1, 'wu', () => 0.999);
+    check('护纹：mercy>0 失败 → **不掉纹**（5 纹保住）', rB.success === false && rB.marks === 5, `${rB.marks}`);
+    check('护纹：mercy>0 失败 → 护纹被用掉（mercy=0）',
+      near(X.realm.coreOf(1).mercy, 0, 1e-9), `${X.realm.coreOf(1).mercy}`);
+    check('护纹：mercy>0 的失败文案承诺「不掉纹」，与结算一致',
+      warded.includes('不掉纹') && warded.includes('护纹用掉'), warded);
+
+    // ── 两条分支连起来：文案说的「下次再裂就真掉一纹」必须成立 ──
+    freshCore(5, 1);
+    const r1 = X.realm.fold(1, 'wu', () => 0.999);   // 护纹挡下
+    state.cultivation.cultivators[0].realmIndex = 15;
+    state.cultivation.cultivators[0].xp = X.realm.xpNeeded(15);
+    state.cultivation.cultivators[0].core = { marks: r1.marks, mercy: X.realm.coreOf(1).mercy, used: {} };
+    const r2 = X.realm.fold(1, 'wu', () => 0.999);   // 无护纹 → 真掉
+    check('护纹：挡下一次之后，再裂就真掉一纹（5 → 5 → 4）',
+      r1.marks === 5 && r2.marks === 4, `${r1.marks} → ${r2.marks}`);
+
+    check('丹纹最低夹到 0（0 纹时失败不掉纹 —— 这条下限是旧公式算错的原因）', (() => {
+      freshCore(0, 0);
+      const r3 = X.realm.fold(1, 'wu', () => 0.999);
+      return r3.marks === 0;
     })());
     check('成功：mercy 归零', (() => {
-      atJindan();
-      state.cultivation.cultivators[0].core = { marks: 3, mercy: 0.9, used: {} };
-      const r3 = X.realm.fold(1, 'wen', () => 0);
-      return r3.success === true && X.realm.coreOf(1).mercy === 0;
+      freshCore(3, 1);
+      const r4 = X.realm.fold(1, 'wen', () => 0);
+      return r4.success === true && X.realm.coreOf(1).mercy === 0;
     })());
+  }
+
+  /* ── T-6-C4 / C5 / C6（docs/91 §十二.9）：三档期望与五品概率的**精确枚举** ──
+   * 新规则 `~/.dsh/rules/numeric-verification.md`：带 cap / 下限 / 机会次数的结算
+   * **一律枚举，不要用连续式均值估**。设计师那张表就是被「丹纹夹 0」这个下限整张算错的
+   * （真火 3.00 → 5.0508，低估 68%）。
+   * 这里**复刻实现的状态机语义**，枚举全部 2⁴ = 16 条成败序列：
+   *   ① 丹纹**跨层累计**（每个成功 +marks）
+   *   ② cap 夹住（文火止于 6 / 武火 12 / 真火无上限）
+   *   ③ 丹裂**夹 0**（0 纹时失败不掉纹）—— 漏了这条就会算回旧的错数
+   *   ④ 失败只在**没有护纹**时掉纹，掉纹后记下一次护纹 */
+  {
+    /** 按实现语义枚举某一档在「4 层各结一次」下所有 2⁴ 序列的（期望纹数, ≥9 纹概率, 概率和）。
+     *  ⚠ 关键的一行是失败分支的 `ward`：**被护纹挡下之后 ward 要清零**（护纹用掉了），
+     *    而「掉纹」才把 ward 置 1。写成「失败后一律置 1」会算出一组偏高的错数
+     *    （这个错在本轮真的犯过一次，所以下面有一条「模型 vs 实现逐条对表」兜着）。 */
+    const foldModel = (marks, cap, rate, bits, useWard) => {
+      let cur = 0, ward = false;
+      for (const b of bits) {
+        if (b === '1') { cur += marks; if (cap !== null) cur = Math.min(cap, cur); ward = false; }
+        else if (useWard && ward) { ward = false; }        // 护纹挡下，且护纹用掉
+        else { cur = Math.max(0, cur - 1); ward = useWard; } // 真掉一纹，并记下一次护纹
+      }
+      return cur;
+    };
+    const enumerate = (marks, cap, rate, useWard) => {
+      let expMarks = 0, pFive = 0, pSum = 0;
+      for (let mask = 0; mask < 16; mask += 1) {
+        const bits = mask.toString(2).padStart(4, '0').split('').reverse();
+        let p = 1;
+        for (const b of bits) p *= (b === '1' ? rate : 1 - rate);
+        const cur = foldModel(marks, cap, rate, bits, useWard);
+        expMarks += p * cur;
+        pSum += p;
+        if (cur >= 9) pFive += p;
+      }
+      return { expMarks, pFive, pSum };
+    };
+    const selfCheck = enumerate(1, 6, 0.95, true);
+    check('T-6-C4：2⁴ 枚举的概率和 = 1（枚举没漏分支 —— 恒真检查的对照）',
+      near(selfCheck.pSum, 1, 1e-12), `${selfCheck.pSum}`);
+
+    const noWardExp = [
+      enumerate(1, 6, 0.95, false), enumerate(3, 12, 0.55, false), enumerate(6, null, 0.25, false),
+    ];
+    const wardExp = [
+      enumerate(1, 6, 0.95, true), enumerate(3, 12, 0.55, true), enumerate(6, null, 0.25, true),
+    ];
+    // 期望（无护纹）—— 对应「mercy 是死字段」的旧实现
+    check('T-6-C5：期望（无护纹）文火 = 3.65524375', near(noWardExp[0].expMarks, 3.65524375, 1e-8),
+      `${noWardExp[0].expMarks}`);
+    check('T-6-C5：期望（无护纹）武火 = 5.58463125（注意不是四舍五入的 5.5846）',
+      near(noWardExp[1].expMarks, 5.58463125, 1e-8), `${noWardExp[1].expMarks}`);
+    check('T-6-C5：期望（无护纹）真火 = 5.05078125（不是文档旧表写的 3.00）',
+      near(noWardExp[2].expMarks, 5.05078125, 1e-8), `${noWardExp[2].expMarks}`);
+    // 期望（护纹）—— 当前实现
+    check('T-6-C6：期望（护纹）文火 = 3.6575', near(wardExp[0].expMarks, 3.6575, 1e-8),
+      `${wardExp[0].expMarks}`);
+    check('T-6-C6：期望（护纹）武火 = 5.80738125', near(wardExp[1].expMarks, 5.80738125, 1e-8),
+      `${wardExp[1].expMarks}`);
+    check('T-6-C6：期望（护纹）真火 = 5.33203125', near(wardExp[2].expMarks, 5.33203125, 1e-8),
+      `${wardExp[2].expMarks}`);
+    check('T-6-C6：≥9 纹 文火 = 0%', near(wardExp[0].pFive, 0, 1e-12), `${wardExp[0].pFive}`);
+    check('T-6-C6：≥9 纹 武火 = 16.6375%（含「首败不掉纹 + 后三全成 = 9 纹」那条 7.4875% 路径）',
+      near(wardExp[1].pFive, 0.166375, 1e-9), `${wardExp[1].pFive}`);
+    check('T-6-C6：≥9 纹 真火 = 26.171875%', near(wardExp[2].pFive, 0.26171875, 1e-9), `${wardExp[2].pFive}`);
+    check('T-6-C6：均值最低的是**文火**（不是真火）；真火是在两个付费档之间用均值换上限',
+      wardExp[0].expMarks < wardExp[2].expMarks && wardExp[2].expMarks < wardExp[1].expMarks,
+      `文火 ${wardExp[0].expMarks} < 真火 ${wardExp[2].expMarks} < 武火 ${wardExp[1].expMarks}`);
+
+    /* ── T-6-C5'/C6'：把上面的模型**与实现逐条对表** ──
+     * 只写一张期望表是不够的：如果模型本身也理解错了（设计师那张表就是），
+     * 期望表会「自洽地错」。所以这里再跑一遍**实现本身**：对 16 条成败序列，
+     * 逐条比对「实现结算出的丹纹」与「模型算出的丹纹」，必须 16/16 一致。
+     * 这样模型与实现互为对照，任何一边改了都会红。
+     * （`setRng` 按序列掐死骰子，所以这是确定性的、不是采样。） */
+    {
+      const SPEC = { wen: [1, 6, 0.95], wu: [3, 12, 0.55], zhen: [6, null, 0.25] };
+      const mkPerson = () => ({
+        id: 1, name: 'X', origin: 'innate', realmIndex: 14, xp: 0, breakFailures: 0,
+        job: 'retreat', talent: 1, parentage: 'cultivator-mortal',
+        root: { grade: 'quad', elements: ['metal', 'water', 'fire', 'earth'], rerolls: 0 },
+      });
+      const setupForFold = () => {
+        setPeople(mkPerson());
+        state.spiritStones = 1e9;
+        state.cultivation.alchemy = { herbs: { grass: 1e6 }, pills: {}, prof: {}, furnace: 1, crafts: 0 };
+        state.population = 0;
+      };
+      const mismatches = [];
+      for (const foldId of Object.keys(SPEC)) {
+        const [mk, cap, rate] = SPEC[foldId];
+        for (let mask = 0; mask < 16; mask += 1) {
+          const bits = mask.toString(2).padStart(4, '0').split('').reverse();
+          setupForFold();
+          const who = state.cultivation.cultivators[0];
+          let marks = 0;
+          for (let k = 0; k < 4; k += 1) {
+            who.realmIndex = 14 + k;
+            who.xp = X.realm.xpNeeded(14 + k);
+            X.setRng(() => (bits[k] === '1' ? 0 : 0.999999));
+            const rr = X.realm.fold(1, foldId);
+            X.setRng(null);
+            if (rr.ok === false) { mismatches.push(`${foldId}/${bits.join('')} refused`); break; }
+            marks = rr.marks;
+          }
+          const want = foldModel(mk, cap, rate, bits, true);
+          if (marks !== want) mismatches.push(`${foldId}/${bits.join('')} impl=${marks} model=${want}`);
+        }
+      }
+      check('T-6-C6′：模型与实现的 16×3 条序列逐条一致（模型不是自洽地错）',
+        mismatches.length === 0, mismatches.slice(0, 5).join(' '));
+    }
+
+    /* ── T-6-C4：**防止 mercy 被接回成率**（回归防护）──
+     * 一旦有人把 mercy 加进成率，武火/真火会蹿到 7.68 / 8.04、武火被真火全面压过、
+     * 三档退化成两档。这条断言直接检查 `foldPlan().rate` **不含** mercy：
+     * 同一个修士，mercy = 0 与 mercy = 1 时 rate 必须**完全相同**、且等于火候基准成率。 */
+    atJindan();
+    state.cultivation.cultivators[0].core = { marks: 3, mercy: 0, used: {} };
+    const rateNoWard = X.realm.foldPlan(1, 'wu').rate;
+    state.cultivation.cultivators[0].core = { marks: 3, mercy: 1, used: {} };
+    const rateWard = X.realm.foldPlan(1, 'wu').rate;
+    check('T-6-C4：mercy 不参与成率（否则三档会退化成两档）',
+      near(rateNoWard, rateWard, 1e-12) && near(rateWard, 0.55, 1e-12),
+      `mercy=0 → ${rateNoWard}，mercy=1 → ${rateWard}`);
+
+    /* ── T-6-C7：风险披露 —— 按钮必须同时写成率与上限，真火要写「三成只得九品」──
+     * 这不是数值问题而是**公平性**问题：真火贵 6 倍却均值更低（5.332 < 5.807），
+     * 界面不披露就是在利用信息不对等，违反 docs/00「不做隐藏公式」。 */
+    atJindan();
+    state.cultivation.cultivators[0].core = { marks: 0, mercy: 0, used: {} };
+    X.ui.render();
+    const foldText = document.getElementById('cultivator-list').textContent;
+    check('T-6-C7：三档按钮都写了成率（95% / 55% / 25%）',
+      foldText.includes('95%') && foldText.includes('55%') && foldText.includes('25%'));
+    check('T-6-C7：写了上限信息（文火止于六纹；真火无上限）',
+      foldText.includes('止于六纹') && foldText.includes('无上限'), foldText.slice(0, 140));
+    check('T-6-C7：真火档披露「三成只得九品」（60 灵石却均值更低，必须如实告知）',
+      foldText.includes('三成只得九品'));
   }
 
   // ⑥ 文火止于 6 纹
@@ -3135,6 +3550,11 @@ section('T-1 补强：逐字段往返（不只查那三个字段）');
     // cultivation 会由 repairCultivation 补默认值，逐人字段的补齐已由上一节覆盖，
     // 这里只查**顶层标量/数组**字段的值。
     if (k === 'cultivation') continue;
+    // log 是**刻意截断**的（`serialize()` 只写 `log.slice(0, 20)`，见 T-1 非目标
+    // 「不动 log.slice(0, 20) 这个刻意的截断」）⇒ 它按设计就不做完整往返，
+    // 不该进这条逐字段比对。之前它没被排除，是因为本用例跑的时候 `state.log`
+    // 恰好还没攒到 20 条；测试顺序一变就红了（假失败）。
+    if (k === 'log') continue;
     if (a !== b) diffs.push(`${k}: ${String(a).slice(0, 40)} ≠ ${String(b).slice(0, 40)}`);
   }
   check('除 cultivation 外的每个顶层字段，往返后值都不变', diffs.length === 0, diffs.join(' | '));

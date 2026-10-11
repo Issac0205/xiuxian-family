@@ -1175,6 +1175,24 @@ function createUI({ getState, actions, rng }) {
   }
 
   function updateCultivatorRoster(s,d) {
+    // 【策划 C1 / 任务 T-4-A4】勾选是**活的**：勾选框不重渲染（否则勾选会丢），
+    // 所以投帖入口的可用性必须由一次 `change` 就地刷新 —— 否则它永远停在
+    // 「渲染那一刻的勾选数」上，玩家勾了人也按不动（缺陷① 的第二种形态）。
+    // 用事件委托绑在容器上：容器不换、委托不丢。
+    if(!updateCultivatorRoster._wired){
+      updateCultivatorRoster._wired=true;
+      const listNode=$('cultivator-list');
+      listNode.addEventListener('change',(ev)=>{
+        const box=ev.target&&ev.target.closest?ev.target.closest('[data-errand-check]'):null;
+        if(!box)return;
+        const btns=listNode.querySelectorAll('[data-errand]');
+        const n=[...listNode.querySelectorAll('[data-errand-check]')].filter(x=>x.checked).length;
+        for(const b of btns){
+          b.disabled=n===0;
+          b.textContent=`投帖 · 派出门（已勾选 ${n} 人）`;
+        }
+      });
+    }
     const set=(id,value)=>{const el=$(id); if(el) el.textContent=value;};
     const formatPower=n=>Number(n).toLocaleString('zh-CN',{maximumFractionDigits:1,minimumFractionDigits:1});
     set('power-value',formatPower(d.totalPower));
@@ -1195,6 +1213,18 @@ function createUI({ getState, actions, rng }) {
       jobNode.innerHTML=Object.entries(CULTIVATOR_JOBS).map(([id,def])=>`<div class="job-stat"><strong>${counts[id]}</strong><span>${def.name}</span></div>`).join('');
     }
     const host=$('cultivator-list');
+    // 【策划 C1 / 任务 T-4-A4】勾选状态必须**活过重渲染**，否则投帖入口是个死按钮：
+    //   用户勾人 → 挂机时每几秒就有一次重渲染 → 勾选框被重建、勾选丢掉 →
+    //   「勾选 0 人 ⇒ 入口 disabled」永远成立，玩家永远按不动投帖。
+    //   做法：把「谁被勾了」并进下面的脏检查签名（它一变就重渲染），
+    //   渲染时再按这个集合回填 checked。于是勾选数、按钮的 disabled 文案都跟着走。
+    const checkedIds=[...document.querySelectorAll('[data-errand-check]')]
+      .filter(n=>n.checked)
+      .map(n=>Number(n.dataset.errandCheck))
+      .filter(n=>Number.isFinite(n)&&n>0);
+    const checkedCount=checkedIds.length;
+    const outCount=people.filter(p=>p.job==='errand').length;
+    const canErrand=people.some(p=>p.realmIndex>=1&&p.realmIndex<=9&&p.job!=='sect'&&p.job!=='garrison'&&p.job!=='errand');
     // 脏检查要把「会影响卡片上一切按钮状态的东西」都算进去：
     // 境界、修为、失败次数、灵石与线索（否则材料变少了按钮不会变灰），
     // 以及本轮新增的 push / stalled / 在外 / 道基 / 丹纹 / 年份
@@ -1209,14 +1239,25 @@ function createUI({ getState, actions, rng }) {
         + `:${coreOf(p).marks}:${Object.keys(coreOf(p).used).join('')}`
         + `:${p.realmEnteredYear||0}:${Math.floor((Number(p.stalled)||0)>0?1:0)}`;
     }).join('|')+`#${Math.floor(s.spiritStones||0)}:${s.cultivation?.clues||0}:${Math.floor(Number(s.clock?.year)||0)}`
-      +`:${worldOf(s).reached.join(',')}:${(s.cultivation?.alchemy?.herbs?.grass||0)>0?1:0}`;
+      +`:${worldOf(s).reached.join(',')}:${(s.cultivation?.alchemy?.herbs?.grass||0)>0?1:0}`
+      +`:errand-check=${checkedIds.join('.')}`;
     if(host.dataset.signature===sig) return;
     host.dataset.signature=sig;
     if(!people.length){
       host.innerHTML='<div class="cultivator-empty">尚无炼气修士。必须先通过祛障丹或灵池获得第一名修士；没有修士血脉时，绝不会天生修士。</div>';
       return;
     }
-    host.innerHTML=people.map(p=>{
+    // 【策划 C1 / 任务 T-4-A1/A4】投帖工具栏：**恰好一个** `[data-errand]`。
+    // A4 要求「勾选 0 人时按钮必须 disabled」—— 否则点下去只会得到一条
+    // 「请先勾选族人」的 toast，那个入口在语义上是死的。
+    const errandBar=canErrand
+      ? `<div class="errand-bar"><span class="errand-hint">勾选族人后可投帖问路（在外不涨修为，有去无回的风险，可随时召回）</span>`
+        +`<button class="btn errand" data-errand="1" ${checkedCount?'':'disabled'}`
+        +` title="把勾选的族人派出去打探秘闻线索">投帖 · 派出门（已勾选 ${checkedCount} 人）</button>`
+        +(outCount?`<span class="errand-out">在外 ${outCount} 人</span>`:'')
+        +`</div>`
+      : '';
+    host.innerHTML=errandBar+people.map(p=>{
       const cap=cultivateLevelCap(p);
       const st=breakthroughState(p);
       const pState=personState(p);
@@ -1253,8 +1294,15 @@ function createUI({ getState, actions, rng }) {
           +`${p.push?'猛进中':'缓修'} · 期望走火 ${exp.toFixed(1)} 次</button>`;
       }
 
-      // 【策划 C1 / 任务 T-4】投帖问路：勾选框 + 投帖 / 召回。
-      // 只对炼气族人与在外的人显示 —— 过了炼气期的人不该看见这个按钮。
+      // 【策划 C1 / 任务 T-4】投帖问路：勾选框（每张卡片一个）+ **一个**提交工具栏。
+      // 只对炼气族人与在外的人显示 —— 过了炼气期的人不该看见这个勾选框。
+      // ⚠【修复 t4 缺陷①】`p.job !== 'errand'` 这一支原来只渲染勾选框、**没有任何
+      //   `data-errand` 元素**，而处理器监听的是 `[data-errand]` ⇒ 勾选后点遍卡片上
+      //   所有按钮都不会触发投帖，整条 C1 玩法在真实游戏里不可用
+      //   （docs/92-调试报告.md §五 缺陷①，真浏览器复现）。
+      //   提交按钮**只渲染一次**（工具栏），不是每张卡片一个 —— 它是全局动作
+      //   （一次派一批），渲染成 N 个会让 `[data-errand]` 的数量随人数变化，
+      //   也会给出 N 个入口去做同一件事。docs/91 §十二 T-4-A1 要求它恰好 1 个。
       let errandBox='';
       if(p.realmIndex>=1&&p.realmIndex<=9&&p.job!=='sect'&&p.job!=='garrison'){
         if(p.job==='errand'){
@@ -1282,11 +1330,21 @@ function createUI({ getState, actions, rng }) {
             const plan=foldPlan(s,p.id,f.id);
             const capText=f.cap===null?'无上限':`止于 ${f.cap} 纹`;
             const costText=f.stones||f.herb?` · 耗 ${f.herb?`药草×${f.herb}`:''}${f.herb&&f.stones?' + ':''}${f.stones?`${f.stones} 灵石`:''}`:'';
+            // 【策划 C6 / 任务 T-6-C7「风险披露」，docs/91 §十二】按钮必须**同时**写出
+            // 「成率」与「上限纹数」。理由不是数值而是**公平性**：
+            //   真火贵 6 倍（60 灵石 vs 武火 10）却**均值更低**（枚举：真火 5.33203125 < 武火 5.80738125），
+            //   它买的是**上限**（无 cap，能突破 12 纹）。玩家若把「60 灵石」读成「更高级所以更好」，
+            //   就会觉得被坑 —— 界面不披露「上限更高、均值更低」就是在利用信息不对等，
+            //   违反 docs/00「不做隐藏公式」原则。
+            //   所以真火额外写「约三成概率只得九品」（0 次成功 = 0.75⁴ = 31.6%）。
+            const riskNote=f.id==='zhen'?' · 约三成概率只得九品':'';
             const title=plan.ok
-              ?`成算 ${(f.rate*100).toFixed(0)}%，成则 +${f.marks} 纹（${capText}）；失败丹裂掉一纹（当前 ${marks} → ${Math.max(0,marks-1)}）${costText}`
+              ?`成算 ${(f.rate*100).toFixed(0)}%，成则 +${f.marks} 纹（${capText}）；失败丹裂掉一纹（当前 ${marks} → ${Math.max(0,marks-1)}）${costText}${riskNote}`
               :plan.reason;
             return `<button class="btn fold ${plan.ok?'':'is-locked'}${f.id==='wen'?'':' fold-'+f.id}" data-fold="${f.id}" data-person="${p.id}" ${plan.ok?'':'disabled'}`
-              +` title="${title}">${f.name} ${(f.rate*100).toFixed(0)}% · ${f.marks>0?'+':''}${f.marks} 纹${f.cap!==null?` · 止于${f.cap===6?'六':f.cap}纹`:''}</button>`;
+              +` title="${title}">${f.name} ${(f.rate*100).toFixed(0)}% · ${f.marks>0?'+':''}${f.marks} 纹`
+              +`${f.cap!==null?` · 止于${f.cap===6?'六':f.cap}纹`:''}${f.cap===null?' · 无上限':''}`
+              +`${f.id==='zhen'?' · 三成只得九品':''}${costText}</button>`;
           }).join('')
           +`</div></div>`;
       }
@@ -1310,7 +1368,7 @@ function createUI({ getState, actions, rng }) {
           const relText=pv.relation==='match'?'相合 ×1.5':pv.relation==='clash'?'相冲 ×0.6':'无涉';
           siteRow=`<div class="site-box"><div class="site-head">择地筑基：先挑一块走到过的地</div>`
             +`<select class="site-select" data-site-for="${p.id}">${opts}</select>`
-            +`<div class="site-preview" data-site-preview="${p.id}">`
+            +`<div class="site-preview">`
             +`<span>地气 <b>${pv.elementName}</b>（${pv.label}）</span>`
             +`<span>品阶 <b>${pv.gradeName}</b> ×${pv.gradeMult.toFixed(2)}</span>`
             +`<span>词条 <b>×${pv.entryMult.toFixed(2)}</b>（${relText}）</span>`
@@ -1329,7 +1387,10 @@ function createUI({ getState, actions, rng }) {
         const tip=plan.ok
           ? `${plan.pillName?`需 ${plan.pillName} ×1，`:''}耗 ${plan.stones} 灵石 + ${plan.clues} 线索，成功率 ${(plan.rate*100).toFixed(0)}%；失败修为倒退 ${plan.loss} 点`
           : plan.reason;
-        gateBtn=`<button class="${cls}" data-breakthrough="${p.id}" data-force="1" ${plan.ok?'':'disabled'} title="${tip}">`
+        // ⚠【修复 t4 缺陷②】这里原来还挂着 `data-force="1"`，但**没有任何读取侧**
+        //   ⇒ 一个死属性。筑基冲关走的是正常冲关（不是强制晋升），所以直接删掉，
+        //   不要留一个「看起来能强制、其实没人读」的钩子（docs/92-调试报告.md §五 缺陷②）。
+        gateBtn=`<button class="${cls}" data-breakthrough="${p.id}" ${plan.ok?'':'disabled'} title="${tip}">`
           + `冲关 ${realmName(p.realmIndex+1)} · ${(rate*100).toFixed(0)}%</button>`;
         const pillTxt=plan.pillName?`<b>${plan.pillName}</b> + `:'';
         if(plan.ok) gateBtn+=`<span class="break-cost">${pillTxt}${plan.stones} 灵石 + ${plan.clues} 线索</span>`;
@@ -1350,6 +1411,10 @@ function createUI({ getState, actions, rng }) {
       const coreText=p.core&&coreOf(p).marks>0
         ?`<span class="core-tag">丹纹 ${coreOf(p).marks} · ${coreGradeOf(coreOf(p).marks).name}</span>`:'';
 
+      // 【修复 t4 缺陷②/⑦】`data-site-preview` 原本是渲染了却无人读的死属性，已删。
+      //   `data-pstate` 保留并**接上读取侧**：它现在既驱动卡片上的状态徽标（下面是同一份
+      //   `PERSON_STATE_LABELS[pState]`），也让样式能只靠属性选中非默认态的人。
+      //   死交互属性扫描（smoke §15.9 ⑦）会盯住这一类：渲染了就必须有人读。
       return `<article class="cultivator-card" data-person="${p.id}" data-pstate="${pState}">
         <div class="cultivator-card-top"><span class="cultivator-name">${p.name}</span><span class="cultivator-origin ${p.origin==='innate'?'is-innate':''}">${p.origin==='innate'?'天生':'后天'}</span>
           <span class="state-tag ${stateTag.cls}">${stateTag.text}</span></div>

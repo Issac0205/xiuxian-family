@@ -74,7 +74,8 @@ function ensurePersonFields(p, state) {
     // 品阶 1..5 —— 5 = 天品地块 + 已镇守越的那一档（见 data/realms.js 的 FOUNDATION_GRADES）
     grade: Math.max(1, Math.min(5, Math.floor(Number(p.foundation.grade) || 1))),
   };
-  // ── T-6：丹纹 / 补偿 / 本层是否已结过丹 ──
+  // ── T-6：丹纹 / 护纹 / 本层是否已结过丹 ──
+  // mercy 的语义见 docs/91 §十二.3：护纹（失败不掉纹），不是成率补偿。
   if (!(p.core && typeof p.core === 'object')) p.core = { marks: 0, mercy: 0, used: {} };
   p.core.marks = Math.max(0, Math.floor(Number(p.core.marks) || 0));
   p.core.mercy = Math.max(0, Number(p.core.mercy) || 0);

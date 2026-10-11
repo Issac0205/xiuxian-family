@@ -195,8 +195,20 @@ function matchesCompound(el, sel) {
 /**
  * 支持后代选择器：`.a .b` / `div.foo span[data-role="x"]`。
  * 用空格切开，最后一节匹配元素本身，其余各节依次向上找祖先。
+ *
+ * ⚠【修复 t4 缺陷⑦ 的前提】原来**不支持逗号选择器**（`a, b`）。
+ *   后果不是「报错」而是**静默不匹配**：`matchesCompound` 对整串
+ *   `[data-errand],[data-recall]` 直接返回 false，于是
+ *   `src/main.js` 里 `closest('[data-errand],[data-recall]')` 在无头环境
+ *   **恒返回 null**、那个处理器**永远不会被触发**。
+ *   任何「点一下按钮」的断言都会**静默通过**（真浏览器里却是好的），
+ *   这正是「投帖没有入口」那个阻断缺陷能活下来的机制。
+ *   ⇒ 逗号先在**顶层**切开：任一分支命中即为命中。
+ *   注意切分必须避开 `[]` 与引号内部（属性值里可以有逗号）。
  */
 export function matchesSelector(el, sel) {
+  const branches = splitSelectorList(sel);
+  if (branches.length > 1) return branches.some((b) => matchesSelector(el, b));
   const parts = String(sel).trim().split(/\s+/).filter(Boolean);
   if (!parts.length) return false;
   if (!matchesCompound(el, parts[parts.length - 1])) return false;
@@ -208,6 +220,25 @@ export function matchesSelector(el, sel) {
     node = node.parent;
   }
   return i < 0;
+}
+
+/**
+ * 把 `a, b[x="1,2"], c` 按顶层逗号切开。
+ * 括号/引号内部的逗号不切 —— `[data-x="a,b"]` 是一个选择器，不是两个。
+ */
+export function splitSelectorList(sel) {
+  const out = [];
+  let depth = 0, quote = null, cur = '';
+  for (const ch of String(sel)) {
+    if (quote) { cur += ch; if (ch === quote) quote = null; continue; }
+    if (ch === '"' || ch === "'") { quote = ch; cur += ch; continue; }
+    if (ch === '(' || ch === '[') depth += 1;
+    if (ch === ')' || ch === ']') depth = Math.max(0, depth - 1);
+    if (ch === ',' && depth === 0) { out.push(cur); cur = ''; continue; }
+    cur += ch;
+  }
+  out.push(cur);
+  return out.map((s) => s.trim()).filter(Boolean);
 }
 
 const TAG_RE = /<!--[\s\S]*?-->|<!(?:DOCTYPE|doctype)[^>]*>|<\/([a-zA-Z][\w-]*)\s*>|<([a-zA-Z][\w-]*)((?:\s+[\w:.-]+(?:\s*=\s*(?:"[^"]*"|'[^']*'|[^\s"'>]+))?)*)\s*(\/?)>/g;
@@ -315,6 +346,15 @@ export function installDOM(html, opts = {}) {
   globalThis.document = document;
   globalThis.window = window;
   globalThis.localStorage = localStorage;
+  // 【修复 t4 缺陷⑦ 的前提】浏览器里 `confirm()` 是**全局**函数，
+  //   而垫片原来只把它挂在 `window` 上 ⇒ `src/main.js` 里 12 处裸 `confirm(`
+  //   在 Node 下抛 ReferenceError，被 `dom.click()` 的循环安静吞掉，
+  //   于是**一次都没有点击测试真的跑过**（这正是「项目里一条点击测试都没有」的原因）。
+  //   挂到 globalThis 上，与真浏览器语义一致；返回值仍由 opts.confirm 控制，
+  //   默认 true（放行），需要拒绝的用例可以自己覆盖 `window.confirm`。
+  if (!('confirm' in globalThis)) {
+    globalThis.confirm = (...args) => window.confirm(...args);
+  }
 
   /** 模拟用户点击（走真实的事件委托链）。 */
   const click = (el) => { for (const fn of docListeners.click || []) fn({ target: el }); };

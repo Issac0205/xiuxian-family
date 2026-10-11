@@ -1133,7 +1133,7 @@ document.addEventListener('click', ev => {
   if (cm && !cm.disabled) {
     const prog = reincarnationProgress(state);
     if (!prog.canEnd) { ui.toast(prog.reason, 'warn', 2600); return; }
-    if (!confirm(`确认重入轮回？家业、修士、境界、领地、丹房器坊符房全部归零，`
+    if (!window.confirm(`确认重入轮回？家业、修士、境界、领地、丹房器坊符房全部归零，`
       + `只保留轮回点与金手指（答题记录也会保留）。本世可得 ${prog.reward.total} 点轮回。`)) return;
     const r = commitReincarnation(state, metaOf(state).active);
     if (!r.ok) { ui.toast(r.reason, 'warn', 2800); return; }
@@ -1276,12 +1276,18 @@ document.addEventListener('click',ev=>{
  // 读的是 DOM 的当前值而不是重算一遍 —— 否则玩家看到的那一项与实际落库的可能不是同一块。
  const siteSel=document.querySelector(`[data-site-for="${btn.dataset.breakthrough}"]`);
  const siteId=siteSel?siteSel.value:'';
- const result=commitBreakthrough(state,Number(btn.dataset.breakthrough),Date.now(),rng,siteId||undefined);
+ // 【修复 t4 缺陷②】金丹期「晋升」按钮：读 data-force 走**无风险直接晋升**分支。
+ // 原实现渲染了 data-force 却没有任何读取侧 ⇒ 按钮点了什么都不发生；而修为停在 need、
+ // 自动晋升又只吃「超出 need 的部分」，玩家会被**永久卡在金丹期**。
+ // 这是「渲染侧给了属性、处理侧不读」的静默失效 —— 与投帖那个缺陷正好相反方向，同一类病。
+ const force=btn.dataset.force==='1';
+ const result=commitBreakthrough(state,Number(btn.dataset.breakthrough),Date.now(),rng,siteId||undefined,force);
  ui.toast(result.ok
-   ? (result.success?`${result.name}冲关成功，晋${result.realm}！`
-                    :`${result.name}冲关失败，修为倒退 ${result.loss} 点；下一次成功率 ${(result.nextRate*100).toFixed(0)}%`)
+   ? (result.promoted?`${result.name}选择晋升${result.realm}（本层未结丹）`
+      : result.success?`${result.name}冲关成功，晋${result.realm}！`
+                     :`${result.name}冲关失败，修为倒退 ${result.loss} 点；下一次成功率 ${(result.nextRate*100).toFixed(0)}%`)
    : result.reason,
-   result.ok&&result.success?'ok':'warn', 3600);
+   result.ok&&!result.promoted&&!result.success?'warn':'ok', 3600);
  if(result.ok){writeSave(state);ui.render();}
  repaintExpansion(true);
 });
@@ -1298,19 +1304,30 @@ document.addEventListener('click',ev=>{
 
 /* 【策划 C1 / 任务 T-4】投帖与召回。勾选框把 id 收集起来，一次提交一批。 */
 document.addEventListener('click',ev=>{
- const btn=ev.target.closest('[data-errand],[data-recall]');if(!btn||btn.disabled)return;
+ // 【修复 t4 缺陷①】选择器拆成两次 `closest`，**不用逗号选择器**。
+ // 原因：逗号选择器在无头垫片里永远匹配不到（`scripts/dom-shim.mjs` 的
+ // matchesCompound 只认单一复合选择器），于是这个处理器在 smoke 里
+ // **永远不会被触发**，任何「点一下按钮」的断言都会静默落空 ——
+ // 缺陷① 正是在这种「测试看起来覆盖了、其实一次都没跑」的情况下活下来的（docs/92 §五·缺陷⑦）。
+ // 拆开后这个处理器在垫片里也能真跑，入口断言才有意义。
+ const errandBtn=ev.target.closest('[data-errand]');
+ const recallBtn=errandBtn?null:ev.target.closest('[data-recall]');
+ const btn=errandBtn||recallBtn;if(!btn||btn.disabled)return;
  if(ui.quiz.isBusy())return;
  const ids=[...document.querySelectorAll('[data-errand-check]')]
    .filter(n=>n.checked)
    .map(n=>Number(n.dataset.errandCheck))
    .filter(n=>Number.isFinite(n)&&n>0);
  if(!ids.length){ui.toast('请先勾选族人，再点投帖 / 召回','warn',2600);return;}
- if(btn.dataset.errand!==undefined){
+ if(errandBtn){
    // 确认文案必须写明「在外的人有 X%/时 回不来」——风险要能算，不能只说「有风险」
    const perHour=(ERRAND_DEATH_PER_SEC*3600*100).toFixed(2);
-   if(!confirm(`派这 ${ids.length} 人出门投帖？他们在外的期间不涨修为、不能镇守或探险，每人每小时约有 ${perHour}% 回不来（可随时召回）。`))return;
+   // ⚠ 用 window.confirm：无头垫片把 confirm 挂在 window 上（没挂到 globalThis），
+   //   写裸 window.confirm() 会在 Node 里抛 ReferenceError，被垫片安静吞掉 —— 又是一次假覆盖。
+   const ask=typeof window!=='undefined'&&typeof window.confirm==='function'?window.confirm:(()=>true);
+   if(!ask(`派这 ${ids.length} 人出门投帖？他们在外的期间不涨修为、不能镇守或探险，每人每小时约有 ${perHour}% 回不来（可随时召回）。`))return;
  }
- const r=immortalAction(state,btn.dataset.errand!==undefined?'errand':'recall',ids.join(','),rng);
+ const r=immortalAction(state,errandBtn?'errand':'recall',ids.join(','),rng);
  ui.toast(r.reason,r.ok?'ok':'warn',3600);
  if(r.ok){writeSave(state);ui.render();}
  repaintExpansion(true);
@@ -1323,11 +1340,15 @@ document.addEventListener('click',ev=>{
  const foldId=btn.dataset.fold,pid=Number(btn.dataset.person);
  const plan=foldPlan(state,pid,foldId);
  if(!plan.ok){ui.toast(plan.reason,'warn',2800);return;}
- if(!confirm(`以${plan.foldName}结丹？成算 ${(plan.rate*100).toFixed(0)}%，成则 +${plan.marks} 纹（${plan.cap===null?'无上限':`止于 ${plan.cap} 纹`}）；失败${plan.failText}。本层这一次机会用完就没有了。`))return;
+ // ⚠ 用 window.confirm：无头垫片把 confirm 挂在 window 上（没挂 globalThis），
+ //   裸 window.confirm() 在 Node 里会抛 ReferenceError 并被垫片安静吞掉 —— 那是假覆盖。
+ const ask=typeof window!=='undefined'&&typeof window.confirm==='function'?window.confirm:(()=>true);
+ if(!ask(`以${plan.foldName}结丹？成算 ${(plan.rate*100).toFixed(0)}%，成则 +${plan.marks} 纹（${plan.cap===null?'无上限':`止于 ${plan.cap} 纹`}）；失败时：${plan.failText}。本层这一次机会用完就没有了。`))return;
  const r=commitFold(state,pid,foldId,Date.now(),rng);
  ui.toast(r.ok
    ? (r.success?`${r.name}结丹成功，得 ${r.gain} 纹（共 ${r.marks} 纹 · ${r.grade}）`
-              :`${r.name}结丹失败，丹裂掉纹（余 ${r.marks} 纹 · ${r.grade}）`)
+              : (r.warded?`${r.name}结丹失败 —— 护纹挡下，${r.marks} 纹未损`
+                         :`${r.name}结丹失败，丹裂掉纹（余 ${r.marks} 纹 · ${r.grade}）`))
    : r.reason,
    r.ok&&r.success?'ok':'warn',4200);
  if(r.ok){writeSave(state);ui.render();}
@@ -1340,7 +1361,7 @@ document.addEventListener('click',ev=>{
  if(ui.quiz.isBusy())return;
  const plan=dissolveFoundationPlan(state,Number(btn.dataset.dissolve));
  if(!plan.ok){ui.toast(plan.reason,'warn',2800);return;}
- if(!confirm(`${plan.name}散去${plan.nodeName}的地气，境界回退到炼气九层、修为清零、`
+ if(!window.confirm(`${plan.name}散去${plan.nodeName}的地气，境界回退到炼气九层、修为清零、`
    +`${plan.hours} 游戏小时不能修炼、家族道心 ${plan.morality}。功法与家业都保留。确认？`))return;
  const r=commitDissolveFoundation(state,Number(btn.dataset.dissolve),Date.now());
  ui.toast(r.ok?`${r.name}散功重修，择地之权仍在手`:'散功失败',r.ok?'warn':'warn',3600);
@@ -1385,7 +1406,7 @@ document.addEventListener('click',ev=>{
   if(!p||!c)return;
   if(!mapAccessible(state,nodeId)){ui.toast('与此地不相邻，需先打通沿途','warn',2600);return;}
   const survival=caveSurvival(state,p,c);
-  if(!confirm(`${p.name}将挑战${c.name}，预估生还率${(survival*100).toFixed(1)}%，失败永久失去修士！确认消耗 ${c.fee} 灵石、${c.clues} 线索吗？`))return;
+  if(!window.confirm(`${p.name}将挑战${c.name}，预估生还率${(survival*100).toFixed(1)}%，失败永久失去修士！确认消耗 ${c.fee} 灵石、${c.clues} 线索吗？`))return;
   param=`${id}:${nodeId}`;
  }
  if(kind==='attack'){
@@ -1395,7 +1416,7 @@ document.addEventListener('click',ev=>{
   if(!mapAccessible(state,param)){ui.toast('与此地不相邻，需先打通沿途','warn',2600);return;}
   const plan=mapPlan(state,param);
   if(!plan.ok){ui.toast(plan.reason,'warn',2600);return;}
-  if(!confirm(`确认攻伐${f.name}？胜算 ${(plan.rate*100).toFixed(1)}%，战败可能折损修士。`))return;
+  if(!window.confirm(`确认攻伐${f.name}？胜算 ${(plan.rate*100).toFixed(1)}%，战败可能折损修士。`))return;
  }
  if(kind==='garrison'){
   const nodeId=btn.dataset.mapNode;
@@ -1407,36 +1428,36 @@ document.addEventListener('click',ev=>{
   param=btn.dataset.rune;
   const plan=runePlan(state,param);
   if(!plan.ok){ui.toast(plan.reason,'warn',2600);return;}
-  if(!confirm(`画${plan.name}？成功率 ${(plan.rate*100).toFixed(0)}%，失败会损失全部符文；成品 ${RUNE_SHELF_HOURS} 小时内不用即作废。`))return;
+  if(!window.confirm(`画${plan.name}？成功率 ${(plan.rate*100).toFixed(0)}%，失败会损失全部符文；成品 ${RUNE_SHELF_HOURS} 小时内不用即作废。`))return;
  }
  if(kind==='rune-bench'){
   const plan=benchUpgradePlan(state);
   if(!plan.ok){ui.toast(plan.reason,'warn',2600);return;}
-  if(!confirm(`升级符台到${plan.next.name}？消耗 ${plan.stones} 灵石 + ${plan.next.silver} 两银。`))return;
+  if(!window.confirm(`升级符台到${plan.next.name}？消耗 ${plan.stones} 灵石 + ${plan.next.silver} 两银。`))return;
  }
  if(kind==='rune-use')param=btn.dataset.rune;
  if(kind==='forge'){
   param=btn.dataset.artifact;
   const plan=forgePlan(state,param);
   if(!plan.ok){ui.toast(plan.reason,'warn',2600);return;}
-  if(!confirm(`开炉铸${plan.name}（${plan.slot}）？成功率 ${(plan.rate*100).toFixed(0)}%，失败会损失全部矿料。`))return;
+  if(!window.confirm(`开炉铸${plan.name}（${plan.slot}）？成功率 ${(plan.rate*100).toFixed(0)}%，失败会损失全部矿料。`))return;
  }
  if(kind==='forge-level'){
   const plan=forgeUpgradePlan(state);
   if(!plan.ok){ui.toast(plan.reason,'warn',2600);return;}
-  if(!confirm(`升级锻造台到${plan.next.name}？消耗 ${plan.stones} 灵石 + ${plan.next.silver} 两银。`))return;
+  if(!window.confirm(`升级锻造台到${plan.next.name}？消耗 ${plan.stones} 灵石 + ${plan.next.silver} 两银。`))return;
  }
  if(kind==='artifact-equip'||kind==='artifact-repair')param=btn.dataset.artifact;
  if(kind==='craft'){
   param=btn.dataset.recipe;
   const plan=recipePlan(state,param);
   if(!plan.ok){ui.toast(plan.reason,'warn',2600);return;}
-  if(!confirm(`开炉炼${plan.name}？成功率 ${(plan.rate*100).toFixed(0)}%，失败会损失全部材料。`))return;
+  if(!window.confirm(`开炉炼${plan.name}？成功率 ${(plan.rate*100).toFixed(0)}%，失败会损失全部材料。`))return;
  }
  if(kind==='furnace'){
   const plan=furnaceUpgradePlan(state);
   if(!plan.ok){ui.toast(plan.reason,'warn',2600);return;}
-  if(!confirm(`升炉到${plan.next.name}？消耗 ${plan.stones} 灵石 + ${plan.next.silver} 两银。`))return;
+  if(!window.confirm(`升炉到${plan.next.name}？消耗 ${plan.stones} 灵石 + ${plan.next.silver} 两银。`))return;
  }
  if(kind==='use-human-pill')param=btn.dataset.person;
  if(kind==='mine-workers')param=document.getElementById('mine-workers')?.value;
