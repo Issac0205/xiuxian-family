@@ -54,12 +54,17 @@ if (DOCS_ONLY) {
 /* ── 步骤 1：批次判定 ── */
 step(1, DOCS_ONLY ? '断言本批提交不含 src / UI 改动' : '工作区状态检查');
 {
-  const files = capture('git', ['diff', '--name-only', 'origin/main..HEAD']).split('\n').filter(Boolean);
-  if (!files.length) {
+  const nCommits = Number(capture('git', ['rev-list', '--count', 'origin/main..HEAD']) || '0');
+  if (!nCommits) {
     console.log(`${C.green}✓ 没有待推送的提交，已是最新${C.off}`);
     process.exit(0);
   }
-  console.log(`${C.dim}  待推送 ${capture('git', ['rev-list', '--count', 'origin/main..HEAD'])} 个提交，涉及 ${files.length} 个文件：${C.off}`);
+  // ⚠ **判据必须是提交数（rev-list），不能用内容差异（git diff 是否为空）。**
+  //   本项目真实踩过：一次 merge 提交的内容与远端逐字节相同 ⇒ `git diff` 为空 ⇒
+  //   旧写法报「没有待推送」并直接 exit 0，把那个提交**静默留在本地**。
+  //   三点 `origin/main...HEAD` 取「本批带来的内容变化」，仅用于列文件。
+  const files = capture('git', ['diff', '--name-only', 'origin/main...HEAD']).split('\n').filter(Boolean);
+  console.log(`${C.dim}  待推送 ${nCommits} 个提交，涉及 ${files.length} 个文件：${C.off}`);
   for (const f of files) console.log(`${C.dim}    ${f}${C.off}`);
 
   if (DOCS_ONLY) {
