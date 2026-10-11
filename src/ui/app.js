@@ -1965,6 +1965,27 @@ function createUI({ getState, actions, rng }) {
   syncQuizMode();
   syncCollapsed();
 
+  /**
+   * 【策划 C16 / 任务 T-9 验收标准 2】冲关过场：3–5 秒的可跳过念白。
+   *
+   * 「第一次必播、之后按 `state.ui.ritesSeen` 记忆」——
+   * 记忆存在 state 里（随存档），待播的那一段只活在内存（见 breakthrough.js 的说明）。
+   * 过场**不挡操作**：它是一层浮层，点任意处或点「跳过」即收，
+   * 所以挂机时它不会把玩家的手按住（这也是「跳过是玩家的权利」那条非目标的落点）。
+   */
+  function renderRite() {
+    const s = state();
+    if (!s) return;
+    const host = $('rite-overlay');
+    if (!host) return;
+    const rite = typeof peekRite === 'function' ? peekRite() : null;
+    if (!rite || !rite.text) { host.hidden = true; host.innerHTML = ''; return; }
+    host.hidden = false;
+    host.innerHTML = `<div class="rite-card rite-${rite.phase}">`
+      + `<div class="rite-text">${rite.text}</div>`
+      + `<button class="btn rite-skip" data-rite-skip="1">跳过</button></div>`;
+  }
+
   function render() {
     const s = state();
     if (!s) return;
@@ -1988,6 +2009,7 @@ function createUI({ getState, actions, rng }) {
     updateMarket(s, d);
     updateImmortal(s, d);
     updateLog(s);
+    renderRite();   // 【策划 C16 / 任务 T-9】过场浮层（无待播念白时自动收起）
     syncDifficulty();
     syncSpeed();
     syncQuizMode();

@@ -92,11 +92,120 @@ const REALM_TIERS = [
  *   （docs/91 §八 非目标 3 明确要求）。
  */
 const REALM_GATES = {
-  9: { toTier: 'zhuji', stones: 8, clues: 2, pill: 'zhuji', baseRate: 0.55, failLoss: 0.35, requiresSite: true },
-  13: { toTier: 'jindan', stones: 30, clues: 4, pill: 'jindan', baseRate: 0.42, failLoss: 0.40 },
-  17: { toTier: 'yuanying', stones: 120, clues: 8, pill: 'yuanying', baseRate: 0.30, failLoss: 0.45 },
-  21: { toTier: 'huashen', stones: 300, clues: 14, pill: 'huashen', baseRate: 0.20, failLoss: 0.50 },
+  /* ── 【策划 C16 / 任务 T-9】四段念白（before / during / win / lose）────────
+   * 每段第一句用【…】标出它对应的数值口径，便于复核逐条对照：
+   *   before → 门槛材料与 baseRate；during → 成率；win → 新境界；lose → 回退与补偿。 */
+  9: {
+    toTier: 'zhuji', stones: 8, clues: 2, pill: 'zhuji', baseRate: 0.55, failLoss: 0.35, requiresSite: true,
+    rites: {
+      before: (c) => `【门槛 8 灵石 / 2 线索 / 一枚筑基丹】你把族人唤到堂前，取出一枚筑基丹。`
+        + `此去要把道基压进一块地里，压错了还有退路 —— 只是那退路很贵。`,
+      during: (c) => `【成率 ${Math.round((c.rate ?? 0.55) * 100)}%】坛上火起，药力顺着经脉往下走。`
+        + `你数着自己的呼吸，一直到再也数不清。`,
+      win: (c) => `【晋 ${c.to || '筑基初期'}】地气涌上来，那口气终于有了根。`
+        + `从此路上多了一块石头，谁也搬不动它。`,
+      lose: (c) => `【回退 ${c.loss ?? '?'} 点 · 下次成率 +${Math.round((c.mercy ?? REALM_FAIL_MERCY) * 100)}%`
+        + `${c.failures > 1 ? `（已累计 +${Math.round(c.failures * (c.mercy ?? REALM_FAIL_MERCY) * 100)}%）` : ''}】`
+        + `${c.miss ? `差在${RITE_MISS_WORDS[c.miss] || '天时'}上 —— ` : ''}`
+        + `药力散了，道基没能落地，修为退回 ${c.loss ?? '?'} 点。`
+        + `好在天地留了一线：下一次成率 +${Math.round((c.mercy ?? REALM_FAIL_MERCY) * 100)}%。`,
+    },
+  },
+  13: {
+    toTier: 'jindan', stones: 30, clues: 4, pill: 'jindan', baseRate: 0.42, failLoss: 0.40,
+    rites: {
+      before: (c) => `【门槛 30 灵石 / 4 线索 / 一枚金丹】气已足，只差把它压实。`
+        + `丹成则离体斗法，丹败则前功尽弃 —— 这一炉火，你只能点一次。`,
+      during: (c) => `【成率 ${Math.round((c.rate ?? 0.42) * 100)}%】丹田里那一团气开始转，越转越紧。`
+        + `你不敢动，连念头都压着。`,
+      win: (c) => `【晋 ${c.to || '金丹初期'}】气凝成丹，落进丹田时响了一声。`
+        + `此后一念可离身，凡尘的事，忽然都轻了。`,
+      lose: (c) => `【回退 ${c.loss ?? '?'} 点 · 下次成率 +${Math.round((c.mercy ?? REALM_FAIL_MERCY) * 100)}%`
+        + `${c.failures > 1 ? `（已累计 +${Math.round(c.failures * (c.mercy ?? REALM_FAIL_MERCY) * 100)}%）` : ''}】`
+        + `${c.miss ? `差在${RITE_MISS_WORDS[c.miss] || '天时'}上 —— ` : ''}`
+        + `那一团气在最后一刻散了，修为倒退 ${c.loss ?? '?'} 点。`
+        + `丹炉还热着，下一次成率 +${Math.round((c.mercy ?? REALM_FAIL_MERCY) * 100)}%。`,
+    },
+  },
+  17: {
+    toTier: 'yuanying', stones: 120, clues: 8, pill: 'yuanying', baseRate: 0.30, failLoss: 0.45,
+    rites: {
+      before: (c) => `【门槛 120 灵石 / 8 线索 / 一枚元婴丹】丹已凝，接着要在丹里养出一个自己。`
+        + `养得成，你便有两条命；养不成，连原来这条都要薄几分。`,
+      during: (c) => `【成率 ${Math.round((c.rate ?? 0.30) * 100)}%】丹中隐约有个人形坐着，眉眼还不清。`
+        + `你看它，它也在看你。`,
+      win: (c) => `【晋 ${c.to || '元婴初期'}】那小人睁了眼，从丹田里站起来。`
+        + `肉身忽然成了身外之物 —— 这是第一次，你不太把凡人放在眼里了。`,
+      lose: (c) => `【回退 ${c.loss ?? '?'} 点 · 下次成率 +${Math.round((c.mercy ?? REALM_FAIL_MERCY) * 100)}%`
+        + `${c.failures > 1 ? `（已累计 +${Math.round(c.failures * (c.mercy ?? REALM_FAIL_MERCY) * 100)}%）` : ''}】`
+        + `${c.miss ? `差在${RITE_MISS_WORDS[c.miss] || '天时'}上 —— ` : ''}`
+        + `那小人始终没能成形，散回气里，修为倒退 ${c.loss ?? '?'} 点。`
+        + `下一次成率 +${Math.round((c.mercy ?? REALM_FAIL_MERCY) * 100)}%。`,
+    },
+  },
+  21: {
+    toTier: 'huashen', stones: 300, clues: 14, pill: 'huashen', baseRate: 0.20, failLoss: 0.50,
+    rites: {
+      before: (c) => `【门槛 300 灵石 / 14 线索 / 一枚化神丹】元婴已足，再往上就是神游太虚。`
+        + `走到这一步，凡尘的账该算总账了 —— 包括你自己欠下的。`,
+      during: (c) => `【成率 ${Math.round((c.rate ?? 0.20) * 100)}%】神念离体，越走越远。`
+        + `你回头看了一眼自己的肉身，它像一件旧衣裳。`,
+      win: (c) => `【晋 ${c.to || '化神初期'}】一念千里，山河在脚下缩成一张图。`
+        + `从此天地开始收你的账 —— 你越强，它越要收。`,
+      lose: (c) => `【回退 ${c.loss ?? '?'} 点 · 下次成率 +${Math.round((c.mercy ?? REALM_FAIL_MERCY) * 100)}%`
+        + `${c.failures > 1 ? `（已累计 +${Math.round(c.failures * (c.mercy ?? REALM_FAIL_MERCY) * 100)}%）` : ''}】`
+        + `${c.miss ? `差在${RITE_MISS_WORDS[c.miss] || '天时'}上 —— ` : ''}`
+        + `神念在半途断了，跌回肉身里，修为倒退 ${c.loss ?? '?'} 点。`
+        + `下一次成率 +${Math.round((c.mercy ?? REALM_FAIL_MERCY) * 100)}%。`,
+    },
+  },
 };
+
+/* ══════════════════════════════════════════════════════════════════
+ * 【策划 C16 / 任务 T-9】冲关仪式：四次大境界冲关各四段念白
+ *
+ * 目标：冲关前 / 冲关中 / 成 / 败 四段，让「过场」成为全篇情绪的最高点。
+ * 十六段（4 门槛 × 4 段）+ 结丹三档的失败念白三段 = 十九段。
+ *
+ * 三条硬约定（docs/91 §三 T-9）：
+ *   ① **文字必须住在这里**，不许硬编码进 app.js —— 否则改文案要动渲染代码；
+ *   ② 每段是**函数**（`(c) => string`），因为失败念白必须播报**可算的数字**
+ *      （回退多少、下次成率 +8% 与累计值）。写成死字符串就没法播报；
+ *   ③ 志书体：克制的白描，**不用感叹号**（docs/00 §4.9）。
+ *
+ * 每段都用一个 `【…】` 前缀标出**它对应哪个数值**（连击/成率/回退/补偿）——
+ * 这既是给玩家的氛围，也是给复核者的索引。
+ * ══════════════════════════════════════════════════════════════════ */
+
+/** 失败的四种起因 → 念白里的那个「具体词」。
+ *  ⚠ 验收标准 4 要求：缺丹药时含「丹」、修为不足时含「修为」——
+ *    所以**起因词必须是数据**，不能在渲染层按字符串猜。 */
+const RITE_MISS_WORDS = {
+  pill: '丹', stones: '灵石', clues: '线索', site: '地基', xp: '修为', luck: '天时',
+};
+
+/**
+ * 生成一段念白。
+ * @param {number} index  晋升**前**的 realmIndex（9/13/17/21）
+ * @param {'before'|'during'|'win'|'lose'} phase
+ * @param {object} c     上下文：{name, from, to, rate, loss, next, failures, miss, extra}
+ */
+function riteOf(index, phase, c = {}) {
+  const gate = REALM_GATES[index];
+  const own = gate && gate.rites && gate.rites[phase];
+  if (typeof own === 'function') return own(c);
+  return '';
+}
+
+/** 对某个门槛取齐四段（给界面/测试用；不传 ctx 时给的是「模板文字」）。 */
+function ritesOf(index, c) {
+  return {
+    before: riteOf(index, 'before', c),
+    during: riteOf(index, 'during', c),
+    win: riteOf(index, 'win', c),
+    lose: riteOf(index, 'lose', c),
+  };
+}
 
 /** 天赋对突破成功率的加成上限（天赋 1 + 这个数就到顶）。 */
 const REALM_TALENT_BONUS_MAX = 0.25;
@@ -288,16 +397,27 @@ const CORE_FOLDS = [
     id: 'wen', name: '文火', marks: 1, rate: 0.95, cap: 6,
     herb: 0, stones: 0,
     desc: '细火慢养，成算最高，但止于六纹（六品）—— 它买的是稳，不是高。',
+    // 【策划 C16 / 任务 T-9】结丹失败的念白（三档各一段，共 19 段里的后 3 段）。
+    //   第一句标出「这一档对应的成率」——它同时是氛围与复核索引。
+    lose: (c) => `【${c.foldName || '文火'} 成率 ${Math.round((c.rate ?? 0.95) * 100)}%】火太缓，丹没凝住。`
+      + `丹纹从 ${c.marksFrom ?? '?'} 落到 ${c.marksTo ?? '?'}。稳也是会输的，只是输得慢。`,
   },
   {
     id: 'wu', name: '武火', marks: 3, rate: 0.55, cap: 12,
     herb: 1, stones: 10,
     desc: '猛火逼丹，成算五成半；成则三纹，败则丹裂掉一纹。上限十二纹。',
+    lose: (c) => `【武火 成率 55% · 耗 10 灵石 + 1 药草】火急了，丹皮先裂。`
+      + `丹纹从 ${c.marksFrom ?? '?'} 落到 ${c.marksTo ?? '?'}`
+      + `${c.warded ? '，好在上一炉留的护纹替你挡了这一下' : ''}。`,
   },
   {
     id: 'zhen', name: '三昧真火', marks: 6, rate: 0.25, cap: null,
     herb: 3, stones: 60,
     desc: '三火齐发，四分之一的机会一次六纹且没有上限 —— 只有它能突破十二纹。',
+    lose: (c) => `【三昧真火 成率 25% · 耗 60 灵石 + 3 药草】三火齐发，丹没撑住。`
+      + `丹纹从 ${c.marksFrom ?? '?'} 落到 ${c.marksTo ?? '?'}`
+      + `${c.warded ? '，上一炉的护纹替你挡了这一下' : ''}。`
+      + `它贵六倍、均值还更低 —— 你买的是那个没有上限的可能。`,
   },
 ];
 const CORE_FOLD_MAP = Object.fromEntries(CORE_FOLDS.map((f) => [f.id, f]));

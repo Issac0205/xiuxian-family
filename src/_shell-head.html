@@ -1303,6 +1303,41 @@ body { font-size: 14px; letter-spacing: .06px; }
 body[data-theme="inkwash"] .realm-dashboard { background:#f8f5ee; border-color:#d6cfc0; }
 body[data-theme="inkwash"] .dash-row span { background:#e8e2d5; color:#2f2b26; }
 
+/* ── 【策划 C8 / C11 / C16 · 任务 T-7 / T-8 / T-9】后期两境的面板与过场 ──
+   约定（照 T-2 的既有做法）：配色全部走主题变量、**不写固定像素宽**，
+   这样 classic / inkwash / daotian 三套主题自动跟随，新面板不会破版。 */
+.nascent-box { margin-top:8px; padding:8px 10px; border:1px solid var(--line); background:var(--ink-2); border-radius:8px; }
+.nascent-box[hidden] { display:none; }
+.nascent-head { font-size:11.5px; color:var(--muted); margin-bottom:5px; }
+.nascent-bar { height:7px; border-radius:4px; background:var(--ink-3); overflow:hidden; }
+.nascent-bar i { display:block; height:100%; border-radius:4px; background:var(--jade); }
+.nascent-mid .nascent-bar i { background:var(--gold-soft); }
+.nascent-low .nascent-bar i { background:var(--danger); }
+.nascent-lost .nascent-bar i { background:var(--muted); }
+.nascent-warn { display:block; margin-top:5px; font-size:11px; color:var(--danger); }
+.nascent-actions { margin-top:7px; display:flex; gap:7px; flex-wrap:wrap; align-items:center; }
+.trial-box { margin-top:8px; padding:9px 11px; border:1px solid rgba(227,189,112,.4); background:var(--ink-2); border-radius:8px; }
+.trial-head { font-size:12px; color:var(--gold-soft); margin-bottom:6px; }
+.trial-list { list-style:none; margin:0 0 7px; padding:0; }
+.trial-list li { display:flex; gap:8px; align-items:baseline; font-size:11px; color:var(--muted); padding:2px 0; }
+.trial-list li.is-on { color:var(--fg); }
+.trial-list li b { min-width:44px; text-align:right; color:var(--gold-soft); }
+.trial-list li small { color:var(--muted); }
+.trial-gap { font-size:12px; color:var(--fg); margin-bottom:5px; }
+.trial-verdict { font-size:11px; color:var(--muted); margin-bottom:7px; }
+.trial-go.trial-deadly { border-color:var(--danger); color:var(--danger); }
+.rite-overlay { position:fixed; inset:0; z-index:60; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.55); padding:24px; }
+.rite-overlay[hidden] { display:none; }
+.rite-card { max-width:min(640px,92vw); padding:20px 22px; border:1px solid var(--line-strong); background:var(--ink-1); border-radius:12px; box-shadow:0 8px 32px rgba(0,0,0,.4); }
+.rite-text { font-size:13.5px; line-height:1.9; color:var(--fg); white-space:pre-wrap; }
+.rite-lose .rite-text { color:var(--gold-soft); }
+.rite-win .rite-text { color:var(--jade); }
+.rite-skip { margin-top:14px; }
+body[data-theme="inkwash"] .nascent-box,
+body[data-theme="inkwash"] .trial-box { background:#f8f5ee; border-color:#d6cfc0; }
+body[data-theme="inkwash"] .rite-card { background:#fbf9f4; border-color:#d6cfc0; }
+body[data-theme="inkwash"] .rite-overlay { background:rgba(40,36,30,.45); }
+
 /* 手机优先布局：解决原版 390px 屏幕却延伸至 590px 的横向溢出 */
 @media (max-width: 1180px) {
   .shell-side { position:static; }
@@ -2303,6 +2338,9 @@ body[data-theme="daotian"] ::-webkit-scrollbar-thumb:hover { background: #3a4c60
            出处：docs/91-落地任务清单.md §三 T-2 验收标准 1、2。
            结构与类名约定：每格用 .dash-<key>，查询链接用 [data-target-page="codex"]。 -->
       <section id="realm-dashboard" class="realm-dashboard" hidden></section>
+      <!-- 【策划 C16 / 任务 T-9】冲关过场浮层：默认 hidden，由 ui/app.js 的 renderRite() 控制。
+           不挡操作（点「跳过」即收），配色走主题变量、不写固定像素宽。 -->
+      <div id="rite-overlay" class="rite-overlay" hidden></div>
 
       <section class="panel" data-panel="population">
         <div class="panel-head">

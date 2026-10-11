@@ -134,6 +134,17 @@ function hydrate(raw) {
         if (typeof key === 'string' && val === true) fresh.ui.collapsed[key] = true;
       }
     }
+    // 【策划 C16 / 任务 T-9 验收标准 2】过场记忆："第一次必播，之后可跳过"。
+    // ⚠ 这是 `ui` 的**白名单式**还原：只写这一行还不够，`serialize()` 那边
+    //   如果按子键白名单写，同样会漏 —— 两处都要有。
+    //   本条是「全字段往返值比对」断言（T-1 加的）抓出来的：
+    //   我加了 `ui.ritesSeen` 却只加在运行时，读档后它就没了 ⇒ 每次开档都重播过场。
+    if (raw.ui.ritesSeen && typeof raw.ui.ritesSeen === 'object') {
+      fresh.ui.ritesSeen = {};
+      for (const [key, val] of Object.entries(raw.ui.ritesSeen)) {
+        if (typeof key === 'string' && val === true) fresh.ui.ritesSeen[key] = true;
+      }
+    }
   }
 
   // 通往修仙篇的那条链

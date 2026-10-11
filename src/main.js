@@ -524,6 +524,20 @@ window.__xiuxian = {
     unrest: (nodeId) => Number(worldOf(state).unrest[nodeId]) || 0,
     tick: (seconds) => advanceTerritories(state, seconds, Date.now()),
   },
+  /** 【策划 C16 / 任务 T-9】冲关仪式：念白表与过场。 */
+  rite: {
+    of: (index, phase, ctx) => riteOf(index, phase, ctx || {}),
+    all: (index, ctx) => ritesOf(index, ctx),
+    gateIndexes: () => Object.keys(REALM_GATES).map(Number),
+    foldLose: (foldId, ctx) => {
+      const f = CORE_FOLD_MAP[foldId];
+      return f && typeof f.lose === 'function' ? f.lose(ctx || {}) : '';
+    },
+    pending: () => peekRite(),
+    take: () => takeRite(state),
+    seen: () => ({ ...((state.ui && state.ui.ritesSeen) || {}) }),
+    missWords: () => ({ ...RITE_MISS_WORDS }),
+  },
   /** 【策划 C11 / 任务 T-8】天劫：减免清单、询价、引雷结算。 */
   tribulation: {
     base: (index) => tribulationBase(index),
@@ -1379,6 +1393,15 @@ document.addEventListener('click',ev=>{
    :r.reason, r.ok&&!r.perish?'ok':'warn', 4200);
  if(r.ok){writeSave(state);ui.render();}
  repaintExpansion(true);
+});
+
+/* 【策划 C16 / 任务 T-9】过场：点「跳过」即收
+ * （跳过是玩家的权利；「第一次必播」只是默认，不是强制）。 */
+document.addEventListener('click',ev=>{
+ const skip=ev.target.closest('[data-rite-skip]');
+ if(!skip)return;
+ takeRite(state);
+ ui.render();
 });
 
 /* 【策划 C2 / 任务 T-3】猛进行气的开关。per-person，不触发答题。 */

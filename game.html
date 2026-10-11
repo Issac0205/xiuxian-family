@@ -1303,6 +1303,41 @@ body { font-size: 14px; letter-spacing: .06px; }
 body[data-theme="inkwash"] .realm-dashboard { background:#f8f5ee; border-color:#d6cfc0; }
 body[data-theme="inkwash"] .dash-row span { background:#e8e2d5; color:#2f2b26; }
 
+/* ── 【策划 C8 / C11 / C16 · 任务 T-7 / T-8 / T-9】后期两境的面板与过场 ──
+   约定（照 T-2 的既有做法）：配色全部走主题变量、**不写固定像素宽**，
+   这样 classic / inkwash / daotian 三套主题自动跟随，新面板不会破版。 */
+.nascent-box { margin-top:8px; padding:8px 10px; border:1px solid var(--line); background:var(--ink-2); border-radius:8px; }
+.nascent-box[hidden] { display:none; }
+.nascent-head { font-size:11.5px; color:var(--muted); margin-bottom:5px; }
+.nascent-bar { height:7px; border-radius:4px; background:var(--ink-3); overflow:hidden; }
+.nascent-bar i { display:block; height:100%; border-radius:4px; background:var(--jade); }
+.nascent-mid .nascent-bar i { background:var(--gold-soft); }
+.nascent-low .nascent-bar i { background:var(--danger); }
+.nascent-lost .nascent-bar i { background:var(--muted); }
+.nascent-warn { display:block; margin-top:5px; font-size:11px; color:var(--danger); }
+.nascent-actions { margin-top:7px; display:flex; gap:7px; flex-wrap:wrap; align-items:center; }
+.trial-box { margin-top:8px; padding:9px 11px; border:1px solid rgba(227,189,112,.4); background:var(--ink-2); border-radius:8px; }
+.trial-head { font-size:12px; color:var(--gold-soft); margin-bottom:6px; }
+.trial-list { list-style:none; margin:0 0 7px; padding:0; }
+.trial-list li { display:flex; gap:8px; align-items:baseline; font-size:11px; color:var(--muted); padding:2px 0; }
+.trial-list li.is-on { color:var(--fg); }
+.trial-list li b { min-width:44px; text-align:right; color:var(--gold-soft); }
+.trial-list li small { color:var(--muted); }
+.trial-gap { font-size:12px; color:var(--fg); margin-bottom:5px; }
+.trial-verdict { font-size:11px; color:var(--muted); margin-bottom:7px; }
+.trial-go.trial-deadly { border-color:var(--danger); color:var(--danger); }
+.rite-overlay { position:fixed; inset:0; z-index:60; display:flex; align-items:center; justify-content:center; background:rgba(0,0,0,.55); padding:24px; }
+.rite-overlay[hidden] { display:none; }
+.rite-card { max-width:min(640px,92vw); padding:20px 22px; border:1px solid var(--line-strong); background:var(--ink-1); border-radius:12px; box-shadow:0 8px 32px rgba(0,0,0,.4); }
+.rite-text { font-size:13.5px; line-height:1.9; color:var(--fg); white-space:pre-wrap; }
+.rite-lose .rite-text { color:var(--gold-soft); }
+.rite-win .rite-text { color:var(--jade); }
+.rite-skip { margin-top:14px; }
+body[data-theme="inkwash"] .nascent-box,
+body[data-theme="inkwash"] .trial-box { background:#f8f5ee; border-color:#d6cfc0; }
+body[data-theme="inkwash"] .rite-card { background:#fbf9f4; border-color:#d6cfc0; }
+body[data-theme="inkwash"] .rite-overlay { background:rgba(40,36,30,.45); }
+
 /* 手机优先布局：解决原版 390px 屏幕却延伸至 590px 的横向溢出 */
 @media (max-width: 1180px) {
   .shell-side { position:static; }
@@ -2303,6 +2338,9 @@ body[data-theme="daotian"] ::-webkit-scrollbar-thumb:hover { background: #3a4c60
            出处：docs/91-落地任务清单.md §三 T-2 验收标准 1、2。
            结构与类名约定：每格用 .dash-<key>，查询链接用 [data-target-page="codex"]。 -->
       <section id="realm-dashboard" class="realm-dashboard" hidden></section>
+      <!-- 【策划 C16 / 任务 T-9】冲关过场浮层：默认 hidden，由 ui/app.js 的 renderRite() 控制。
+           不挡操作（点「跳过」即收），配色走主题变量、不写固定像素宽。 -->
+      <div id="rite-overlay" class="rite-overlay" hidden></div>
 
       <section class="panel" data-panel="population">
         <div class="panel-head">
@@ -5475,11 +5513,120 @@ const REALM_TIERS = [
  *   （docs/91 §八 非目标 3 明确要求）。
  */
 const REALM_GATES = {
-  9: { toTier: 'zhuji', stones: 8, clues: 2, pill: 'zhuji', baseRate: 0.55, failLoss: 0.35, requiresSite: true },
-  13: { toTier: 'jindan', stones: 30, clues: 4, pill: 'jindan', baseRate: 0.42, failLoss: 0.40 },
-  17: { toTier: 'yuanying', stones: 120, clues: 8, pill: 'yuanying', baseRate: 0.30, failLoss: 0.45 },
-  21: { toTier: 'huashen', stones: 300, clues: 14, pill: 'huashen', baseRate: 0.20, failLoss: 0.50 },
+  /* ── 【策划 C16 / 任务 T-9】四段念白（before / during / win / lose）────────
+   * 每段第一句用【…】标出它对应的数值口径，便于复核逐条对照：
+   *   before → 门槛材料与 baseRate；during → 成率；win → 新境界；lose → 回退与补偿。 */
+  9: {
+    toTier: 'zhuji', stones: 8, clues: 2, pill: 'zhuji', baseRate: 0.55, failLoss: 0.35, requiresSite: true,
+    rites: {
+      before: (c) => `【门槛 8 灵石 / 2 线索 / 一枚筑基丹】你把族人唤到堂前，取出一枚筑基丹。`
+        + `此去要把道基压进一块地里，压错了还有退路 —— 只是那退路很贵。`,
+      during: (c) => `【成率 ${Math.round((c.rate ?? 0.55) * 100)}%】坛上火起，药力顺着经脉往下走。`
+        + `你数着自己的呼吸，一直到再也数不清。`,
+      win: (c) => `【晋 ${c.to || '筑基初期'}】地气涌上来，那口气终于有了根。`
+        + `从此路上多了一块石头，谁也搬不动它。`,
+      lose: (c) => `【回退 ${c.loss ?? '?'} 点 · 下次成率 +${Math.round((c.mercy ?? REALM_FAIL_MERCY) * 100)}%`
+        + `${c.failures > 1 ? `（已累计 +${Math.round(c.failures * (c.mercy ?? REALM_FAIL_MERCY) * 100)}%）` : ''}】`
+        + `${c.miss ? `差在${RITE_MISS_WORDS[c.miss] || '天时'}上 —— ` : ''}`
+        + `药力散了，道基没能落地，修为退回 ${c.loss ?? '?'} 点。`
+        + `好在天地留了一线：下一次成率 +${Math.round((c.mercy ?? REALM_FAIL_MERCY) * 100)}%。`,
+    },
+  },
+  13: {
+    toTier: 'jindan', stones: 30, clues: 4, pill: 'jindan', baseRate: 0.42, failLoss: 0.40,
+    rites: {
+      before: (c) => `【门槛 30 灵石 / 4 线索 / 一枚金丹】气已足，只差把它压实。`
+        + `丹成则离体斗法，丹败则前功尽弃 —— 这一炉火，你只能点一次。`,
+      during: (c) => `【成率 ${Math.round((c.rate ?? 0.42) * 100)}%】丹田里那一团气开始转，越转越紧。`
+        + `你不敢动，连念头都压着。`,
+      win: (c) => `【晋 ${c.to || '金丹初期'}】气凝成丹，落进丹田时响了一声。`
+        + `此后一念可离身，凡尘的事，忽然都轻了。`,
+      lose: (c) => `【回退 ${c.loss ?? '?'} 点 · 下次成率 +${Math.round((c.mercy ?? REALM_FAIL_MERCY) * 100)}%`
+        + `${c.failures > 1 ? `（已累计 +${Math.round(c.failures * (c.mercy ?? REALM_FAIL_MERCY) * 100)}%）` : ''}】`
+        + `${c.miss ? `差在${RITE_MISS_WORDS[c.miss] || '天时'}上 —— ` : ''}`
+        + `那一团气在最后一刻散了，修为倒退 ${c.loss ?? '?'} 点。`
+        + `丹炉还热着，下一次成率 +${Math.round((c.mercy ?? REALM_FAIL_MERCY) * 100)}%。`,
+    },
+  },
+  17: {
+    toTier: 'yuanying', stones: 120, clues: 8, pill: 'yuanying', baseRate: 0.30, failLoss: 0.45,
+    rites: {
+      before: (c) => `【门槛 120 灵石 / 8 线索 / 一枚元婴丹】丹已凝，接着要在丹里养出一个自己。`
+        + `养得成，你便有两条命；养不成，连原来这条都要薄几分。`,
+      during: (c) => `【成率 ${Math.round((c.rate ?? 0.30) * 100)}%】丹中隐约有个人形坐着，眉眼还不清。`
+        + `你看它，它也在看你。`,
+      win: (c) => `【晋 ${c.to || '元婴初期'}】那小人睁了眼，从丹田里站起来。`
+        + `肉身忽然成了身外之物 —— 这是第一次，你不太把凡人放在眼里了。`,
+      lose: (c) => `【回退 ${c.loss ?? '?'} 点 · 下次成率 +${Math.round((c.mercy ?? REALM_FAIL_MERCY) * 100)}%`
+        + `${c.failures > 1 ? `（已累计 +${Math.round(c.failures * (c.mercy ?? REALM_FAIL_MERCY) * 100)}%）` : ''}】`
+        + `${c.miss ? `差在${RITE_MISS_WORDS[c.miss] || '天时'}上 —— ` : ''}`
+        + `那小人始终没能成形，散回气里，修为倒退 ${c.loss ?? '?'} 点。`
+        + `下一次成率 +${Math.round((c.mercy ?? REALM_FAIL_MERCY) * 100)}%。`,
+    },
+  },
+  21: {
+    toTier: 'huashen', stones: 300, clues: 14, pill: 'huashen', baseRate: 0.20, failLoss: 0.50,
+    rites: {
+      before: (c) => `【门槛 300 灵石 / 14 线索 / 一枚化神丹】元婴已足，再往上就是神游太虚。`
+        + `走到这一步，凡尘的账该算总账了 —— 包括你自己欠下的。`,
+      during: (c) => `【成率 ${Math.round((c.rate ?? 0.20) * 100)}%】神念离体，越走越远。`
+        + `你回头看了一眼自己的肉身，它像一件旧衣裳。`,
+      win: (c) => `【晋 ${c.to || '化神初期'}】一念千里，山河在脚下缩成一张图。`
+        + `从此天地开始收你的账 —— 你越强，它越要收。`,
+      lose: (c) => `【回退 ${c.loss ?? '?'} 点 · 下次成率 +${Math.round((c.mercy ?? REALM_FAIL_MERCY) * 100)}%`
+        + `${c.failures > 1 ? `（已累计 +${Math.round(c.failures * (c.mercy ?? REALM_FAIL_MERCY) * 100)}%）` : ''}】`
+        + `${c.miss ? `差在${RITE_MISS_WORDS[c.miss] || '天时'}上 —— ` : ''}`
+        + `神念在半途断了，跌回肉身里，修为倒退 ${c.loss ?? '?'} 点。`
+        + `下一次成率 +${Math.round((c.mercy ?? REALM_FAIL_MERCY) * 100)}%。`,
+    },
+  },
 };
+
+/* ══════════════════════════════════════════════════════════════════
+ * 【策划 C16 / 任务 T-9】冲关仪式：四次大境界冲关各四段念白
+ *
+ * 目标：冲关前 / 冲关中 / 成 / 败 四段，让「过场」成为全篇情绪的最高点。
+ * 十六段（4 门槛 × 4 段）+ 结丹三档的失败念白三段 = 十九段。
+ *
+ * 三条硬约定（docs/91 §三 T-9）：
+ *   ① **文字必须住在这里**，不许硬编码进 app.js —— 否则改文案要动渲染代码；
+ *   ② 每段是**函数**（`(c) => string`），因为失败念白必须播报**可算的数字**
+ *      （回退多少、下次成率 +8% 与累计值）。写成死字符串就没法播报；
+ *   ③ 志书体：克制的白描，**不用感叹号**（docs/00 §4.9）。
+ *
+ * 每段都用一个 `【…】` 前缀标出**它对应哪个数值**（连击/成率/回退/补偿）——
+ * 这既是给玩家的氛围，也是给复核者的索引。
+ * ══════════════════════════════════════════════════════════════════ */
+
+/** 失败的四种起因 → 念白里的那个「具体词」。
+ *  ⚠ 验收标准 4 要求：缺丹药时含「丹」、修为不足时含「修为」——
+ *    所以**起因词必须是数据**，不能在渲染层按字符串猜。 */
+const RITE_MISS_WORDS = {
+  pill: '丹', stones: '灵石', clues: '线索', site: '地基', xp: '修为', luck: '天时',
+};
+
+/**
+ * 生成一段念白。
+ * @param {number} index  晋升**前**的 realmIndex（9/13/17/21）
+ * @param {'before'|'during'|'win'|'lose'} phase
+ * @param {object} c     上下文：{name, from, to, rate, loss, next, failures, miss, extra}
+ */
+function riteOf(index, phase, c = {}) {
+  const gate = REALM_GATES[index];
+  const own = gate && gate.rites && gate.rites[phase];
+  if (typeof own === 'function') return own(c);
+  return '';
+}
+
+/** 对某个门槛取齐四段（给界面/测试用；不传 ctx 时给的是「模板文字」）。 */
+function ritesOf(index, c) {
+  return {
+    before: riteOf(index, 'before', c),
+    during: riteOf(index, 'during', c),
+    win: riteOf(index, 'win', c),
+    lose: riteOf(index, 'lose', c),
+  };
+}
 
 /** 天赋对突破成功率的加成上限（天赋 1 + 这个数就到顶）。 */
 const REALM_TALENT_BONUS_MAX = 0.25;
@@ -5671,16 +5818,27 @@ const CORE_FOLDS = [
     id: 'wen', name: '文火', marks: 1, rate: 0.95, cap: 6,
     herb: 0, stones: 0,
     desc: '细火慢养，成算最高，但止于六纹（六品）—— 它买的是稳，不是高。',
+    // 【策划 C16 / 任务 T-9】结丹失败的念白（三档各一段，共 19 段里的后 3 段）。
+    //   第一句标出「这一档对应的成率」——它同时是氛围与复核索引。
+    lose: (c) => `【${c.foldName || '文火'} 成率 ${Math.round((c.rate ?? 0.95) * 100)}%】火太缓，丹没凝住。`
+      + `丹纹从 ${c.marksFrom ?? '?'} 落到 ${c.marksTo ?? '?'}。稳也是会输的，只是输得慢。`,
   },
   {
     id: 'wu', name: '武火', marks: 3, rate: 0.55, cap: 12,
     herb: 1, stones: 10,
     desc: '猛火逼丹，成算五成半；成则三纹，败则丹裂掉一纹。上限十二纹。',
+    lose: (c) => `【武火 成率 55% · 耗 10 灵石 + 1 药草】火急了，丹皮先裂。`
+      + `丹纹从 ${c.marksFrom ?? '?'} 落到 ${c.marksTo ?? '?'}`
+      + `${c.warded ? '，好在上一炉留的护纹替你挡了这一下' : ''}。`,
   },
   {
     id: 'zhen', name: '三昧真火', marks: 6, rate: 0.25, cap: null,
     herb: 3, stones: 60,
     desc: '三火齐发，四分之一的机会一次六纹且没有上限 —— 只有它能突破十二纹。',
+    lose: (c) => `【三昧真火 成率 25% · 耗 60 灵石 + 3 药草】三火齐发，丹没撑住。`
+      + `丹纹从 ${c.marksFrom ?? '?'} 落到 ${c.marksTo ?? '?'}`
+      + `${c.warded ? '，上一炉的护纹替你挡了这一下' : ''}。`
+      + `它贵六倍、均值还更低 —— 你买的是那个没有上限的可能。`,
   },
 ];
 const CORE_FOLD_MAP = Object.fromEntries(CORE_FOLDS.map((f) => [f.id, f]));
@@ -7835,21 +7993,28 @@ function breakthroughPlan(state, personId, siteId, force = false) {
       ok: false,
       reason: `修为未满（还需 ${Math.ceil(st.remaining)} 点）`,
       remaining: st.remaining,
+      // 【策划 C16 / 任务 T-9 验收标准 4】`miss` 是失败的**起因标签**，
+      //   由这里产出、由念白消费（`RITE_MISS_WORDS` 把它翻成「修为」这个词）。
+      //   写在这里而不是渲染层：渲染层只能从文案里猜，而猜错就是「败念白不点名」。
+      miss: 'xp',
     };
   }
 
   const gate = st.gate;
   // 丹药是主材料：没有对应的丹，连试都试不了
+  // 【策划 C16 / 任务 T-9 验收标准 4】`miss` 是失败的**起因标签**，交给念白消费
+  //   （`RITE_MISS_WORDS` 把 'pill' 翻成「丹」这个词）。放在这里而不是渲染层：
+  //   渲染层只能从 reason 的中文里猜起因，猜错的表现就是「败念白不点名」。
   if (gate.pill && pillCount(state, gate.pill) < 1) {
     const pillName = ALCHEMY_RECIPE_MAP[gate.pill]?.name || gate.pill;
-    return { ok: false, reason: `冲关需一枚${pillName}（尚无）`, needsPill: gate.pill };
+    return { ok: false, reason: `冲关需一枚${pillName}（尚无）`, needsPill: gate.pill, miss: 'pill' };
   }
   if ((state.spiritStones || 0) < gate.stones) {
-    return { ok: false, reason: `冲关需 ${gate.stones} 灵石（现有 ${Math.floor(state.spiritStones || 0)}）` };
+    return { ok: false, reason: `冲关需 ${gate.stones} 灵石（现有 ${Math.floor(state.spiritStones || 0)}）`, miss: 'stones' };
   }
   const clues = state.cultivation?.clues || 0;
   if (clues < gate.clues) {
-    return { ok: false, reason: `冲关需 ${gate.clues} 条秘闻线索（现有 ${clues}）` };
+    return { ok: false, reason: `冲关需 ${gate.clues} 条秘闻线索（现有 ${clues}）`, miss: 'clues' };
   }
 
   // 【策划 C4 / 任务 T-5】炼气九层那一道要择地：没有选到地就不放行。
@@ -7859,15 +8024,15 @@ function breakthroughPlan(state, personId, siteId, force = false) {
   let site = null;
   if (gate.requiresSite) {
     const sites = foundationSiteOptions(state);
-    if (!sites.length) return { ok: false, reason: '还没有走到过任何一处地方，先出门探一探', needsSite: true, sites: [] };
+    if (!sites.length) return { ok: false, reason: '还没有走到过任何一处地方，先出门探一探', needsSite: true, sites: [], miss: 'site' };
     if (!siteId) {
       return {
         ok: false, reason: '请先择地筑基：挑一块走到过的地，再奠基',
-        needsSite: true, sites,
+        needsSite: true, sites, miss: 'site',
       };
     }
     const fp = foundationPlan(state, personId, siteId);
-    if (!fp.ok) return { ok: false, reason: fp.reason, needsSite: true, sites: fp.sites || sites };
+    if (!fp.ok) return { ok: false, reason: fp.reason, needsSite: true, sites: fp.sites || sites, miss: 'site' };
     site = fp.site;
   }
 
@@ -7971,8 +8136,14 @@ function commitBreakthrough(state, personId, now = Date.now(), rng = Math.random
       person.foundation = foundation;
     }
     pushLog(state, `${person.name}冲关成功${runeNote}，晋升${realmName(person.realmIndex)}！`, 'cultivate', null, now);
+    // 【策划 C16 / 任务 T-9】成功念白：挂过场，并照验收标准 3 再写一条族谱纪事
+    const riteWin = riteOf(person.realmIndex - 1, 'win', {
+      name: person.name, to: realmName(person.realmIndex),
+    });
+    setRite(state, { phase: 'win', index: person.realmIndex - 1, name: person.name, to: realmName(person.realmIndex), text: riteWin });
+    if (riteWin) pushLog(state, riteWin, 'rite', null, now);
     return {
-      ok: true, success: true, name: person.name, runeUsed, foundation,
+      ok: true, success: true, name: person.name, runeUsed, foundation, rite: riteWin,
       realm: realmName(person.realmIndex), realmIndex: person.realmIndex,
     };
   }
@@ -7985,11 +8156,56 @@ function commitBreakthrough(state, personId, now = Date.now(), rng = Math.random
     `${person.name}冲关失败${runeNote}，修为倒退 ${plan.loss} 点。下一次成功率提升到 ${(next * 100).toFixed(0)}%。`,
     'cultivate', null, now,
   );
+  // 【策划 C16 / 任务 T-9 验收标准 4、5】失败念白必须**点名起因**并**播报补偿**：
+  //   `miss` 由询价阶段「缺什么」决定（丹 / 灵石 / 线索 / 地基 / 修为 / 天时），
+  //   `mercy` 取 REALM_FAIL_MERCY —— 文案里的「+8%」由它算出来，**不写魔数**，
+  //   于是改补偿率时文案自动跟着变（否则又是一处「两处各算一遍」）。
+  const riteLose = riteOf(person.realmIndex, 'lose', {
+    name: person.name, loss: plan.loss, next,
+    failures: person.breakFailures, mercy: REALM_FAIL_MERCY,
+    miss: plan.miss || 'luck',
+  });
+  setRite(state, { phase: 'lose', index: person.realmIndex, name: person.name, loss: plan.loss, next, text: riteLose });
+  if (riteLose) pushLog(state, riteLose, 'rite', null, now);
   return {
     ok: true, success: false, name: person.name, runeUsed,
-    loss: plan.loss, nextRate: next, failures: person.breakFailures,
+    loss: plan.loss, nextRate: next, failures: person.breakFailures, rite: riteLose,
   };
 }
+
+/**
+ * 【策划 C16 / 任务 T-9 验收标准 2】把一段念白挂进过场队列，由界面播完再清掉。
+ *
+ * ⚠ **两件事必须分开存**（这一点是被断言逼出来的）：
+ *   · `ritesSeen`（「这个门槛看过没有」）→ 进 `state.ui`，**随存档走**；
+ *     否则刷新一次就忘了，玩家的期望是「看过一次就不必再看」。
+ *   · **待播的那一段念白本身** → 只放**模块级变量**，**不进 state**。
+ *     它是纯 UI 瞬态：写进 `state` 会立刻被「全字段往返值比对」断言抓住
+ *     （读档后它不会被还原 ⇒ ui 字段前后不等），而「把它也持久化」更糟 ——
+ *     那等于让玩家每次开档都重播一段上辈子听过的过场。
+ */
+let pendingRite = null;
+
+function setRite(state, rite) {
+  if (!state || !rite) return null;
+  if (!state.ui || typeof state.ui !== 'object') state.ui = {};
+  if (!state.ui.ritesSeen || typeof state.ui.ritesSeen !== 'object') state.ui.ritesSeen = {};
+  const key = String(rite.index);
+  rite.firstTime = state.ui.ritesSeen[key] !== true;
+  state.ui.ritesSeen[key] = true;
+  pendingRite = rite;
+  return rite;
+}
+
+/** 取当前挂着的念白（界面播完清掉）。 */
+function takeRite(state) {
+  const r = pendingRite;
+  pendingRite = null;
+  return r || null;
+}
+
+/** 只看不取（界面渲染时判断要不要播过场）。 */
+function peekRite() { return pendingRite; }
 
 /* ══════════════════════════════════════════════════════════════════
  * 【策划 C4 / 任务 T-5】择地筑基
@@ -8227,6 +8443,13 @@ function commitFold(state, personId, foldId, now = Date.now(), rng = Math.random
   const marks = warded ? core.marks : Math.max(0, core.marks - 1);
   person.core = { marks, mercy: warded ? 0 : CORE_WARD_COUNT, used };
   const grade = coreGradeOf(marks);
+  // 【策划 C16 / 任务 T-9】结丹失败也有念白（三档各一段）。
+  //   把「从几纹落到几纹」与「护纹有没有挡下」都传进去 —— 这两件事玩家最需要看清。
+  const riteLose = typeof fold.lose === 'function'
+    ? fold.lose({ foldName: fold.name, rate: fold.rate, marksFrom: core.marks, marksTo: marks, warded })
+    : '';
+  setRite(state, { phase: 'lose', index: `fold-${fold.id}`, name: person.name, loss: warded ? 0 : 1, text: riteLose });
+  if (riteLose) pushLog(state, riteLose, 'rite', null, now);
   pushLog(
     state,
     warded
@@ -15376,6 +15599,17 @@ function hydrate(raw) {
         if (typeof key === 'string' && val === true) fresh.ui.collapsed[key] = true;
       }
     }
+    // 【策划 C16 / 任务 T-9 验收标准 2】过场记忆："第一次必播，之后可跳过"。
+    // ⚠ 这是 `ui` 的**白名单式**还原：只写这一行还不够，`serialize()` 那边
+    //   如果按子键白名单写，同样会漏 —— 两处都要有。
+    //   本条是「全字段往返值比对」断言（T-1 加的）抓出来的：
+    //   我加了 `ui.ritesSeen` 却只加在运行时，读档后它就没了 ⇒ 每次开档都重播过场。
+    if (raw.ui.ritesSeen && typeof raw.ui.ritesSeen === 'object') {
+      fresh.ui.ritesSeen = {};
+      for (const [key, val] of Object.entries(raw.ui.ritesSeen)) {
+        if (typeof key === 'string' && val === true) fresh.ui.ritesSeen[key] = true;
+      }
+    }
   }
 
   // 通往修仙篇的那条链
@@ -17923,6 +18157,27 @@ function createUI({ getState, actions, rng }) {
   syncQuizMode();
   syncCollapsed();
 
+  /**
+   * 【策划 C16 / 任务 T-9 验收标准 2】冲关过场：3–5 秒的可跳过念白。
+   *
+   * 「第一次必播、之后按 `state.ui.ritesSeen` 记忆」——
+   * 记忆存在 state 里（随存档），待播的那一段只活在内存（见 breakthrough.js 的说明）。
+   * 过场**不挡操作**：它是一层浮层，点任意处或点「跳过」即收，
+   * 所以挂机时它不会把玩家的手按住（这也是「跳过是玩家的权利」那条非目标的落点）。
+   */
+  function renderRite() {
+    const s = state();
+    if (!s) return;
+    const host = $('rite-overlay');
+    if (!host) return;
+    const rite = typeof peekRite === 'function' ? peekRite() : null;
+    if (!rite || !rite.text) { host.hidden = true; host.innerHTML = ''; return; }
+    host.hidden = false;
+    host.innerHTML = `<div class="rite-card rite-${rite.phase}">`
+      + `<div class="rite-text">${rite.text}</div>`
+      + `<button class="btn rite-skip" data-rite-skip="1">跳过</button></div>`;
+  }
+
   function render() {
     const s = state();
     if (!s) return;
@@ -17946,6 +18201,7 @@ function createUI({ getState, actions, rng }) {
     updateMarket(s, d);
     updateImmortal(s, d);
     updateLog(s);
+    renderRite();   // 【策划 C16 / 任务 T-9】过场浮层（无待播念白时自动收起）
     syncDifficulty();
     syncSpeed();
     syncQuizMode();
@@ -18511,6 +18767,20 @@ window.__xiuxian = {
     clearGarrison: (nodeId) => mapClearGarrison(state, nodeId),
     unrest: (nodeId) => Number(worldOf(state).unrest[nodeId]) || 0,
     tick: (seconds) => advanceTerritories(state, seconds, Date.now()),
+  },
+  /** 【策划 C16 / 任务 T-9】冲关仪式：念白表与过场。 */
+  rite: {
+    of: (index, phase, ctx) => riteOf(index, phase, ctx || {}),
+    all: (index, ctx) => ritesOf(index, ctx),
+    gateIndexes: () => Object.keys(REALM_GATES).map(Number),
+    foldLose: (foldId, ctx) => {
+      const f = CORE_FOLD_MAP[foldId];
+      return f && typeof f.lose === 'function' ? f.lose(ctx || {}) : '';
+    },
+    pending: () => peekRite(),
+    take: () => takeRite(state),
+    seen: () => ({ ...((state.ui && state.ui.ritesSeen) || {}) }),
+    missWords: () => ({ ...RITE_MISS_WORDS }),
   },
   /** 【策划 C11 / 任务 T-8】天劫：减免清单、询价、引雷结算。 */
   tribulation: {
@@ -19367,6 +19637,15 @@ document.addEventListener('click',ev=>{
    :r.reason, r.ok&&!r.perish?'ok':'warn', 4200);
  if(r.ok){writeSave(state);ui.render();}
  repaintExpansion(true);
+});
+
+/* 【策划 C16 / 任务 T-9】过场：点「跳过」即收
+ * （跳过是玩家的权利；「第一次必播」只是默认，不是强制）。 */
+document.addEventListener('click',ev=>{
+ const skip=ev.target.closest('[data-rite-skip]');
+ if(!skip)return;
+ takeRite(state);
+ ui.render();
 });
 
 /* 【策划 C2 / 任务 T-3】猛进行气的开关。per-person，不触发答题。 */

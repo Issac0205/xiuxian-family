@@ -144,21 +144,28 @@ function breakthroughPlan(state, personId, siteId, force = false) {
       ok: false,
       reason: `修为未满（还需 ${Math.ceil(st.remaining)} 点）`,
       remaining: st.remaining,
+      // 【策划 C16 / 任务 T-9 验收标准 4】`miss` 是失败的**起因标签**，
+      //   由这里产出、由念白消费（`RITE_MISS_WORDS` 把它翻成「修为」这个词）。
+      //   写在这里而不是渲染层：渲染层只能从文案里猜，而猜错就是「败念白不点名」。
+      miss: 'xp',
     };
   }
 
   const gate = st.gate;
   // 丹药是主材料：没有对应的丹，连试都试不了
+  // 【策划 C16 / 任务 T-9 验收标准 4】`miss` 是失败的**起因标签**，交给念白消费
+  //   （`RITE_MISS_WORDS` 把 'pill' 翻成「丹」这个词）。放在这里而不是渲染层：
+  //   渲染层只能从 reason 的中文里猜起因，猜错的表现就是「败念白不点名」。
   if (gate.pill && pillCount(state, gate.pill) < 1) {
     const pillName = ALCHEMY_RECIPE_MAP[gate.pill]?.name || gate.pill;
-    return { ok: false, reason: `冲关需一枚${pillName}（尚无）`, needsPill: gate.pill };
+    return { ok: false, reason: `冲关需一枚${pillName}（尚无）`, needsPill: gate.pill, miss: 'pill' };
   }
   if ((state.spiritStones || 0) < gate.stones) {
-    return { ok: false, reason: `冲关需 ${gate.stones} 灵石（现有 ${Math.floor(state.spiritStones || 0)}）` };
+    return { ok: false, reason: `冲关需 ${gate.stones} 灵石（现有 ${Math.floor(state.spiritStones || 0)}）`, miss: 'stones' };
   }
   const clues = state.cultivation?.clues || 0;
   if (clues < gate.clues) {
-    return { ok: false, reason: `冲关需 ${gate.clues} 条秘闻线索（现有 ${clues}）` };
+    return { ok: false, reason: `冲关需 ${gate.clues} 条秘闻线索（现有 ${clues}）`, miss: 'clues' };
   }
 
   // 【策划 C4 / 任务 T-5】炼气九层那一道要择地：没有选到地就不放行。
@@ -168,15 +175,15 @@ function breakthroughPlan(state, personId, siteId, force = false) {
   let site = null;
   if (gate.requiresSite) {
     const sites = foundationSiteOptions(state);
-    if (!sites.length) return { ok: false, reason: '还没有走到过任何一处地方，先出门探一探', needsSite: true, sites: [] };
+    if (!sites.length) return { ok: false, reason: '还没有走到过任何一处地方，先出门探一探', needsSite: true, sites: [], miss: 'site' };
     if (!siteId) {
       return {
         ok: false, reason: '请先择地筑基：挑一块走到过的地，再奠基',
-        needsSite: true, sites,
+        needsSite: true, sites, miss: 'site',
       };
     }
     const fp = foundationPlan(state, personId, siteId);
-    if (!fp.ok) return { ok: false, reason: fp.reason, needsSite: true, sites: fp.sites || sites };
+    if (!fp.ok) return { ok: false, reason: fp.reason, needsSite: true, sites: fp.sites || sites, miss: 'site' };
     site = fp.site;
   }
 
@@ -280,8 +287,14 @@ function commitBreakthrough(state, personId, now = Date.now(), rng = Math.random
       person.foundation = foundation;
     }
     pushLog(state, `${person.name}冲关成功${runeNote}，晋升${realmName(person.realmIndex)}！`, 'cultivate', null, now);
+    // 【策划 C16 / 任务 T-9】成功念白：挂过场，并照验收标准 3 再写一条族谱纪事
+    const riteWin = riteOf(person.realmIndex - 1, 'win', {
+      name: person.name, to: realmName(person.realmIndex),
+    });
+    setRite(state, { phase: 'win', index: person.realmIndex - 1, name: person.name, to: realmName(person.realmIndex), text: riteWin });
+    if (riteWin) pushLog(state, riteWin, 'rite', null, now);
     return {
-      ok: true, success: true, name: person.name, runeUsed, foundation,
+      ok: true, success: true, name: person.name, runeUsed, foundation, rite: riteWin,
       realm: realmName(person.realmIndex), realmIndex: person.realmIndex,
     };
   }
@@ -294,11 +307,56 @@ function commitBreakthrough(state, personId, now = Date.now(), rng = Math.random
     `${person.name}冲关失败${runeNote}，修为倒退 ${plan.loss} 点。下一次成功率提升到 ${(next * 100).toFixed(0)}%。`,
     'cultivate', null, now,
   );
+  // 【策划 C16 / 任务 T-9 验收标准 4、5】失败念白必须**点名起因**并**播报补偿**：
+  //   `miss` 由询价阶段「缺什么」决定（丹 / 灵石 / 线索 / 地基 / 修为 / 天时），
+  //   `mercy` 取 REALM_FAIL_MERCY —— 文案里的「+8%」由它算出来，**不写魔数**，
+  //   于是改补偿率时文案自动跟着变（否则又是一处「两处各算一遍」）。
+  const riteLose = riteOf(person.realmIndex, 'lose', {
+    name: person.name, loss: plan.loss, next,
+    failures: person.breakFailures, mercy: REALM_FAIL_MERCY,
+    miss: plan.miss || 'luck',
+  });
+  setRite(state, { phase: 'lose', index: person.realmIndex, name: person.name, loss: plan.loss, next, text: riteLose });
+  if (riteLose) pushLog(state, riteLose, 'rite', null, now);
   return {
     ok: true, success: false, name: person.name, runeUsed,
-    loss: plan.loss, nextRate: next, failures: person.breakFailures,
+    loss: plan.loss, nextRate: next, failures: person.breakFailures, rite: riteLose,
   };
 }
+
+/**
+ * 【策划 C16 / 任务 T-9 验收标准 2】把一段念白挂进过场队列，由界面播完再清掉。
+ *
+ * ⚠ **两件事必须分开存**（这一点是被断言逼出来的）：
+ *   · `ritesSeen`（「这个门槛看过没有」）→ 进 `state.ui`，**随存档走**；
+ *     否则刷新一次就忘了，玩家的期望是「看过一次就不必再看」。
+ *   · **待播的那一段念白本身** → 只放**模块级变量**，**不进 state**。
+ *     它是纯 UI 瞬态：写进 `state` 会立刻被「全字段往返值比对」断言抓住
+ *     （读档后它不会被还原 ⇒ ui 字段前后不等），而「把它也持久化」更糟 ——
+ *     那等于让玩家每次开档都重播一段上辈子听过的过场。
+ */
+let pendingRite = null;
+
+function setRite(state, rite) {
+  if (!state || !rite) return null;
+  if (!state.ui || typeof state.ui !== 'object') state.ui = {};
+  if (!state.ui.ritesSeen || typeof state.ui.ritesSeen !== 'object') state.ui.ritesSeen = {};
+  const key = String(rite.index);
+  rite.firstTime = state.ui.ritesSeen[key] !== true;
+  state.ui.ritesSeen[key] = true;
+  pendingRite = rite;
+  return rite;
+}
+
+/** 取当前挂着的念白（界面播完清掉）。 */
+function takeRite(state) {
+  const r = pendingRite;
+  pendingRite = null;
+  return r || null;
+}
+
+/** 只看不取（界面渲染时判断要不要播过场）。 */
+function peekRite() { return pendingRite; }
 
 /* ══════════════════════════════════════════════════════════════════
  * 【策划 C4 / 任务 T-5】择地筑基
@@ -536,6 +594,13 @@ function commitFold(state, personId, foldId, now = Date.now(), rng = Math.random
   const marks = warded ? core.marks : Math.max(0, core.marks - 1);
   person.core = { marks, mercy: warded ? 0 : CORE_WARD_COUNT, used };
   const grade = coreGradeOf(marks);
+  // 【策划 C16 / 任务 T-9】结丹失败也有念白（三档各一段）。
+  //   把「从几纹落到几纹」与「护纹有没有挡下」都传进去 —— 这两件事玩家最需要看清。
+  const riteLose = typeof fold.lose === 'function'
+    ? fold.lose({ foldName: fold.name, rate: fold.rate, marksFrom: core.marks, marksTo: marks, warded })
+    : '';
+  setRite(state, { phase: 'lose', index: `fold-${fold.id}`, name: person.name, loss: warded ? 0 : 1, text: riteLose });
+  if (riteLose) pushLog(state, riteLose, 'rite', null, now);
   pushLog(
     state,
     warded

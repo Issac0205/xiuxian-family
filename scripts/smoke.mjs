@@ -3741,6 +3741,113 @@ section('T-8 天劫（你越强，天地越要收你）');
     return `bare=${b.damage} warded=${w.damage}`; })());
 }
 
+/* ══════════════════════ 15.14 T-9 冲关仪式 ══════════════════════ */
+section('T-9 冲关仪式（全篇情绪的最高点）');
+{
+  // ① 19 段念白齐备：4 门槛 × 4 段 = 16，结丹三档各一段 lose = 3
+  check('T-9①：四次冲关各有 before/during/win/lose 四段，16 段齐备且非空', (() => {
+    for (const idx of X.rite.gateIndexes()) {
+      const r = X.rite.all(idx, { name: '甲', to: '某境', loss: 10, mercy: 0.08, failures: 1, rate: 0.5 });
+      for (const ph of ['before', 'during', 'win', 'lose']) {
+        if (typeof r[ph] !== 'string' || r[ph].trim().length < 10) return false;
+      }
+    }
+    return X.rite.gateIndexes().length === 4;
+  })(), `门槛 ${X.rite.gateIndexes().join('/')} —— 共 ${X.rite.gateIndexes().length * 4} 段`);
+  check('T-9①：结丹三档各有一段失败念白（16 + 3 = 19 段）', (() => ['wen', 'wu', 'zhen'].every((f) => {
+    const t = X.rite.foldLose(f, { rate: 0.55, marksFrom: 5, marksTo: 4 });
+    return typeof t === 'string' && t.trim().length >= 10;
+  }))());
+  check('T-9①：念白住在 data/realms.js，不是 app.js 里的硬编码字符串', (() => {
+    const appSrc = readFileSync('src/ui/app.js', 'utf8');
+    const realmsSrc = readFileSync('src/data/realms.js', 'utf8');
+    return realmsSrc.includes('坛上火起') && !appSrc.includes('坛上火起');
+  })());
+
+  // ④ 失败文案必须点名起因
+  check('T-9④：缺丹药时的败念白含「丹」',
+    X.rite.of(13, 'lose', { miss: 'pill', loss: 100, mercy: 0.08, failures: 1 }).includes('丹'));
+  check('T-9④：修为不足时的败念白含「修为」',
+    X.rite.of(13, 'lose', { miss: 'xp', loss: 100, mercy: 0.08, failures: 1 }).includes('修为'));
+  check('T-9④：起因词表覆盖 丹/灵石/线索/修为/地基/天时 六种',
+    ['pill', 'stones', 'clues', 'site', 'xp', 'luck'].every((k) => typeof X.rite.missWords()[k] === 'string'),
+    JSON.stringify(X.rite.missWords()));
+  check('T-9④：`breakthroughPlan` 的拒绝分支带 miss 标签（不是让渲染层猜中文）', (() => {
+    setPeople(person({ id: 1, realmIndex: 9, xp: X.realm.xpNeeded(9), job: 'retreat', talent: 1 }));
+    state.spiritStones = 1000; state.cultivation.clues = 50;
+    state.cultivation.world = { reached: ['mosscave'], held: [], garrison: {}, unrest: {}, wardens: [] };
+    X.alchemy.addPills('zhuji', -99);
+    const p1 = X.realm.plan(1, 'mosscave');
+    state.spiritStones = 0;
+    X.alchemy.addPills('zhuji', 1);
+    const p2 = X.realm.plan(1, 'mosscave');
+    return p1.miss === 'pill' && p2.miss === 'stones';
+  })(), `pill→${X.realm.plan(1, 'mosscave').miss}`);
+
+  // ⑤ 失败补偿播报
+  check('T-9⑤：败念白播报「下次成率 +8%」这个可算的数',
+    /\+8%/.test(X.rite.of(13, 'lose', { loss: 100, mercy: 0.08, failures: 1 })));
+  check('T-9⑤：连续失败时播报**累计**值（第 2 次 ⇒ 已累计 +16%）', (() => {
+    const t = X.rite.of(13, 'lose', { loss: 100, mercy: 0.08, failures: 2 });
+    return /\+8%/.test(t) && /16%/.test(t);
+  })());
+  check('T-9⑤：补偿率取自 REALM_FAIL_MERCY，改它文案自动跟着变（不是硬编码 8）', (() => {
+    const t = X.rite.of(13, 'lose', { loss: 100, mercy: 0.25, failures: 1 });
+    return /\+25%/.test(t) && !/\+8%/.test(t);
+  })());
+
+  // ② 过场机制
+  check('T-9②：`state.ui.ritesSeen` 记住看过哪些门槛（随存档、不是模块级变量）', (() => {
+    setPeople(person({ id: 1, realmIndex: 9, xp: X.realm.xpNeeded(9), job: 'retreat', talent: 1 }));
+    state.spiritStones = 1000; state.cultivation.clues = 50;
+    state.cultivation.world = { reached: ['mosscave'], held: [], garrison: {}, unrest: {}, wardens: [] };
+    X.alchemy.addPills('zhuji', 5);
+    state.ui = state.ui || {}; state.ui.ritesSeen = {};
+    X.setRng(() => 0);
+    const r = X.realm.commitWith(1, 'mosscave');
+    X.setRng();
+    return r.ok === true && X.rite.seen()['9'] === true;
+  })(), JSON.stringify(X.rite.seen()));
+  check('T-9②：`ritesSeen` 随存档往返（刷新不会重播已看过的过场）', (() => {
+    state.ui = state.ui || {};
+    state.ui.ritesSeen = { 9: true, 13: true };
+    const raw = X.save.serialize();
+    const back = X.save.hydrate(JSON.parse(JSON.stringify(raw)));
+    return back.ui.ritesSeen['9'] === true && back.ui.ritesSeen['13'] === true;
+  })());
+
+  // ③ 成功/失败都挂念白
+  check('T-9③：冲关成功写一条 rite 类日志并挂上 win 念白', (() => {
+    setPeople(person({ id: 1, realmIndex: 9, xp: X.realm.xpNeeded(9), job: 'retreat', talent: 1 }));
+    state.spiritStones = 1000; state.cultivation.clues = 50;
+    state.cultivation.world = { reached: ['mosscave'], held: [], garrison: {}, unrest: {}, wardens: [] };
+    X.alchemy.addPills('zhuji', 5);
+    state.log = [];
+    X.setRng(() => 0);
+    const r = X.realm.commitWith(1, 'mosscave');
+    X.setRng();
+    return r.ok === true && r.success === true
+      && state.log.some((e) => e.kind === 'rite')
+      && typeof r.rite === 'string' && r.rite.length > 10;
+  })());
+  check('T-9③：冲关失败也挂上 lose 念白，并写明回退点数', (() => {
+    setPeople(person({ id: 1, realmIndex: 13, xp: X.realm.xpNeeded(13), job: 'retreat', talent: 1 }));
+    state.spiritStones = 1000; state.cultivation.clues = 50;
+    X.alchemy.addPills('jindan', 5);
+    X.setRng(() => 0.999999);
+    const r = X.realm.commitWith(1);
+    X.setRng();
+    return r.ok === true && r.success === false && r.loss > 0
+      && typeof r.rite === 'string' && /回退/.test(r.rite);
+  })());
+
+  // ⑥ 仪式不改数值
+  check('T-9⑥：仪式零新数值 —— 门槛成率与回退比例与文档逐位一致', (() => {
+    const g = X.realm.gate(13);
+    return g.baseRate === 0.42 && g.failLoss === 0.40 && g.stones === 30 && g.clues === 4;
+  })());
+}
+
 section('T-6 结丹（每一次修为满，都是一次下注）');{
   const atJindan = () => {
     setPeople(person({ id: 1, realmIndex: 14, xp: X.realm.xpNeeded(14), job: 'retreat', talent: 1 }));
