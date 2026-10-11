@@ -3951,6 +3951,40 @@ section('用户实机缺陷：仙途死锁 / 百科自锁 / 拼音泄漏');
       .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
     return !/\|\|\s*def\.tech\b/.test(src) && /techLabelOf\(/.test(src);
   })());
+  /* 【验收 5/7 · 全仓闸】「查不到就回退成原始 id」这种写法必须**从整个渲染/文案层消失**。
+   * 它一共有**四个落点** —— 这是本轮最值得记住的一点：同一个病在四个地方各写了一遍。
+   *   ① `ui/app.js` 建筑卡　② `data/codex.js` 百科正文
+   *   ③ `core/engine.js` planBuy 的「须先研习…」（**这正是用户点建造时看到的那一句**）
+   *   ④ `ui/app.js` 科技前置条件提示
+   * 所以闸门也必须是**全仓扫描**，而不是只盯一个文件。 */
+  check('缺陷③（全仓闸）：四个落点都不再有「查不到就回退成原始 id」的写法', (() => {
+    const strip = (t2) => t2.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+    const files = ['src/ui/app.js', 'src/data/codex.js', 'src/core/engine.js'];
+    const bad = [];
+    for (const f of files) {
+      const src = strip(readFileSync(f, 'utf8'));
+      if (/(TECH_MAP|IMMORTAL_TECH_MAP)\[[^\]]+\]\?\.name\s*\|\|/.test(src)) bad.push(`${f}:双表+回退`);
+      if (/tech\?\.name\s*\|\|\s*def\.tech\b/.test(src)) bad.push(`${f}:tech?.name||def.tech`);
+    }
+    const uses = files.filter((f) => /techLabelOf\(/.test(readFileSync(f, 'utf8')));
+    return bad.length === 0 && uses.length === 3;
+  })(), (() => {
+    const strip = (t2) => t2.replace(/\/\*[\s\S]*?\*\//g, ' ').replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+    return ['src/ui/app.js', 'src/data/codex.js', 'src/core/engine.js'].map((f) => {
+      const src = strip(readFileSync(f, 'utf8'));
+      const n = ((src.match(/(TECH_MAP|IMMORTAL_TECH_MAP)\[[^\]]+\]\?\.name\s*\|\|/g) || []).length)
+        + ((src.match(/tech\?\.name\s*\|\|\s*def\.tech\b/g) || []).length);
+      return `${f.split('/').pop()}:残留${n}/techLabelOf:${/techLabelOf\(/.test(src) ? 'Y' : 'N'}`;
+    }).join(' | ');
+  })());
+  /* 【验收 5 · engine.js 点名的落点】用户点「建造」时拿到的拒绝文案就是这里产生的。 */
+  check('缺陷③（engine 落点）：买未解锁建筑时，拒绝文案点名中文科技名而不是拼音', (() => {
+    setPeople();
+    state.techs = [];
+    const r = X.engine.planBuy('lingtian');   // `lingtian` 是仙道线科技，正是用户看到的那一例
+    if (!r || r.ok !== false) return false;
+    return /[\u4e00-\u9fa5]/.test(r.reason) && !/[a-z_]{3,}/.test(r.reason);
+  })(), (() => { const r = X.engine.planBuy('lingtian'); return r ? r.reason : '(无返回)'; })());
   /* 【验收 5/8】百科正文同样要扫 —— 建筑卡修了、百科漏了，是这个 bug 的**第二个落点**
    * （`src/data/codex.js` 原来也有 `TECH_MAP[b.tech]?.name || b.tech`）。
    * 这条直接调百科自己的 `lines()` 取正文，凡是「需研习：」「须研习「」后面跟纯小写标识符就判红。 */

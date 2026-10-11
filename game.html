@@ -12343,8 +12343,12 @@ function planResearch(state, techId) {
 
   if (!isTechUnlocked(state, tech)) {
     const missing = tech.requires
+      // 【修复 用户实机缺陷 ③·拼音泄漏 · 第三落点】原来是 `TECH_MAP[r]?.name || r` ——
+      //   与建筑卡/百科同一个病：查不到就回退打印原始 id。
+      //   凡人与仙道**共用同一张前置条件表**，所以这里两条线的 id 都可能出现，
+      //   一律走 `techLabelOf()`（两条线一起查、查不到给中文「未知科技」）。
       .filter((r) => !isResearched(state, r))
-      .map((r) => `「${TECH_MAP[r]?.name || r}」`)
+      .map((r) => `「${techLabelOf(r)}」`)
       .join('、');
     return { ok: false, reason: `须先研习 ${missing}` };
   }
@@ -12481,8 +12485,11 @@ function planBuy(state, id, mode = '1') {
   if (!def) return { ok: false, reason: '并无此物' };
 
   if (!isBuildingUnlocked(state, def)) {
-    const tech = TECH_MAP[def.tech];
-    return { ok: false, reason: `须先研习「${tech?.name || def.tech}」` };
+    // 【修复 用户实机缺陷 ③·拼音泄漏 · 第三落点】**这就是用户点下建造时看到的那一句**。
+    //   原来是 `TECH_MAP[def.tech]?.name || def.tech`：`lingtian`/`xuanhu`/`lingmai`
+    //   是**仙道线** id，而 `TECH_MAP` 只有凡人线 ⇒ 查不到 ⇒ `|| def.tech` 打印拼音。
+    //   统一走 `techLabelOf()`；那个「回退到原始 id」的写法已从全仓去掉。
+    return { ok: false, reason: `须先研习「${techLabelOf(def.tech)}」` };
   }
 
   const d = derive(state);
@@ -17096,13 +17103,16 @@ function createUI({ getState, actions, rng }) {
        */
       const blockers = [];
       if (status === 'locked' && !isResearched(s, tech.id)) {
+        // 【修复 用户实机缺陷 ③·拼音泄漏 · 第四落点】两处又是 `TECH_MAP/IMMORTAL_TECH_MAP
+        //   …?.name || 原始 id` 的回退。前置条件表是两条线**共用**的，所以两处都用
+        //   单一入口 `techLabelOf()`（它自己会先查仙道线再查凡人线）。
         const missing = (tech.requires || [])
           .filter((r) => !isResearched(s, r))
-          .map((r) => `「${TECH_MAP[r]?.name || r}」`);
+          .map((r) => `「${techLabelOf(r)}」`);
         if (missing.length) blockers.push(`须先研习 ${missing.join('、')}`);
         const missingImm = (tech.requiresImmortal || [])
           .filter((r) => !isImmortalTechResearched(s, r))
-          .map((r) => `「${IMMORTAL_TECH_MAP[r]?.name || r}」（仙道）`);
+          .map((r) => `「${techLabelOf(r)}」（仙道）`);
         if (missingImm.length) blockers.push(`须先参悟 ${missingImm.join('、')}`);
       }
       if (tech.requiresSecrets && s.secrets.length < CULTIVATOR_MARKET.requiresSecrets) {
@@ -19050,6 +19060,11 @@ window.__xiuxian = {
       usePlan: (id) => humanPillUsePlan(state, id),
       use: (id) => commitUseHumanPill(state, id),
     },
+  },
+  /** 【修复 用户实机缺陷 ③】引擎层询价：买未解锁建筑时的拒绝文案就出在这里。
+   *  导出它是为了让「文案里不许出现拼音 id」这件事能被**直接断言**，而不是扫源码去猜。 */
+  engine: {
+    planBuy: (id, mode) => planBuy(state, id, mode),
   },
   /** 百科：条目书与统计。*/
   codex: {

@@ -838,13 +838,16 @@ function createUI({ getState, actions, rng }) {
        */
       const blockers = [];
       if (status === 'locked' && !isResearched(s, tech.id)) {
+        // 【修复 用户实机缺陷 ③·拼音泄漏 · 第四落点】两处又是 `TECH_MAP/IMMORTAL_TECH_MAP
+        //   …?.name || 原始 id` 的回退。前置条件表是两条线**共用**的，所以两处都用
+        //   单一入口 `techLabelOf()`（它自己会先查仙道线再查凡人线）。
         const missing = (tech.requires || [])
           .filter((r) => !isResearched(s, r))
-          .map((r) => `「${TECH_MAP[r]?.name || r}」`);
+          .map((r) => `「${techLabelOf(r)}」`);
         if (missing.length) blockers.push(`须先研习 ${missing.join('、')}`);
         const missingImm = (tech.requiresImmortal || [])
           .filter((r) => !isImmortalTechResearched(s, r))
-          .map((r) => `「${IMMORTAL_TECH_MAP[r]?.name || r}」（仙道）`);
+          .map((r) => `「${techLabelOf(r)}」（仙道）`);
         if (missingImm.length) blockers.push(`须先参悟 ${missingImm.join('、')}`);
       }
       if (tech.requiresSecrets && s.secrets.length < CULTIVATOR_MARKET.requiresSecrets) {

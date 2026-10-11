@@ -738,6 +738,11 @@ window.__xiuxian = {
       use: (id) => commitUseHumanPill(state, id),
     },
   },
+  /** 【修复 用户实机缺陷 ③】引擎层询价：买未解锁建筑时的拒绝文案就出在这里。
+   *  导出它是为了让「文案里不许出现拼音 id」这件事能被**直接断言**，而不是扫源码去猜。 */
+  engine: {
+    planBuy: (id, mode) => planBuy(state, id, mode),
+  },
   /** 百科：条目书与统计。*/
   codex: {
     book: () => codexBook(state),

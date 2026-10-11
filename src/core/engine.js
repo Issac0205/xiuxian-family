@@ -93,8 +93,12 @@ function planResearch(state, techId) {
 
   if (!isTechUnlocked(state, tech)) {
     const missing = tech.requires
+      // 【修复 用户实机缺陷 ③·拼音泄漏 · 第三落点】原来是 `TECH_MAP[r]?.name || r` ——
+      //   与建筑卡/百科同一个病：查不到就回退打印原始 id。
+      //   凡人与仙道**共用同一张前置条件表**，所以这里两条线的 id 都可能出现，
+      //   一律走 `techLabelOf()`（两条线一起查、查不到给中文「未知科技」）。
       .filter((r) => !isResearched(state, r))
-      .map((r) => `「${TECH_MAP[r]?.name || r}」`)
+      .map((r) => `「${techLabelOf(r)}」`)
       .join('、');
     return { ok: false, reason: `须先研习 ${missing}` };
   }
@@ -231,8 +235,11 @@ function planBuy(state, id, mode = '1') {
   if (!def) return { ok: false, reason: '并无此物' };
 
   if (!isBuildingUnlocked(state, def)) {
-    const tech = TECH_MAP[def.tech];
-    return { ok: false, reason: `须先研习「${tech?.name || def.tech}」` };
+    // 【修复 用户实机缺陷 ③·拼音泄漏 · 第三落点】**这就是用户点下建造时看到的那一句**。
+    //   原来是 `TECH_MAP[def.tech]?.name || def.tech`：`lingtian`/`xuanhu`/`lingmai`
+    //   是**仙道线** id，而 `TECH_MAP` 只有凡人线 ⇒ 查不到 ⇒ `|| def.tech` 打印拼音。
+    //   统一走 `techLabelOf()`；那个「回退到原始 id」的写法已从全仓去掉。
+    return { ok: false, reason: `须先研习「${techLabelOf(def.tech)}」` };
   }
 
   const d = derive(state);
