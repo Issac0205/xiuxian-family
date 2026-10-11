@@ -432,6 +432,9 @@ window.__xiuxian = {
     researchable: () => researchableCount(state),
     /** 界面上的收益文案（与 commitResearch 记进纪事的那一份是同一个函数）。 */
     gains: (id) => techGainText(TECH_MAP[id], BUILDING_MAP[TECH_MAP[id]?.unlocksBuilding]?.name),
+    /** 【修复 用户实机缺陷 ③·拼音泄漏】科技名/展示名的**单一入口**（两条线一起查）。 */
+    nameOf: (id) => techNameOf(id),
+    labelOf: (id) => techLabelOf(id),
   },
   /** 仙道科技：两条线咬合的另一半。查询与研习都从这里走。*/
   immortal: {
@@ -676,6 +679,9 @@ window.__xiuxian = {
   /** 可见性策略：此刻该让玩家看到什么。*/
   visible: {
     pages: () => visiblePages(state),
+    /** 【修复 用户实机缺陷 ①②】对**任意** state 求可见页签 —— 供「全新 state」那类断言用。 */
+    pagesOf: (s) => visiblePages(s),
+    immortalAccessible: (s) => immortalAccessible(s || state),
     page: (p) => pageVisible(state, p),
     block: (k) => immortalBlockVisible(state, k),
     anyCrafting: () => anyCraftingVisible(state),

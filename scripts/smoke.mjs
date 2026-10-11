@@ -3848,6 +3848,111 @@ section('T-9 冲关仪式（全篇情绪的最高点）');
   })());
 }
 
+/* ═════════════ 15.15 用户实机缺陷三项（t5 收口） ═════════════
+ * 每条都先把「场景」写死，再断言可见性 —— 这三条的表现形式都是
+ * 「界面把该给玩家的东西藏起来了」，而**藏起来的东西不会报错**。
+ * ⚠ 三条都在修复前先跑过同一段断言、确认**必红**（主策硬要求）。 */
+section('用户实机缺陷：仙途死锁 / 百科自锁 / 拼音泄漏');
+{
+  const blankWorld = () => { state.cultivation.world = { reached: [], held: [], garrison: {}, unrest: {}, wardens: [] }; };
+  const blankCultivation = () => {
+    setPeople();
+    state.cultivation.unlocked = false;
+    state.spiritStones = 0;
+    state.cultivation.clues = 0;
+    state.cultivation.cluePool = 0;
+    state.cultivation.pills = {};
+    state.immortalTechs = [];
+    blankWorld();
+  };
+
+  // ── ① 仙途死锁：攒够 1 灵石却进不去仙途 ⇒ 永远买不到祛障丹 ──
+  check('缺陷①：**持有灵石 > 0 且一个修士都没有** ⇒ 仙途页必须可见（否则买不到祛障丹，死锁）', (() => {
+    blankCultivation();
+    state.spiritStones = 1;             // 刚好够一枚祛障丹（PILL_STONE_COST = 1）
+    return X.visible.pages().includes('immortal') === true;
+  })(), `pages=${X.visible.pages().join(',')}`);
+  check('缺陷①：灵石 0、无修士、无任何进展 ⇒ 仙途仍应隐藏（不能一开局就全亮）', (() => {
+    blankCultivation();
+    return X.visible.pages().includes('immortal') === false;
+  })(), `pages=${X.visible.pages().join(',')}`);
+  check('缺陷①：已经在仙途里做过事的人，入口不许藏回去（解锁/有修士/有线索/有仙道术）', (() => {
+    const probe = (setup) => { blankCultivation(); setup(); return X.visible.pages().includes('immortal'); };
+    return probe(() => { state.cultivation.unlocked = true; }) === true
+      && probe(() => { setPeople(person({ id: 1, realmIndex: 1 })); }) === true
+      && probe(() => { state.cultivation.clues = 1; }) === true
+      && probe(() => { state.immortalTechs = ['tanxue']; }) === true;
+  })());
+
+  // ── ② 百科开局即见（用户原话：「我甚至不知道怎么才能开放百科」）──
+  check('缺陷②：**全新 state** ⇒ 百科页必须可见，不得有任何前置', (() => {
+    const fresh = X.save.hydrate({ version: 1 });
+    return X.visible.pagesOf(fresh).includes('codex') === true;
+  })(), `pages=${X.visible.pagesOf(X.save.hydrate({ version: 1 })).join(',')}`);
+  check('缺陷②：把曾经的前置（unlocked / qi）逐个拿掉，百科都必须仍可见', (() => {
+    const fresh = X.save.hydrate({ version: 1 });
+    fresh.cultivation.unlocked = false;
+    fresh.cultivation.qi = 0;
+    fresh.spiritStones = 0;
+    return X.visible.pagesOf(fresh).includes('codex') === true;
+  })());
+
+  // ── ③ 拼音泄漏 ──
+  check('缺陷③：`techNameOf()` 是科技名的单一入口，**两条线**都查得到中文', (() => {
+    const fan = X.tech.nameOf('lingtian');
+    const xian = X.tech.nameOf('tanxue');
+    return typeof fan === 'string' && /[\u4e00-\u9fa5]/.test(fan)
+      && typeof xian === 'string' && /[\u4e00-\u9fa5]/.test(xian);
+  })(), `lingtian→${X.tech.nameOf('lingtian')} / tanxue→${X.tech.nameOf('tanxue')}`);
+  check('缺陷③：查不到的 id **不回退成拼音**，给中文「未知科技」', (() => {
+    return X.tech.nameOf('no_such_tech_id') === null
+      && X.tech.labelOf('no_such_tech_id') === '未知科技';
+  })(), `label=${X.tech.labelOf('no_such_tech_id')}`);
+  /* 机械扫描：界面里**任何** `须研习「…」` 都必须带中文。
+   * 不依赖任何具体建筑 —— 只要有人再写 `|| def.tech` 那种回退，输出一变成拼音就被抓住。 */
+  check('缺陷③（机械扫描）：渲染出的每一处「须研习「X」」里的 X 都是中文，不是 id', (() => {
+    setPeople();
+    state.population = 0;
+    state.cultivation.unlocked = false;
+    for (const def of X.data.buildings) state.buildings[def.id] = 0;
+    state.techs = [];
+    X.ui.render();
+    // ⚠ 必须 scope 到 `#building-list`：垫片不实现 `document.body.textContent` 的
+    //   后代聚合（实测取到空串），拿 body 去扫会得到「0 处」⇒ 一个永远触发的假失败。
+    const host = document.getElementById('building-list');
+    const hits = [...(host ? host.textContent : '').matchAll(/须研习「([^」]*)」/g)].map((m) => m[1]);
+    if (!hits.length) return false;   // 一处都没渲染出来 ⇒ 空检查，不许算过
+    return hits.every((h) => /[\u4e00-\u9fa5]/.test(h) && !/^[a-z0-9_]+$/.test(h));
+  })(), (() => {
+    const host = document.getElementById('building-list');
+    const hits = [...(host ? host.textContent : '').matchAll(/须研习「([^」]*)」/g)].map((m) => m[1]);
+    return `${hits.length} 处：${[...new Set(hits)].slice(0, 5).join(' / ')}`;
+  })());
+  /* 第二道机械闸：**每一个**建筑引用的科技 id 都必须能解析出中文名。
+   * 这条与上一条是互补的 —— 上一条只看「界面上渲染出来的」，若某张卡因为别的条件
+   * 没渲染成 locked 态就扫不到；这一条覆盖**全部 9 个引用**，一条都不放过。
+   * 它正是用户那个 bug 的根因所在一处（`lingtian` 在仙道线、`TECH_MAP` 只有凡人线）。 */
+  check('缺陷③（全量扫描）：每一个建筑引用的 tech id 都能解析出中文名', (() => {
+    const refs = [...new Set(X.data.buildings.map((d) => d.tech).filter(Boolean))];
+    const bad = refs.filter((id) => {
+      const n = X.tech.nameOf(id);
+      return !(typeof n === 'string' && /[\u4e00-\u9fa5]/.test(n));
+    });
+    return refs.length >= 9 && bad.length === 0;
+  })(), (() => {
+    const refs = [...new Set(X.data.buildings.map((d) => d.tech).filter(Boolean))];
+    return `${refs.length} 个引用，解析失败：${refs.filter((id) => !X.tech.nameOf(id)).join(',') || '无'}`;
+  })());
+  check('缺陷③（源码闸）：app.js 里不再有 `|| def.tech` 那种「回退成拼音」的写法', (() => {
+    // ⚠ 必须先剥注释：修复处的注释里**引用了**那个写法（"删掉了原来的 `|| def.tech` 回退"），
+    //   不剥注释的话这条断言会被自己的说明文字判红 —— 一个很容易被误读成「没修好」的假失败。
+    const src = readFileSync('src/ui/app.js', 'utf8')
+      .replace(/\/\*[\s\S]*?\*\//g, ' ')
+      .replace(/(^|[^:])\/\/[^\n]*/g, '$1 ');
+    return !/\|\|\s*def\.tech\b/.test(src) && /techLabelOf\(/.test(src);
+  })());
+}
+
 section('T-6 结丹（每一次修为满，都是一次下注）');{
   const atJindan = () => {
     setPeople(person({ id: 1, realmIndex: 14, xp: X.realm.xpNeeded(14), job: 'retreat', talent: 1 }));

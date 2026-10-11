@@ -37,6 +37,33 @@ const IMMORTAL_EFFECT_KEYS = [
 const ALL_EFFECT_KEYS = [...MORTAL_EFFECT_KEYS, ...IMMORTAL_EFFECT_KEYS];
 
 /**
+ * 【修复 用户实机缺陷 · 拼音泄漏 / 任务 t5】科技 id → **中文名**的**唯一入口**。
+ *
+ * 事故：建筑卡与百科上出现 `须研习「lingtian」` —— 玩家看到的是拼音 id。
+ * 根因：调用方写的是 `TECH_MAP[def.tech]?.name || def.tech`，两个问题叠在一起：
+ *   ① `TECH_MAP` 只有**凡人城市线**；建筑/条目引用的若是**仙道线** id，
+ *      查表落空 → 回退打印原始 id；
+ *   ② `|| def.tech` 这个回退本身就是「静默降级成拼音」的写法 ——
+ *      它让「查不到」表现成「看起来还行」，于是没有人会发现。
+ *
+ * 所以这里做两件事：
+ *   · **两条线一起查**（凡人 `TECH_MAP` + 仙道 `IMMORTAL_TECH_MAP`）；
+ *   · 查不到时**不回退成 id**，返回 `null` —— 由调用方决定怎么兜
+ *     （本项目一律写「未知科技」，并另有机械扫描断言保证没有任何 id 漏网）。
+ * 出处：主策收口指令第 3 条（单一入口 `techNameOf(id)` + 去掉 `|| def.tech` 回退 + 机械扫描断言）。
+ */
+function techNameOf(id) {
+  if (!id) return null;
+  const t = TECH_MAP[id] || IMMORTAL_TECH_MAP[id];
+  return t && typeof t.name === 'string' && t.name ? t.name : null;
+}
+
+/** 取科技的展示名；查不到时给一个**中文**兜底（绝不回退成 id）。 */
+function techLabelOf(id) {
+  return techNameOf(id) || '未知科技';
+}
+
+/**
  * 把已研习科技的效果累加起来。
  *
  * 两条线**共用一个累加器**：凡人科技读 state.techs，仙道科技读 state.immortalTechs。

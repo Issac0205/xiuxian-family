@@ -761,10 +761,13 @@ function createUI({ getState, actions, rng }) {
     updateSellButton(c, def, s, d, owned);
 
     if (!d.unlocked[def.id]) {
-      const tech = TECH_MAP[def.tech];
+      // 【修复 用户实机缺陷 ③·拼音泄漏】统一走 `techLabelOf()`（两条线一起查，
+      // 查不到给中文「未知科技」）。**删掉了原来的 `|| def.tech` 回退** ——
+      // 那个回退正是玩家看到 `须研习「lingtian」` 的原因：
+      // `lingtian` 是**仙道线**的 id，而 `TECH_MAP` 只有凡人线 ⇒ 查表落空 ⇒ 打印 id。
       c.root.classList.add('locked');
       c.root.classList.remove('affordable', 'blocked');
-      c.effect.textContent = `须研习「${tech?.name || def.tech}」`;
+      c.effect.textContent = `须研习「${techLabelOf(def.tech)}」`;
       c.buyLabel.textContent = '未解锁';
       c.buyCost.textContent = '—';
       c.buy.disabled = true;

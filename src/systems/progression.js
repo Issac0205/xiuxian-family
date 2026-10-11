@@ -29,9 +29,12 @@ function pageVisible(state, page) {
     case 'study':
       return true;
 
-    // 百科：等踏入仙途之后再出现。开局那几分钟不需要它
+    // 百科：**【修复 用户实机缺陷 ②】不得有任何前置**。
+    // 用户原话：「我甚至不知道怎么才能开放百科」—— 一个纯查阅性质的栏目，
+    // 把它锁在进度后面，等于让玩家在最需要「这是什么」的时候找不到答案。
+    // 原先的条件（`unlocked || qi > 0`）就是那个「不知道怎么开放」的来源。
     case 'codex':
-      return Boolean(state.cultivation?.unlocked) || (state.cultivation?.qi || 0) > 0;
+      return true;
 
     // 轮回：要么已经能轮回，要么已经轮回过，要么已经解锁过金手指。
     // 换句话说 —— 直到「轮回」这件事真的与玩家有关，才让他看见这个页签
@@ -43,9 +46,13 @@ function pageVisible(state, page) {
         || m.cycle > 1;
     }
 
-    // 仙途：与炼气篇一同出现
+    // 仙途：**【修复 用户实机缺陷 ①·仙途死锁】判据是「他现在有没有事可做」，
+    // 不是「他有没有修士」**。原先两处都写成 `unlocked || qi > 0`，于是：
+    //   玩家攒够 1 灵石 → 买不到祛障丹（购买入口在仙途页里）→ 永远没有第一个修士
+    //   → `qi` 永远是 0 → 仙途页永远不出现 ⇒ **自锁**。
+    // 现在改成 immortalAccessible()：只要仙途里存在**任何一件他能做的事**就可见。
     case 'immortal':
-      return Boolean(state.cultivation?.unlocked) || (state.cultivation?.qi || 0) > 0;
+      return immortalAccessible(state);
 
     default:
       return true;
@@ -54,6 +61,34 @@ function pageVisible(state, page) {
 
 /** 当前可见的页签列表，顺序与 PAGES 一致。 */
 function visiblePages(state) { return PAGES.filter((p) => pageVisible(state, p)); }
+
+/**
+ * 【修复 用户实机缺陷 ①·仙途死锁】仙途页此刻该不该可见。
+ *
+ * 事故链（用户实机）：攒够 1 灵石 → 仙途页因为「没有修士」而隐藏 →
+ *   **而买祛障丹的入口就在仙途页里** → 永远拿不到第一个修士 → `qi` 永远是 0
+ *   → 仙途页永远不出现。**自锁，且全程不报错**（页面只是"不在那里"）。
+ *
+ * 判据要点：问「他现在有没有事可做」，而不是「他有没有修士」。
+ *   · `PILL_STONE_COST` 是那个入口的价格 —— **买得起就必须让他看见入口**；
+ *   · 一旦做过任何仙途相关的事（有修士 / 有线索 / 已解锁 / 已有仙道术 / 已有祛障丹 /
+ *     已抵达过任何一处地方），**不许把入口藏回去**（沿用本文件 §19 那条约定：
+ *     栏目忽隐忽现比一直显示更让人困惑）。
+ */
+function immortalAccessible(state) {
+  const c = state?.cultivation;
+  if (!c) return false;
+  if (c.unlocked) return true;
+  if ((c.qi || 0) > 0) return true;
+  // ★ 买得起祛障丹 —— 这是修复本条的那个条件
+  if ((Number(state.spiritStones) || 0) >= PILL_STONE_COST) return true;
+  // ★ 「不许藏回去」的那几种痕迹
+  if ((Number(c.clues) || 0) > 0 || (Number(c.cluePool) || 0) > 0) return true;
+  if ((state.immortalTechs || []).length > 0) return true;
+  if ((c.pills?.quzhang || 0) > 0) return true;
+  if (worldOf(state).reached.length > 0) return true;
+  return false;
+}
 
 /**
  * 仙途页里某个分块现在该不该出现。

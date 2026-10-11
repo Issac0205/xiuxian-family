@@ -4749,6 +4749,33 @@ const IMMORTAL_EFFECT_KEYS = [
 const ALL_EFFECT_KEYS = [...MORTAL_EFFECT_KEYS, ...IMMORTAL_EFFECT_KEYS];
 
 /**
+ * 【修复 用户实机缺陷 · 拼音泄漏 / 任务 t5】科技 id → **中文名**的**唯一入口**。
+ *
+ * 事故：建筑卡与百科上出现 `须研习「lingtian」` —— 玩家看到的是拼音 id。
+ * 根因：调用方写的是 `TECH_MAP[def.tech]?.name || def.tech`，两个问题叠在一起：
+ *   ① `TECH_MAP` 只有**凡人城市线**；建筑/条目引用的若是**仙道线** id，
+ *      查表落空 → 回退打印原始 id；
+ *   ② `|| def.tech` 这个回退本身就是「静默降级成拼音」的写法 ——
+ *      它让「查不到」表现成「看起来还行」，于是没有人会发现。
+ *
+ * 所以这里做两件事：
+ *   · **两条线一起查**（凡人 `TECH_MAP` + 仙道 `IMMORTAL_TECH_MAP`）；
+ *   · 查不到时**不回退成 id**，返回 `null` —— 由调用方决定怎么兜
+ *     （本项目一律写「未知科技」，并另有机械扫描断言保证没有任何 id 漏网）。
+ * 出处：主策收口指令第 3 条（单一入口 `techNameOf(id)` + 去掉 `|| def.tech` 回退 + 机械扫描断言）。
+ */
+function techNameOf(id) {
+  if (!id) return null;
+  const t = TECH_MAP[id] || IMMORTAL_TECH_MAP[id];
+  return t && typeof t.name === 'string' && t.name ? t.name : null;
+}
+
+/** 取科技的展示名；查不到时给一个**中文**兜底（绝不回退成 id）。 */
+function techLabelOf(id) {
+  return techNameOf(id) || '未知科技';
+}
+
+/**
  * 把已研习科技的效果累加起来。
  *
  * 两条线**共用一个累加器**：凡人科技读 state.techs，仙道科技读 state.immortalTechs。
@@ -11823,9 +11850,12 @@ function pageVisible(state, page) {
     case 'study':
       return true;
 
-    // 百科：等踏入仙途之后再出现。开局那几分钟不需要它
+    // 百科：**【修复 用户实机缺陷 ②】不得有任何前置**。
+    // 用户原话：「我甚至不知道怎么才能开放百科」—— 一个纯查阅性质的栏目，
+    // 把它锁在进度后面，等于让玩家在最需要「这是什么」的时候找不到答案。
+    // 原先的条件（`unlocked || qi > 0`）就是那个「不知道怎么开放」的来源。
     case 'codex':
-      return Boolean(state.cultivation?.unlocked) || (state.cultivation?.qi || 0) > 0;
+      return true;
 
     // 轮回：要么已经能轮回，要么已经轮回过，要么已经解锁过金手指。
     // 换句话说 —— 直到「轮回」这件事真的与玩家有关，才让他看见这个页签
@@ -11837,9 +11867,13 @@ function pageVisible(state, page) {
         || m.cycle > 1;
     }
 
-    // 仙途：与炼气篇一同出现
+    // 仙途：**【修复 用户实机缺陷 ①·仙途死锁】判据是「他现在有没有事可做」，
+    // 不是「他有没有修士」**。原先两处都写成 `unlocked || qi > 0`，于是：
+    //   玩家攒够 1 灵石 → 买不到祛障丹（购买入口在仙途页里）→ 永远没有第一个修士
+    //   → `qi` 永远是 0 → 仙途页永远不出现 ⇒ **自锁**。
+    // 现在改成 immortalAccessible()：只要仙途里存在**任何一件他能做的事**就可见。
     case 'immortal':
-      return Boolean(state.cultivation?.unlocked) || (state.cultivation?.qi || 0) > 0;
+      return immortalAccessible(state);
 
     default:
       return true;
@@ -11848,6 +11882,34 @@ function pageVisible(state, page) {
 
 /** 当前可见的页签列表，顺序与 PAGES 一致。 */
 function visiblePages(state) { return PAGES.filter((p) => pageVisible(state, p)); }
+
+/**
+ * 【修复 用户实机缺陷 ①·仙途死锁】仙途页此刻该不该可见。
+ *
+ * 事故链（用户实机）：攒够 1 灵石 → 仙途页因为「没有修士」而隐藏 →
+ *   **而买祛障丹的入口就在仙途页里** → 永远拿不到第一个修士 → `qi` 永远是 0
+ *   → 仙途页永远不出现。**自锁，且全程不报错**（页面只是"不在那里"）。
+ *
+ * 判据要点：问「他现在有没有事可做」，而不是「他有没有修士」。
+ *   · `PILL_STONE_COST` 是那个入口的价格 —— **买得起就必须让他看见入口**；
+ *   · 一旦做过任何仙途相关的事（有修士 / 有线索 / 已解锁 / 已有仙道术 / 已有祛障丹 /
+ *     已抵达过任何一处地方），**不许把入口藏回去**（沿用本文件 §19 那条约定：
+ *     栏目忽隐忽现比一直显示更让人困惑）。
+ */
+function immortalAccessible(state) {
+  const c = state?.cultivation;
+  if (!c) return false;
+  if (c.unlocked) return true;
+  if ((c.qi || 0) > 0) return true;
+  // ★ 买得起祛障丹 —— 这是修复本条的那个条件
+  if ((Number(state.spiritStones) || 0) >= PILL_STONE_COST) return true;
+  // ★ 「不许藏回去」的那几种痕迹
+  if ((Number(c.clues) || 0) > 0 || (Number(c.cluePool) || 0) > 0) return true;
+  if ((state.immortalTechs || []).length > 0) return true;
+  if ((c.pills?.quzhang || 0) > 0) return true;
+  if (worldOf(state).reached.length > 0) return true;
+  return false;
+}
 
 /**
  * 仙途页里某个分块现在该不该出现。
@@ -16953,10 +17015,13 @@ function createUI({ getState, actions, rng }) {
     updateSellButton(c, def, s, d, owned);
 
     if (!d.unlocked[def.id]) {
-      const tech = TECH_MAP[def.tech];
+      // 【修复 用户实机缺陷 ③·拼音泄漏】统一走 `techLabelOf()`（两条线一起查，
+      // 查不到给中文「未知科技」）。**删掉了原来的 `|| def.tech` 回退** ——
+      // 那个回退正是玩家看到 `须研习「lingtian」` 的原因：
+      // `lingtian` 是**仙道线**的 id，而 `TECH_MAP` 只有凡人线 ⇒ 查表落空 ⇒ 打印 id。
       c.root.classList.add('locked');
       c.root.classList.remove('affordable', 'blocked');
-      c.effect.textContent = `须研习「${tech?.name || def.tech}」`;
+      c.effect.textContent = `须研习「${techLabelOf(def.tech)}」`;
       c.buyLabel.textContent = '未解锁';
       c.buyCost.textContent = '—';
       c.buy.disabled = true;
@@ -18676,6 +18741,9 @@ window.__xiuxian = {
     researchable: () => researchableCount(state),
     /** 界面上的收益文案（与 commitResearch 记进纪事的那一份是同一个函数）。 */
     gains: (id) => techGainText(TECH_MAP[id], BUILDING_MAP[TECH_MAP[id]?.unlocksBuilding]?.name),
+    /** 【修复 用户实机缺陷 ③·拼音泄漏】科技名/展示名的**单一入口**（两条线一起查）。 */
+    nameOf: (id) => techNameOf(id),
+    labelOf: (id) => techLabelOf(id),
   },
   /** 仙道科技：两条线咬合的另一半。查询与研习都从这里走。*/
   immortal: {
@@ -18920,6 +18988,9 @@ window.__xiuxian = {
   /** 可见性策略：此刻该让玩家看到什么。*/
   visible: {
     pages: () => visiblePages(state),
+    /** 【修复 用户实机缺陷 ①②】对**任意** state 求可见页签 —— 供「全新 state」那类断言用。 */
+    pagesOf: (s) => visiblePages(s),
+    immortalAccessible: (s) => immortalAccessible(s || state),
     page: (p) => pageVisible(state, p),
     block: (k) => immortalBlockVisible(state, k),
     anyCrafting: () => anyCraftingVisible(state),
