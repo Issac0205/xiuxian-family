@@ -8,6 +8,12 @@ _smoke-*.txt
 # 成员做 UAT / 对比验证时的一次性产物（脚本与 stdout）
 _uat-*.txt
 scripts/_uat*.mjs
+# scripts/ 下所有下划线开头的脚本 = 成员的一次性探针，一律不入库
+# （真实脚本都不带下划线前缀：build / smoke / ship / release / balance /
+#   savecompat / uicheck / snapshot / rollback / dom-shim / extract ...）
+# 这条是为 _probe-t8.mjs 补的 —— 它未忽略时会被 ship.mjs 的产物卫生闸门
+# 判成「一次性产物未被忽略」而退出码 1，挡住成员收尾。
+scripts/_*.mjs
 _*out.txt
 # 调试者做界面临场确认时的一次性产物
 _shot.html
