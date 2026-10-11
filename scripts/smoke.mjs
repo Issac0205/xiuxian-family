@@ -3163,8 +3163,13 @@ section('T-6 结丹（每一次修为满，都是一次下注）');
       return btn && typeof btn.attrs.title === 'string'
         && btn.attrs.title.includes('止于 6 纹') && btn.attrs.title.includes('成算 95%');
     })(), (document.querySelector('#cultivator-list [data-fold="wen"]') || {}).attrs?.title?.slice(0, 90));
-  check('三昧真火的数学期望最低（+0.75 < 武火 +1.20）——风险买的是上限不是均值',
-    (0.25 * 6 - 0.75 * 1) < (0.55 * 3 - 0.45 * 1));
+  // 【t9 更正 · 调试者】此处原本断言「三昧真火的数学期望最低（+0.75 < 武火 +1.20）——风险买的是上限不是均值」。
+  //   ⚠ 那两个数出自「每次机会独立、且**忽略丹纹夹 0**」的简化模型 —— 该模型已被 docs/91 §12.10
+  //   用 2⁴ 全枚举正式否证；而本文件 C6 段（:3301-3313）断言的正是真值，且 :3311 明确写着
+  //   「均值最低的是**文火**（不是真火）」。⇒ 留着原来那条会造成**同一文件里两条互相矛盾的断言**，
+  //   而且它一直绿只是**碰巧**：简化模型下 0.75 < 1.20；真实模型下 5.33203125 < 5.80738125
+  //   —— 序关系在换模型后**偶然保住**，所以没人发现标题是错的。
+  //   故删除该条（不重复断言同一事实），正确表述由 C6 段与 docs/91 §12.10 承担。
 
   // ④ 同一层最多结丹一次
   {
@@ -3368,6 +3373,26 @@ section('T-6 结丹（每一次修为满，都是一次下注）');
     check('T-6-C4：mercy 不参与成率（否则三档会退化成两档）',
       near(rateNoWard, rateWard, 1e-12) && near(rateWard, 0.55, 1e-12),
       `mercy=0 → ${rateNoWard}，mercy=1 → ${rateWard}`);
+    // 【t9 补强 · 主策要求 / 监管者 test-blindspots R4：成组透传的字段必须覆盖组内**每一项**】
+    //   只测武火会留下真实盲区：若 `foldId → fold` 的映射被写错档，
+    //   `coreFolds()` **数据表**断言（:3144-3149）与 UI **文案**断言（:3156/:3379-3380）
+    //   **仍然全绿** —— 它们查的是数据源与文案，而实现真正读的是 `foldPlan()` 的解析结果。
+    //   故三档逐档断言；有效性用变异测试证明（把 `foldPlan` 的查表改错一档 → 本断言必须变红，
+    //   见 docs/92 §十三）。
+    const rateByFold = ['wen', 'wu', 'zhen'].map((fid) => {
+      state.cultivation.cultivators[0].core = { marks: 0, mercy: 0, used: {} };
+      return X.realm.foldPlan(1, fid).rate;
+    });
+    check('T-6-C4′：foldPlan 的成率三档齐（0.95 / 0.55 / 0.25）—— 只测一档会漏掉映射错档',
+      near(rateByFold[0], 0.95, 1e-12) && near(rateByFold[1], 0.55, 1e-12) && near(rateByFold[2], 0.25, 1e-12),
+      rateByFold.join(' / '));
+    const specByFold = ['wen', 'wu', 'zhen'].map((fid) => {
+      const pl = X.realm.foldPlan(1, fid);
+      return `${pl.marks}/${pl.cap}`;
+    });
+    check('T-6-C4″：foldPlan 的得纹/上限三档齐（1/6、3/12、6/null）',
+      specByFold[0] === '1/6' && specByFold[1] === '3/12' && specByFold[2] === '6/null',
+      specByFold.join(' '));
 
     /* ── T-6-C7：风险披露 —— 按钮必须同时写成率与上限，真火要写「三成只得九品」──
      * 这不是数值问题而是**公平性**问题：真火贵 6 倍却均值更低（5.332 < 5.807），
