@@ -35,8 +35,75 @@ function cultivateXpNeeded(realmIndex) { return realmXpNeeded(realmIndex); }
 /** 该境界的单人基础战力（转发 data/realms.js 的曲线）。 */
 function cultivateBasePower(realmIndex) { return realmPower(realmIndex); }
 function averageTalent(state) { const ps=state.cultivation?.cultivators||[]; return ps.length ? ps.reduce((a,p)=>a+Math.max(1,Number(p.talent)||1),0)/ps.length : 1; }
+
+/**
+ * 【策划 T-0 / T-2b / T-3 / T-4 / T-5 / T-6】逐人字段的**幂等兜底**。
+ *
+ * 五轮任务往 person 上加了八个字段（push / stalled / realmEnteredYear /
+ * foundation / core / errandSince …），每一个都会让老存档读进来是 undefined。
+ * 把它们集中在这一个函数里补默认值，好处是：
+ *   ① `hydrate()` 与 `repairCultivation()` 共用同一份口径，不会两处各写一套；
+ *   ② 修为 / 突破计数 / 灵根的既有夹取逻辑也一并搬进来，
+ *      于是「老存档（只有 qi 整数）→ 逐人字段」那条路自动获得同样的兜底。
+ * ⚠ 这个函数会改 p.xp / p.breakFailures / p.realmIndex，调用方按需先做迁移。
+ */
+function ensurePersonFields(p, state) {
+  if (!p || typeof p !== 'object') return p;
+  const need = realmXpNeeded(p.realmIndex);
+  // 修为最多夹到「本层所需」。注意**不能**夹到 need - ε：
+  // 那样修为永远到不了满值，大境界的瓶颈状态（blocked）就永远不成立，
+  // 冲关按钮也就永远不出现。
+  p.xp = Number.isFinite(need) ? Math.max(0, Math.min(need, Number(p.xp) || 0)) : 0;
+  const bf = Number(p.breakFailures);
+  p.breakFailures = Number.isFinite(bf) ? Math.max(0, Math.floor(bf)) : 0;
+  // 灵根：老存档里的修士没有这个字段，补掷一次
+  ensureRoot(p);
+  // ── T-3：猛进开关与气机滞住 ──
+  if (p.push !== true) p.push = false;
+  p.stalled = Math.max(0, Number(p.stalled) || 0);
+  // ── T-2b：入此境之年（族谱上「余 Y」的起点）──
+  p.realmEnteredYear = Math.max(0, Number(p.realmEnteredYear) || 0);
+  // ── T-4：出门在外的起始年（纯展示用；召回时删掉）──
+  if (p.job === 'errand') p.errandSince = Math.max(0, Number(p.errandSince) || 0);
+  else delete p.errandSince;
+  // ── T-5：道基。老存档没有 ⇒ null；数据坏掉也退回 null ──
+  if (!(p.foundation && typeof p.foundation === 'object' && p.foundation.nodeId)) p.foundation = null;
+  else p.foundation = {
+    nodeId: p.foundation.nodeId,
+    element: p.foundation.element,
+    // 品阶 1..5 —— 5 = 天品地块 + 已镇守越的那一档（见 data/realms.js 的 FOUNDATION_GRADES）
+    grade: Math.max(1, Math.min(5, Math.floor(Number(p.foundation.grade) || 1))),
+  };
+  // ── T-6：丹纹 / 补偿 / 本层是否已结过丹 ──
+  if (!(p.core && typeof p.core === 'object')) p.core = { marks: 0, mercy: 0, used: {} };
+  p.core.marks = Math.max(0, Math.floor(Number(p.core.marks) || 0));
+  p.core.mercy = Math.max(0, Number(p.core.mercy) || 0);
+  if (!(p.core.used && typeof p.core.used === 'object')) p.core.used = {};
+  else {
+    const used = {};
+    for (const [k, v] of Object.entries(p.core.used)) {
+      if (v === true && Number.isFinite(Number(k))) used[String(Math.floor(Number(k)))] = true;
+    }
+    p.core.used = used;
+  }
+  return p;
+}
+
+/**
+ * 【策划 C14 / 任务 T-2b】世界钟的幂等兜底。
+ * `state.clock` 是顶层新字段；没有它的时候「寿元钟」整条都不成立（会读到 undefined）。
+ */
+function ensureClock(state) {
+  if (!state || typeof state !== 'object') return { year: 0 };
+  if (!state.clock || typeof state.clock !== 'object') state.clock = { year: 0 };
+  state.clock.year = Math.max(0, Number(state.clock.year) || 0);
+  return state.clock;
+}
+
 function repairCultivation(state) {
   const c=state.cultivation; if(!c)return;
+  // 【策划 C14 / 任务 T-2b】世界钟：老存档没有这个顶层字段
+  ensureClock(state);
   // ── 仙道科技与坊市兑换次数：老存档没有这两个字段 ──
   // 1.0 的存档读进来就是「仙道篇未开启」，而不是崩在 undefined.includes 上。
   // 同时把已经不存在于表中的 id 清掉 —— 改了数据表之后旧存档仍然能 load。
@@ -53,17 +120,7 @@ function repairCultivation(state) {
     const raw = p.realmIndex !== undefined ? p.realmIndex : p.realm;
     p.realmIndex = Math.max(1, Math.min(REALM_MAX_INDEX, Math.floor(Number(raw) || 1)));
     delete p.realm;                       // 旧字段清掉，避免两处真相
-    const need = realmXpNeeded(p.realmIndex);
-    // 修为最多夹到「本层所需」。注意**不能**夹到 need - ε：
-    // 那样修为永远到不了满值，大境界的瓶颈状态（blocked）就永远不成立，
-    // 冲关按钮也就永远不出现。
-    p.xp = Number.isFinite(need)
-      ? Math.max(0, Math.min(need, Number(p.xp) || 0))
-      : 0;
-    const bf = Number(p.breakFailures);
-    p.breakFailures = Number.isFinite(bf) ? Math.max(0, Math.floor(bf)) : 0;
-    // 灵根：老存档里的修士没有这个字段，补掷一次
-    ensureRoot(p);
+    ensurePersonFields(p, state);
   }
   // ── 秘籍：把已收录、参悟、两个装备位都收拾成合法状态 ──
   if(!Array.isArray(c.manuals))c.manuals=[];
@@ -79,7 +136,9 @@ function repairCultivation(state) {
   // 同道途不可同时占两位
   if(c.assistManual&&CULTIVATION_MANUAL_MAP[c.assistManual]?.dao===CULTIVATION_MANUAL_MAP[c.equippedManual]?.dao)c.assistManual=null;
   for(const p of c.cultivators||[]){ if(!(p.talent>0)) p.talent=p.origin==='innate'?1.1:1; if(!CULTIVATOR_JOBS[p.job])p.job='retreat'; }
-  for(const [k,v] of Object.entries({poolBlueprint:false,pool:0,compass:false,veins:[],mineLevel:0,mineWorkers:0,clues:0,caveRuns:0,conquests:[]})){if(c[k]===undefined)c[k]=v;}
+  // 【策划 T-0 / docs/91-落地任务清单.md §三 T-0「涉及文件」cultivation.js:82】
+  // cluePool 是 cluePerSecFlat 的小数池：老存档没有它，补 0。
+  for(const [k,v] of Object.entries({poolBlueprint:false,pool:0,compass:false,veins:[],mineLevel:0,mineWorkers:0,clues:0,cluePool:0,caveRuns:0,conquests:[]})){if(c[k]===undefined)c[k]=v;}
   // 地图世界状态：抵达、占领、镇守、民怨（worldOf 会顺手把旧 conquests 迁进来）
   worldOf(state);
   // 丹房状态：药材、丹药、丹炉等级、各方熟练度
@@ -113,6 +172,15 @@ function addCultivator(state, origin='awakened', now=Date.now(), silent=false, p
     job:'retreat',
     talent:innate?Math.max(1.1,averageTalent(state)*1.1):1,
     parentage:innate?(parentage||'cultivator-mortal'):'awakening',
+    // 【策划 C2 / 任务 T-3】猛进行气开关与「气机滞住」剩余秒数
+    push:false,
+    stalled:0,
+    // 【策划 C14 / 任务 T-2b】入此境之年（族谱上「寿 X，余 Y」的 Y 由它算）
+    realmEnteredYear:Math.max(0,Number(state.clock?.year)||0),
+    // 【策划 C4 / 任务 T-5】道基：择地筑基后才落库，此前为 null
+    foundation:null,
+    // 【策划 C6 / 任务 T-6】丹纹 / 失败补偿 / 本层是否已结过丹
+    core:{ marks:0, mercy:0, used:{} },
   };
   c.nextId=id+1;
   c.cultivators.push(person);
@@ -153,7 +221,10 @@ function cultivationBonuses(state) {
     // 法器与功法加成相加（都是「百分比加成」，相加比相乘更好解释给玩家）；
     // 主修流派的战力加成也加在这里 —— 剑修就是靠这一项吃饭的。
     // 仙道科技「御剑术」给的是家族层面的 familyPowerMult，直接加在这里。
-    const powerMult=1+mb.power+art.power+schoolFx(state,'power')+fx.familyPowerMult;
+    // 【策划 C6 / 任务 T-6 验收标准 6 / 涉及文件】丹品带来的家族战力倍率。
+    // 逐人乘（有丹纹的人才吃得到），所以它在循环里算；展示用的聚合值随之变化。
+    const coreMult=corePowerMult(p);
+    const powerMult=(1+mb.power+art.power+schoolFx(state,'power')+fx.familyPowerMult)*coreMult;
     // 劳作与探索按「层数」计，所以这里用大档内的层号而不是全局序号，
     // 否则筑基的 10 层会直接把 laborMult 顶到上限。
     const idx=Math.max(0,Math.min(cultivateLevelCap(p),p.realmIndex||0));
@@ -176,6 +247,85 @@ function cultivationBonuses(state) {
     // 与 progressCultivators 里真正乘上去的那一项是同一个来源。
     techTrainMult:Math.max(0.1, 1 + (fx.trainMult || 0))};
 }
+/**
+ * 【策划 C2 / 任务 T-3】猛进的修为倍率。
+ * 只在闭关且 push === true 时生效 —— 宗门已经有 3.5×，再乘 2.2 就是 7.7 倍，
+ * 宗门会立刻成为唯一解（docs/91 §三 T-3「为什么猛进只对 retreat 开放」）。
+ */
+function pushRateMult(person) {
+  return person?.push === true ? PUSH_RATE_MULT : 1;
+}
+
+/**
+ * 【策划 C2 / 任务 T-3 验收标准 5】界面要写出**可算的风险**：
+ * 「本层期望走火 X 次」，X = 走火速率 × 本层所需修为 ÷ 猛进速度。
+ * 推导出处：docs/91 §三 T-3 的更新过程模型（m = r·N/v，N = 45·local²）。
+ * 正是这个数让玩家自己看出「八层是分界线、九层猛进反而更慢」。
+ */
+function pushFireExpectation(person) {
+  const idx = Math.max(0, Math.floor(Number(person?.realmIndex) || 0));
+  const local = Math.max(1, realmLocalOf(idx));
+  const need = realmXpNeeded(idx);
+  if (!Number.isFinite(need)) return 0;
+  const rate = local * PUSH_FIRE_PER_LOCAL;
+  return (rate * need) / PUSH_RATE_MULT;
+}
+
+/**
+ * 【策划 C6 / 任务 T-6 验收标准 6】丹品带来的修炼倍率（部分人来用）。
+ * 丹纹档位表在 data/realms.js 的 CORE_GRADES，出处 docs/91 §三 T-6。
+ */
+function coreTrainMult(person) {
+  if (!person?.core) return 1;
+  return coreGradeOf(coreOf(person).marks).train;
+}
+
+/**
+ * 【策划 C6 / 任务 T-6 验收标准 6】丹品带来的战力倍率。
+ * 由 systems/exploration.js 的 cultivatorPower() 乘上去。
+ */
+function corePowerMult(person) {
+  if (!person?.core) return 1;
+  return coreGradeOf(coreOf(person).marks).power;
+}
+
+/**
+ * 【策划 C1 / 任务 T-4】一名在外族人的每秒结算：带回线索 / 不回来。
+ *
+ * 数值出处：docs/91-落地任务清单.md §三 T-4「数值设计」——
+ *   线索 `ERRAND_CLUE_PER_SEC = 2.5e-5` /秒/人（10 人 = +0.90 条/时）；
+ *   死亡 `ERRAND_DEATH_PER_SEC = 4e-6` /秒/人（10 人 3 小时期望 0.43 人）。
+ * 两条都是「小概率事件」，所以按泊松近似把 dt 折算成一次判定
+ *   （不这么做的话，dt = 1 秒时 2.5e-5 的逐帧判定会变成每秒一次掷骰，
+ *   在倍速与大步长下会失真）。
+ * ⚠ 死亡只发生在外的那几个人身上，**不碰凡人死亡率模型**。
+ */
+function advanceErrand(state, person, dt, now, rng) {
+  const step = Math.max(0, Number(dt) || 0);
+  if (!(step > 0)) return;
+
+  // 1) 不回来（先判死：死人的线索不该再结算）
+  const deathChance = 1 - Math.exp(-ERRAND_DEATH_PER_SEC * step);
+  if (rng() < deathChance) {
+    state.cultivation.cultivators = state.cultivation.cultivators.filter((p) => p !== person);
+    state.cultivation.qi = state.cultivation.cultivators.length;
+    state.stats.deaths += 1;
+    pushLog(state, `${person.name}出门投帖，久无音信 —— 怕是回不来了。`, 'cultivate', null, now);
+    return;
+  }
+
+  // 2) 带回一条秘闻线索
+  const clueChance = 1 - Math.exp(-ERRAND_CLUE_PER_SEC * step);
+  if (rng() < clueChance) {
+    state.cultivation.clues = (state.cultivation.clues || 0) + 1;
+    pushLog(
+      state,
+      `${person.name}在外打听得一条风声，带回秘闻线索（现共 ${state.cultivation.clues} 条）。`,
+      'secret', null, now,
+    );
+  }
+}
+
 function progressCultivators(state,dt,now=Date.now(),rng=Math.random,births=0) {
   const c=state.cultivation;
   if(!c || !(dt>0)) return;
@@ -201,6 +351,18 @@ function progressCultivators(state,dt,now=Date.now(),rng=Math.random,births=0) {
     if(rng()<pairChance)addCultivator(state,'innate',now,false,'cultivator-cultivator',rng);
   }
   for(const person of people) {
+    // 【策划 C1 / 任务 T-4】出门在外的人：先判「不回来」，再过修为那道 continue。
+    // 之所以写在最前面，是因为下面 :204 的放行名单只认 retreat/sect ——
+    // 差事的人会被它跳过，判定就再也没机会执行了。
+    // ⚠ 只有 `job === 'errand'` 的人才会消耗这一次 rng，所以对既有存档/既有测试
+    //   的随机数序列零影响（对照实验：balance.mjs 的逐小时数字不变）。
+    if (person.job === 'errand') { advanceErrand(state, person, dt, now, rng); continue; }
+    // 【策划 C2 / 任务 T-3 验收标准 4】气机滞住期间不涨修为，每秒递减 1。
+    // 同样只对 stalled > 0 的人消耗随机数，序列零影响。
+    if ((Number(person.stalled) || 0) > 0) {
+      person.stalled = Math.max(0, Number(person.stalled) - dt);
+      continue;
+    }
     if(!['retreat','sect'].includes(person.job)) continue;
     const cap=cultivateLevelCap(person);
     const idx=Math.max(0,Math.floor(person.realmIndex)||0);
@@ -208,6 +370,9 @@ function progressCultivators(state,dt,now=Date.now(),rng=Math.random,births=0) {
     // 卡在大境界瓶颈上（本档最后一层 + 修为已满）就停止积累，等玩家去冲关。
     // 这是「主动突破」的全部实现：系统不会替你跨大档。
     if(realmGate(idx) && person.xp>=realmXpNeeded(idx)) continue;
+    // 【策划 C6 / 任务 T-6 验收标准 1】金丹期修为满且本层未结丹时，同样停止积累 ——
+    // 等玩家在「晋升」与「结丹」之间选。**不再自动晋升**，这是金丹玩法的地基。
+    if(!realmGate(idx) && breakthroughState(person).kind==='folding') continue;
 
     // 家族功法只对「闭关」生效——宗门修的是宗门的法，传不进山门。
     // 所以宗门是安全的 3.5× 固定路线，闭关则随功法收藏成长，收藏够了会反超。
@@ -224,16 +389,44 @@ function progressCultivators(state,dt,now=Date.now(),rng=Math.random,births=0) {
     // 下限夹到 0.1，防止以后加「以寿元换修为」那类节点时把速度压成负数。
     const techTrainMult = Math.max(0.1, 1 + (fxTech.trainMult || 0));
     // 灵根是第四个乘数：天灵根 ×2.0，五灵根 ×0.7
-    person.xp += REALM_XP_RATE*dt*manualMult*runeMult*metaMult*schoolMult*techTrainMult*rootSpeedMult(person)*(Number(person.talent)||1)*(person.job==='sect'?3.5:1);
+    // 【策划 C2 / 任务 T-3 验收标准 2】猛进：闭关修士的修为增量恰好 ×2.2。
+    // 【策划 C6 / 任务 T-6 验收标准 6】丹品修炼倍率：丹纹越高，闭关越快。
+    // 出处：docs/91-落地任务清单.md §三 T-3（2.2 倍）与 T-6（丹纹 → 品阶 → 修炼倍率）。
+    person.xp += REALM_XP_RATE*dt*manualMult*runeMult*metaMult*schoolMult*techTrainMult*rootSpeedMult(person)*(Number(person.talent)||1)*(person.job==='sect'?3.5:1)*pushRateMult(person)*coreTrainMult(person);
+
+    // 【策划 C2 / 任务 T-3】走火判定：以 local × 1.0e-4 /秒 的速率到达，每次把**本层**修为清零。
+    // 判定写在增量之后：低层猛进「快 2.2 倍」，九层猛进「反而更慢 5%」，
+    // 于是「低层猛进、九层缓修」是玩家自己算得出来的策略（docs/91 §三 T-3 三条结论）。
+    if (person.push === true) {
+      const local = Math.max(1, realmLocalOf(idx));
+      const fireRate = local * PUSH_FIRE_PER_LOCAL;
+      // dt 可能大于 1（倍速 / 大步长），按泊松近似折算，避免出现 p > 1
+      const fireChance = 1 - Math.exp(-fireRate * Math.max(0, dt));
+      if (rng() < fireChance) {
+        person.xp = 0;
+        const stalled = rng() < PUSH_STALL_CHANCE;
+        if (stalled) person.stalled = PUSH_STALL_SECONDS;
+        pushLog(
+          state,
+          `${person.name}猛进行气走火，本层修为尽散${stalled ? '，气机滞住，五刻之内不能再修' : ''}。`,
+          'cultivate', null, now,
+        );
+        continue;
+      }
+    }
 
     // 同一大档内自动晋升；带瓶颈的那一层停住（交给 systems/breakthrough.js）
     while(person.realmIndex<cap){
       const gate=realmGate(person.realmIndex);
       const need=realmXpNeeded(person.realmIndex);
       if(gate){ if(person.xp>need) person.xp=need; break; }
+      // 【策划 C6 / 任务 T-6】金丹期修为满时不再自动晋升，先把决策权交给玩家
+      if(coreFoldableIndex(person.realmIndex) && !coreUsedHere(person, person.realmIndex) && person.xp>=need) break;
       if(!Number.isFinite(need) || person.xp<need) break;
       person.xp-=need;
       person.realmIndex+=1;
+      // 【策划 C14 / 任务 T-2b 验收标准 3】境界一变，入此境之年重置
+      person.realmEnteredYear = Math.max(0, Number(state.clock?.year) || 0);
       pushLog(state,`${person.name}闭关有成，晋升${realmName(person.realmIndex)}！`,'cultivate',null,now);
     }
   }
@@ -246,6 +439,27 @@ function progressCultivators(state,dt,now=Date.now(),rng=Math.random,births=0) {
   if (bonus.explorePerSec>0 && state.secrets.length<SECRETS.length) {
     const chance=1-Math.exp(-bonus.explorePerSec*dt);
     if(rng()<chance) grantSecret(state,now,rng);
+  }
+  // ══════════════════════════════════════════════════════════════════
+  // 【策划 T-0 / docs/91-落地任务清单.md §三 T-0「实现要点 3」】
+  // 线索的**可再生**那条腿：仙道科技「探穴 / 界墟」给的 cluePerSecFlat。
+  //
+  // ⚠ 必须在这里消费，**不能**加进 cultivationBonuses(state) ——
+  //   那是展示用的聚合器（而且它在本次循环里被调用过一次，加进去会变成间接消费，
+  //   「登记了但没消费」的检查和真实行为就对不上了）。
+  // 小数池：0.0002/秒 直接加到 clues 上会被取整成 0，所以先累到 cluePool，
+  //   每满 1 才扣 1 加一条线索。这也是「不给线索加存量上限」的前提。
+  // 数值出处：docs/91 T-0 供给侧表（慢路 1.62 条/时，需求 59 条，+56% 余量）。
+  // ══════════════════════════════════════════════════════════════════
+  const clueRate = Math.max(0, Number(fxTech.cluePerSecFlat) || 0);
+  if (clueRate > 0 && dt > 0) {
+    c.cluePool = Math.max(0, Number(c.cluePool) || 0) + clueRate * dt;
+    if (c.cluePool >= 1) {
+      const gain = Math.floor(c.cluePool);
+      c.cluePool -= gain;
+      c.clues = (c.clues || 0) + gain;
+      pushLog(state, `宗族在诸地探得的旧闻凑齐了一条秘闻线索（现共 ${c.clues} 条）。`, 'secret', null, now);
+    }
   }
 }
 

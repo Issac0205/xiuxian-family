@@ -20,6 +20,17 @@ function createState(now = Date.now()) {
     /** 世家世代，凡人阶段恒为 1，踏入仙途后递增。 */
     generation: 1,
 
+    /**
+     * 【策划 C14 / 任务 T-2b】世界钟：只记「过了多少年」，供族谱显示寿元余量。
+     *
+     * 尺度（出处：docs/91-落地任务清单.md §三 T-2b「数值设计」）：
+     *   **1 游戏小时 = 25 年**，一周目 44.6 小时 = 1115 年。
+     * ⚠ 离线**不推**年份（runOffline 里显式不碰它）—— 这是 T-2b 与 T-7 能共存的硬约定：
+     *   否则离线 12 小时 = 300 年，全族寿元瞬间见底。
+     * 它不产生任何惩罚（没有老死、没有冲关修正），只是让玩家看见「还剩多少」。
+     */
+    clock: { year: 0 },
+
     silver: BASE.silver,
     population: BASE.population,
     buildings,
@@ -97,6 +108,10 @@ function createState(now = Date.now()) {
       attune: {},           // 每本功法的参悟度 0~5，effect ×(1+0.12×层数)
       nextId: 1,
       poolBlueprint:false, pool:0, compass:false, veins:[], mineLevel:0, mineWorkers:0, clues:0, caveRuns:0, conquests:[],
+      // 【策划 T-0 / docs/91-落地任务清单.md §三 T-0「涉及文件」state.js:99 附近】
+      // 目的：cluePerSecFlat 的**小数池**。按秒累加、每满 1 才扣 1 加一条线索，
+      // 否则 0.0002/秒 会被取整成 0（这正是「登记了但不生效」的典型形态）。
+      cluePool: 0,
       pills: 0,       // 已服下的祛障丹
       humanPills: 0,  // 人丹存量（血煞一脉独有，见 systems/schools.js）
       unlocked: false, // 是否已踏入炼气篇

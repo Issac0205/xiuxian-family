@@ -225,12 +225,36 @@ function artifactBonus(state) {
 }
 
 /**
+ * 【策划 C4 / 任务 T-5 验收标准 4】金系道基给的**法器耐久损耗**倍率。
+ *
+ * 直接减轻「法器是资产、要养」这条线的压力（出处：docs/91-落地任务清单.md §三 T-5
+ * 「五条地气词条」表：金 → 耐久损耗 −30%，相合 ×1.5 → −45%、相冲 ×0.6 → −18%）。
+ * 全族取最高的那一条，返回一个 ≤1 的乘数（1 表示没有任何减免）。
+ */
+function foundationWearMult(state) {
+  let best = 0;
+  for (const p of state.cultivation?.cultivators || []) {
+    if (!p.foundation || p.foundation.element !== 'metal') continue;
+    if (p.realmIndex < 10) continue;
+    const node = mapNode(p.foundation.nodeId);
+    if (!node) continue;
+    const held = worldOf(state).held.includes(node.id) && mapIsPacified(state, node.id);
+    // pct 是负数（−0.30），取绝对值当减免
+    const cut = Math.min(0.9, Math.abs(EARTH_QI.metal.pct) * foundationEntryMult(p, node, held));
+    if (cut > best) best = cut;
+  }
+  return 1 - best;
+}
+
+/**
  * 磨损。由攻伐与洞天结算调用。
  * @param {string} reason 'attack' | 'cave'
  */
 function wearArtifacts(state, reason) {
   const f = forgeOf(state);
   const out = [];
+  // 【策划 C4 / 任务 T-5】金系道基：耐久损耗乘一个 ≤1 的系数
+  const wearCut = foundationWearMult(state);
   for (const id of Object.values(f.equipped)) {
     const item = FORGE_ITEM_MAP[id];
     if (!item || !id) continue;
@@ -239,7 +263,7 @@ function wearArtifacts(state, reason) {
       ? (item.slot === 'talisman' ? 1.6 : 0.7)
       : (item.slot === 'armor' ? 1.5 : 0.9);
     const before = durabilityOf(state, id);
-    const after = Math.max(0, before - item.wear * FORGE_WEAR_SCALE * mult);
+    const after = Math.max(0, before - item.wear * FORGE_WEAR_SCALE * mult * wearCut);
     f.durability[id] = after;
     if (after <= 0 && before > 0) out.push(item.name);
   }

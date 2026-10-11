@@ -213,6 +213,83 @@ const CODEX_MECHANICS = [
     lines: () => [`离线最多折算 ${OFFLINE_CAP_HOURS} 小时`, `存档每 ${SAVE_INTERVAL_MS / 1000} 秒自动落一次`],
     seen: () => true,
   },
+  /* ══ 【策划 C2 / 任务 T-3】走火入魔：炼气期第一个「自己承担的风险」 ══
+   * 取材：docs/90-点子库.md §8.1 的「情欲劫 / 魔境劫」（走火入魔的词源），
+   * 数值出处：docs/91-落地任务清单.md §三 T-3「数值设计」与「走火的具体后果」两张表。 */
+  {
+    id: 'mech-push', title: '走火入魔：猛进行气的价码',
+    prose: '炼气期的族人闭关时可以拨到「猛进」——修为快一倍有余，但气机不稳，'
+      + '随时可能走火。走火只做一件事：把**本层**修为散个干净，回到刚进这一层的时候。'
+      + '不伤性命，也不掉境界。'
+      + '真正要算的是那条曲线：走火的速率随层数线性上升，而每一层的修为需求是层号的平方 —— '
+      + '于是**低层猛进赚，八层以上开始赔**，九层猛进反而比缓修还慢。'
+      + '界面上的「本层期望走火 X 次」就是这个算式的结果，玩家自己就能看出来。',
+    lines: () => [
+      `猛进修为倍率 ×${PUSH_RATE_MULT}，走火速率 = 层号 × ${PUSH_FIRE_PER_LOCAL} /秒`,
+      `走火后果：本层修为清零；${Math.round(PUSH_STALL_CHANCE * 100)}% 附带「气机滞住」${PUSH_STALL_SECONDS} 秒`,
+      '走火**不致死**——它买的是时间，不是人',
+      '宗门修士没有这个开关（宗门已有 3.5× 固定加速）',
+    ],
+    seen: (s) => (s.cultivation?.cultivators || []).some((p) => p.realmIndex <= 9),
+    hint: '有炼气期族人后可见',
+  },
+  /* ══ 【策划 C1 / 任务 T-4】投帖问路 ══ */
+  {
+    id: 'mech-errand', title: '投帖问路：拿族人的脚程换线索',
+    prose: '派族人出门打探消息，是一条用**人**换**线索**的路子。'
+      + '在外的人不涨修为、吃不到家族功法、也不能派去镇守或探险，'
+      + '但会一条条把外头的风声带回来。'
+      + '风险是可中断的：召回瞬时生效、没有冷却，所以你可以随时把人叫回来。'
+      + '线索只用来过大境界的门槛 —— 它不换灵石、不换功法，所以这条线不会扰动别的平衡。',
+    lines: (s) => {
+      const out = (s.cultivation?.cultivators || []).filter((p) => p.job === 'errand');
+      return [
+        `每人每秒 ${(ERRAND_CLUE_PER_SEC * 100000).toFixed(1)}e-5 的机会带回 1 条线索`,
+        `每人每秒 ${(ERRAND_DEATH_PER_SEC * 100000).toFixed(1)}e-5 的机会回不来（每小时约 ${(ERRAND_DEATH_PER_SEC * 3600 * 100).toFixed(3)}%）`,
+        `当前在外 ${out.length} 人${out.length ? `：${out.slice(0, 6).map((p) => p.name).join('、')}` : ''}`,
+        `现有线索 ${s.cultivation?.clues || 0} 条 · 四道门槛共需 ${Object.values(REALM_GATES).reduce((a, g) => a + (g.clues || 0), 0)} 条`,
+      ];
+    },
+    seen: (s) => (s.cultivation?.cultivators || []).some((p) => p.job === 'errand'),
+    hint: '有人出门在外后可见',
+  },
+  /* ══ 【策划 C4 / 任务 T-5】择地筑基与五条地气词条 ══ */
+  {
+    id: 'mech-foundation', title: '择地筑基：把一块地烧进族谱',
+    prose: '炼气九层冲筑基，不能凭空起楼 —— 要先在自己**走到过**的地方里挑一块，'
+      + '把那处地气烧成一张符落进族谱，此后这道基就一直带着一条地气词条。'
+      + '地块品阶由它的凶险程度决定（黄/玄/地/天），**打下来并守住**还能再晋一档。'
+      + '词条认灵根主系：同属相合 ×1.5，被主系所克则 ×0.6。'
+      + '押错了可以散功重修——回退到炼气九层、三小时不能修炼、家族道心 −5，'
+      + '但地块选择权、家业与功法都还在。',
+    lines: (s) => {
+      const ps = (s.cultivation?.cultivators || []).filter((p) => p.foundation);
+      return [
+        `地气五条：${EARTH_QI_IDS.map((id) => `${EARTH_QI[id].name}（${EARTH_QI[id].label}）`).join(' · ')}`,
+        `品阶：${FOUNDATION_GRADES.map((g) => `${g.name}×${g.mult.toFixed(2)}`).join(' / ')}`,
+        `相合 ×${FOUNDATION_MATCH_MULT} · 相冲 ×${FOUNDATION_CLASH_MULT} · 地块丢失再 ×${FOUNDATION_LOST_MULT}`,
+        `族中已有道基者 ${ps.length} 人${ps.length ? `：${ps.slice(0, 5).map((p) => p.name).join('、')}` : ''}`,
+      ];
+    },
+    seen: (s) => (s.cultivation?.cultivators || []).some((p) => p.realmIndex >= 9),
+    hint: '有族人修至炼气九层前后可见',
+  },
+  /* ══ 【策划 C6 / 任务 T-6】结丹三档火候 ══ */
+  {
+    id: 'mech-fold', title: '结丹：每一次修为满，都是一次下注',
+    prose: '进了金丹期，修为满了不再自动往上走。面板上给你两个按钮：'
+      + '「晋升」无风险地进下一层，或者「结丹」留在本层，把这份修为烧成丹纹。'
+      + '每层只有一次机会，所以四次机会是硬上限。'
+      + '三档火候里，**三昧真火的数学期望最低** —— 它买的不是均值，是上限：'
+      + '只有它能突破十二纹。丹纹攒出的品阶会一路带到元婴期。',
+    lines: (s) => [
+      ...CORE_FOLDS.map((f) => `${f.name}：+${f.marks} 纹 / 成算 ${Math.round(f.rate * 100)}% / ${f.cap === null ? '无上限' : `止于 ${f.cap} 纹`}`),
+      `五品门槛 = ${CORE_GRADES.find((g) => g.name === '五品').min} 纹（不是点子库原来写的 12 纹）`,
+      `族中已结丹者 ${(s.cultivation?.cultivators || []).filter((p) => (p.core?.marks || 0) > 0).length} 人`,
+    ],
+    seen: (s) => (s.cultivation?.cultivators || []).some((p) => p.realmIndex >= 14),
+    hint: '有族人修至金丹前后可见',
+  },
 ];
 
 /* ── 章节 ── */

@@ -75,6 +75,28 @@ function alchemist(state) {
 }
 
 /**
+ * 【策划 C4 / 任务 T-5 验收标准 4】木系道基给的炼丹成功率加成（可正可负的百分点）。
+ *
+ * 「木 = 丹道」这个约定本来就在 alchemyWoodBonus() 上；道基这条是**同一条语言的第二个来源**。
+ * 全族取最高的那一条（领地/族产是家族级的产出，不相乘，避免堆人爆表）。
+ * 出处：docs/91-落地任务清单.md §三 T-5「五条地气词条」表（木 → 炼丹成功率 +8pp，
+ * 相合 ×1.5 → +12pp、相冲 ×0.6 → +4.8pp）。
+ */
+function foundationHerbBonus(state) {
+  let best = 0;
+  for (const p of state.cultivation?.cultivators || []) {
+    if (!p.foundation || p.foundation.element !== 'wood') continue;
+    if (p.realmIndex < 10) continue;
+    const node = mapNode(p.foundation.nodeId);
+    if (!node) continue;
+    const held = worldOf(state).held.includes(node.id) && mapIsPacified(state, node.id);
+    const bonus = EARTH_QI.wood.pp * foundationEntryMult(p, node, held);
+    if (bonus > best) best = bonus;
+  }
+  return best;
+}
+
+/**
  * 木灵根对炼丹的加成。
  *
  * 这是 R3 那个「白占一位」的木属性的兑现处：丹道属木，
@@ -107,7 +129,9 @@ function recipeRate(state, recipeId) {
     // 丹修流派：专精这一行，代价是战力
     + schoolFx(state, 'alchemyRate')
     // 仙道科技「金丹大道」：把火候写定，全族少炸几炉
-    + techEffects(state).alchemyRateBonus;
+    + techEffects(state).alchemyRateBonus
+    // 【策划 C4 / 任务 T-5】木系道基（择地筑基的地气词条）
+    + foundationHerbBonus(state);
   return Math.max(ALCHEMY_RATE_MIN, Math.min(ALCHEMY_RATE_MAX, rate));
 }
 

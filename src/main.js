@@ -519,6 +519,7 @@ window.__xiuxian = {
     holdStrength: (nodeId) => mapHoldStrength(state, nodeId),
     isPacified: (nodeId) => mapIsPacified(state, nodeId),
     garrison: (nodeId, pid) => mapAssignGarrison(state, nodeId, pid),
+    garrisonCandidates: () => mapGarrisonCandidates(state).map((p) => p.id),
     clearGarrison: (nodeId) => mapClearGarrison(state, nodeId),
     unrest: (nodeId) => Number(worldOf(state).unrest[nodeId]) || 0,
     tick: (seconds) => advanceTerritories(state, seconds, Date.now()),
@@ -569,6 +570,17 @@ window.__xiuxian = {
     repair: (id) => commitRepair(state, id, Date.now()),
     bonus: () => artifactBonus(state),
     wear: (reason) => wearArtifacts(state, reason),
+    /** 直接塞一件法器进库（测试与调试用，照 runes.give 的形状）。*/
+    give: (id, n) => {
+      const f = forgeOf(state);
+      if (!FORGE_ITEM_MAP[id]) return 0;
+      const add = Math.max(1, Math.floor(Number(n) || 1));
+      for (let i = 0; i < add; i += 1) {
+        if (!f.owned.includes(id)) f.owned.push(id);
+        f.durability[id] = FORGE_DURABILITY_MAX;
+      }
+      return f.owned.length;
+    },
   },
   /** 炼符：符文、符箓存货与保质期、挂着的加成、符台。*/
   runes: {
@@ -609,6 +621,10 @@ window.__xiuxian = {
     page: (p) => pageVisible(state, p),
     block: (k) => immortalBlockVisible(state, k),
     anyCrafting: () => anyCraftingVisible(state),
+    /** 【策划 C15 / 任务 T-2】境界仪表盘现在该渲染哪一格。*/
+    dashboardKey: () => realmDashboardKey(state),
+    dashboard: (key) => dashboardVisible(state, key),
+    highestRealm: () => highestRealmIndex(state),
   },
   /** 各数据表。调试与测试。—。也方便在控制台里直接核对数值—*/
   data: {
@@ -661,6 +677,9 @@ window.__xiuxian = {
   /** 百科：条目书与统计。*/
   codex: {
     book: () => codexBook(state),
+    /** 【本轮新增】原始条目定义（lines 还是函数、seen/hint 都还在）——
+     *  测试要核对「数据引文取自活表」时用它，book() 那一份已经算成字符串了。 */
+    raw: () => CODEX_CHAPTERS,
     /** 用一份「假想状态」算书。测试解锁逻辑用（不影响真实存档）。*/
     bookFor: (s) => codexBook(s),
     stats: () => codexStats(state),
@@ -702,14 +721,63 @@ window.__xiuxian = {
     power: (i) => realmPower(i),
     gate: (i) => realmGate(i),
     stateOf: (pid) => breakthroughState(findCultivator(state, pid)),
-    plan: (pid) => breakthroughPlan(state, pid),
+    // 【策划 C15 / 任务 T-2】统一状态机：一个入口给出九个状态之一。
+    personState: (pid) => personState(findCultivator(state, pid)),
+    /** 某人的境界寿元上限（年）与剩余（年）。出处：docs/91 §三 T-2b 表。 */
+    lifespan: (pid) => {
+      const p = findCultivator(state, pid);
+      if (!p) return null;
+      const max = realmLifespan(p.realmIndex);
+      const used = Math.max(0, (Number(state.clock?.year) || 0) - (Number(p.realmEnteredYear) || 0));
+      return { max, used, left: max - used };
+    },
+    /** 【策划 C6 / 任务 T-6】丹纹档位与金丹三档火候。测试要逐档核对。 */
+    coreGrades: () => CORE_GRADES,
+    coreFolds: () => CORE_FOLDS,
+    coreOf: (pid) => coreOf(findCultivator(state, pid)),
+    coreGradeOf: (marks) => coreGradeOf(marks),
+    coreChancesLeft: (pid) => coreChancesLeft(findCultivator(state, pid)),
+    dashboard: () => coreDashboard(state),
+    foldPlan: (pid, foldId) => foldPlan(state, pid, foldId),
+    /** 【策划 C6 / 任务 T-6】兑现一次结丹（测试与调试用；界面走 data-fold 按钮）。 */
+    fold: (pid, foldId, rngFn) => commitFold(state, pid, foldId, Date.now(), rngFn || rng),
+    /** 【策划 C4 / T-5】兑现一次冲关（带 siteId），测试与调试用。 */
+    commitWith: (pid, siteId, rngFn) => commitBreakthrough(state, pid, Date.now(), rngFn || rng, siteId),
+    /** 【策划 C4 / 任务 T-5】择地筑基的候选 / 预览 / 散功重修。 */
+    foundationSites: () => foundationSiteOptions(state),
+    foundationPlan: (pid, siteId) => foundationPlan(state, pid, siteId),
+    foundationGrade: (tier, held) => foundationGrade(tier, held),
+    /** 【策划 C4 / 任务 T-5】某人的道基词条倍率。
+     *  - `siteHeld`（默认 true）：地块是否仍被有效镇守 —— 丢了就 −50%。出处：docs/91 §三 T-5 验收标准 7。
+     *  - `useSite`（默认 true）：是否按**地块当前状态**重算品阶（晋档/掉档）；
+     *    传 false 时只按落库时冻结的品阶算 —— 用来单独验证「减半」这一条。 */
+    foundationEntryMult: (pid, siteHeld = true, useSite = true) => {
+      const p = findCultivator(state, pid);
+      if (!p || !p.foundation) return 1;
+      const site = useSite && p.foundation.nodeId ? mapNode(p.foundation.nodeId) : null;
+      return foundationEntryMult(p, site, siteHeld);
+    },
+    /** 该修士的道基所在地现在是否仍被有效镇守。 */
+    foundationSiteHeld: (pid) => {
+      const p = findCultivator(state, pid);
+      if (!p || !p.foundation) return false;
+      return mapHeld(state, p.foundation.nodeId) && mapIsPacified(state, p.foundation.nodeId);
+    },
+    /** 【策划 C4 / 任务 T-5】单块领地每秒的赋税（已含土系道基）。 */
+    mapYieldOf: (nodeId) => mapYieldOf(state, nodeId),
+    earthQi: () => EARTH_QI,
+    dissolvePlan: (pid) => dissolveFoundationPlan(state, pid),
+    dissolve: (pid) => commitDissolveFoundation(state, pid, Date.now()),
+    // 【策划 C4 / 任务 T-5】第三个参数是 siteId（择地筑基的那块地）
+    plan: (pid, siteId) => breakthroughPlan(state, pid, siteId),
     rate: (pid, failures) => {
       const p = findCultivator(state, pid);
       return p ? realmBreakRate(p.realmIndex, p.talent,
         failures === undefined ? p.breakFailures : failures, rootBreakBonus(p)) : null;
     },
     commit: (pid, rngFn) => commitBreakthrough(state, pid, Date.now(), rngFn || rng),
-    best: () => bestBreakthroughCandidate(state),
+    // 【策划 C4 / 任务 T-5】择地那一道要带 siteId 才询得动价
+    best: (siteId) => bestBreakthroughCandidate(state, siteId),
     pacing: () => realmPacing(),
   },
   /** 灵根。控制台里查资质、算效果、重测。*/
@@ -769,6 +837,39 @@ window.__xiuxian = {
   },
   timer,
   offlineCapHours: OFFLINE_CAP_HOURS,
+  /** 【策划 C14 / 任务 T-2b】世界钟：只读快照，改年份请走 step()。*/
+  clock: () => ({ year: Number(state.clock?.year) || 0 }),
+  /** 【策划 T-0】线索经济：小数池与两条常驻速率，方便核对「产出 ≥ 门槛需求」。*/
+  clues: () => ({
+    clues: state.cultivation?.clues || 0,
+    pool: Number(state.cultivation?.cluePool) || 0,
+    perSec: Number(techEffects(state).cluePerSecFlat) || 0,
+    secrets: state.secrets.length,
+    poolTotal: SECRETS.length,
+    /** 四道门槛累计需求（线索）。出处：data/realms.js 的 REALM_GATES。*/
+    gateDemand: Object.values(REALM_GATES).reduce((a, g) => a + (g.clues || 0), 0),
+  }),
+  /**
+   * 【策划 T-0 / 验收标准 2】直接走一次 `grantSecret()`。
+   * 测试要验「秘闻池集齐之后，寻秘事件仍然产出线索」——
+   * 池空即 return null 是旧行为，现在必须仍然 +1 线索。
+   */
+  grantSecretForTest: (random) => grantSecret(state, Date.now(), random || rng),
+  /**
+   * 【策划 T-1 / 任务 T-1 验收标准 1、2】存档往返与离线结算的调试出口。
+   * 测试要能「完整走一遍 serialize → hydrate」并断言**值**不丢 ——
+   * 这正是当初漏掉三个顶层字段却全绿的原因（旧断言只查 cultivation.* 内部）。
+   */
+  save: {
+    serialize: () => serialize(state),
+    hydrate: (raw) => hydrate(raw),
+    /** 走一遍真实的「写出 → JSON → 读回」，返回读回后的状态。 */
+    roundTrip: () => hydrate(JSON.parse(JSON.stringify(serialize(state)))),
+    /** 只读一份存档（不改当前状态）。 */
+    peek: () => JSON.parse(JSON.stringify(serialize(state))),
+  },
+  /** 【策划 C14 / 任务 T-2b 验收标准 2】离线结算：用来断言「离线不推年份」。 */
+  offline: (seconds) => runOffline(state, Number(seconds) || 0, Date.now()),
 };
 
 /* ────────────── 新版仙途展示与操作 ────────────── */
@@ -1161,19 +1262,89 @@ function renderManualPavilion() {
 }
 
 let lastImmortalUiSignature='';
-function repaintExpansion(force=false){const c=state.cultivation;if(!c)return;const w=worldOf(state);const al=alchemyOf(state);const fg=forgeOf(state);const ru=runesOf(state);const sig=JSON.stringify([state.secrets.length,Math.floor(state.spiritStones*100),Math.floor(state.silver/1000),c.pool,c.poolBlueprint,c.compass,c.mineLevel,c.mineWorkers,c.veins.map(v=>[v.grade,Math.floor(v.reserve*10)]),c.clues,c.caveRuns,c.manuals,c.equippedManual,c.assistManual,c.attune,w.reached,w.held,w.garrison,Object.entries(w.unrest).map(([k,v])=>[k,Math.floor(v*50)]),c.pills,al.furnace,al.crafts,Object.entries(al.herbs).map(([k,v])=>[k,Math.floor(v*10)]),al.pills,al.prof,fg.level,fg.crafts,fg.owned,fg.equipped,Object.entries(fg.ores).map(([k,v])=>[k,Math.floor(v*1000)]),ru.bench,ru.crafts,ru.pending,Object.entries(ru.mats).map(([k,v])=>[k,Math.floor(v*100)]),Object.entries(ru.stock).map(([k,v])=>[k,v.n,Math.floor(v.expiresAt/60000)]),Math.floor((ru.trainUntil||0)/60000),c.cultivators.map(p=>[p.id,p.realmIndex,p.talent,p.job,p.breakFailures||0,p.root?.grade])]);if(force||sig!==lastImmortalUiSignature){lastImmortalUiSignature=sig;renderImmortalExpansion();renderManualPavilion();}}
+function repaintExpansion(force=false){const c=state.cultivation;if(!c)return;const w=worldOf(state);const al=alchemyOf(state);const fg=forgeOf(state);const ru=runesOf(state);const sig=JSON.stringify([state.secrets.length,Math.floor(state.spiritStones*100),Math.floor(state.silver/1000),c.pool,c.poolBlueprint,c.compass,c.mineLevel,c.mineWorkers,c.veins.map(v=>[v.grade,Math.floor(v.reserve*10)]),c.clues,c.caveRuns,c.manuals,c.equippedManual,c.assistManual,c.attune,w.reached,w.held,w.garrison,Object.entries(w.unrest).map(([k,v])=>[k,Math.floor(v*50)]),c.pills,al.furnace,al.crafts,Object.entries(al.herbs).map(([k,v])=>[k,Math.floor(v*10)]),al.pills,al.prof,fg.level,fg.crafts,fg.owned,fg.equipped,Object.entries(fg.ores).map(([k,v])=>[k,Math.floor(v*1000)]),ru.bench,ru.crafts,ru.pending,Object.entries(ru.mats).map(([k,v])=>[k,Math.floor(v*100)]),Object.entries(ru.stock).map(([k,v])=>[k,v.n,Math.floor(v.expiresAt/60000)]),Math.floor((ru.trainUntil||0)/60000),
+ // 【策划 C2/C1/C14/T-0 / docs/91 §六.10】脏检查必须同步加新字段，否则新仪表不刷新（静默失败）：
+ //   push / stalled（猛进与气机滞住）、errand 人数（投帖）、realmEnteredYear 与 clock.year（寿元钟）、
+ //   cluePool（线索小数池进位时界面上的条数会变）。
+ c.cultivators.map(p=>[p.id,p.realmIndex,p.talent,p.job,p.breakFailures||0,p.root?.grade,p.push?1:0,Math.floor((Number(p.stalled)||0)/30),p.foundation?`${p.foundation.nodeId}${p.foundation.grade}`:'-',coreOf(p).marks,Object.keys(coreOf(p).used).join(''),p.realmEnteredYear||0]),Math.floor(Number(state.clock?.year)||0),Math.floor((Number(c.cluePool)||0)*10)]);if(force||sig!==lastImmortalUiSignature){lastImmortalUiSignature=sig;renderImmortalExpansion();renderManualPavilion();}}
 
 /* 冲关按钮。与炼气篇其他操作一致，不触发答题参*/
 document.addEventListener('click',ev=>{
  const btn=ev.target.closest('[data-breakthrough]');if(!btn||btn.disabled)return;
  if(ui.quiz.isBusy())return;
- const result=commitBreakthrough(state,Number(btn.dataset.breakthrough),Date.now(),rng);
+ // 【策划 C4 / 任务 T-5】择地筑基：把下拉框里选中的那块地传给 commitBreakthrough。
+ // 读的是 DOM 的当前值而不是重算一遍 —— 否则玩家看到的那一项与实际落库的可能不是同一块。
+ const siteSel=document.querySelector(`[data-site-for="${btn.dataset.breakthrough}"]`);
+ const siteId=siteSel?siteSel.value:'';
+ const result=commitBreakthrough(state,Number(btn.dataset.breakthrough),Date.now(),rng,siteId||undefined);
  ui.toast(result.ok
-   ? (result.success?`${result.name}冲关成功，晋。{result.realm}！`
+   ? (result.success?`${result.name}冲关成功，晋${result.realm}！`
                     :`${result.name}冲关失败，修为倒退 ${result.loss} 点；下一次成功率 ${(result.nextRate*100).toFixed(0)}%`)
    : result.reason,
    result.ok&&result.success?'ok':'warn', 3600);
  if(result.ok){writeSave(state);ui.render();}
+ repaintExpansion(true);
+});
+
+/* 【策划 C2 / 任务 T-3】猛进行气的开关。per-person，不触发答题。 */
+document.addEventListener('click',ev=>{
+ const btn=ev.target.closest('[data-push]');if(!btn||btn.disabled)return;
+ if(ui.quiz.isBusy())return;
+ const r=immortalAction(state,'push',btn.dataset.push,rng);
+ ui.toast(r.reason,r.ok?'ok':'warn',2600);
+ if(r.ok){writeSave(state);ui.render();}
+ repaintExpansion(true);
+});
+
+/* 【策划 C1 / 任务 T-4】投帖与召回。勾选框把 id 收集起来，一次提交一批。 */
+document.addEventListener('click',ev=>{
+ const btn=ev.target.closest('[data-errand],[data-recall]');if(!btn||btn.disabled)return;
+ if(ui.quiz.isBusy())return;
+ const ids=[...document.querySelectorAll('[data-errand-check]')]
+   .filter(n=>n.checked)
+   .map(n=>Number(n.dataset.errandCheck))
+   .filter(n=>Number.isFinite(n)&&n>0);
+ if(!ids.length){ui.toast('请先勾选族人，再点投帖 / 召回','warn',2600);return;}
+ if(btn.dataset.errand!==undefined){
+   // 确认文案必须写明「在外的人有 X%/时 回不来」——风险要能算，不能只说「有风险」
+   const perHour=(ERRAND_DEATH_PER_SEC*3600*100).toFixed(2);
+   if(!confirm(`派这 ${ids.length} 人出门投帖？他们在外的期间不涨修为、不能镇守或探险，每人每小时约有 ${perHour}% 回不来（可随时召回）。`))return;
+ }
+ const r=immortalAction(state,btn.dataset.errand!==undefined?'errand':'recall',ids.join(','),rng);
+ ui.toast(r.reason,r.ok?'ok':'warn',3600);
+ if(r.ok){writeSave(state);ui.render();}
+ repaintExpansion(true);
+});
+
+/* 【策划 C6 / 任务 T-6】结丹：三档火候都必须把成率与失败后果写在确认框里。 */
+document.addEventListener('click',ev=>{
+ const btn=ev.target.closest('[data-fold]');if(!btn||btn.disabled)return;
+ if(ui.quiz.isBusy())return;
+ const foldId=btn.dataset.fold,pid=Number(btn.dataset.person);
+ const plan=foldPlan(state,pid,foldId);
+ if(!plan.ok){ui.toast(plan.reason,'warn',2800);return;}
+ if(!confirm(`以${plan.foldName}结丹？成算 ${(plan.rate*100).toFixed(0)}%，成则 +${plan.marks} 纹（${plan.cap===null?'无上限':`止于 ${plan.cap} 纹`}）；失败${plan.failText}。本层这一次机会用完就没有了。`))return;
+ const r=commitFold(state,pid,foldId,Date.now(),rng);
+ ui.toast(r.ok
+   ? (r.success?`${r.name}结丹成功，得 ${r.gain} 纹（共 ${r.marks} 纹 · ${r.grade}）`
+              :`${r.name}结丹失败，丹裂掉纹（余 ${r.marks} 纹 · ${r.grade}）`)
+   : r.reason,
+   r.ok&&r.success?'ok':'warn',4200);
+ if(r.ok){writeSave(state);ui.render();}
+ repaintExpansion(true);
+});
+
+/* 【策划 C4 / 任务 T-5】散功重修：不可逆决策的后悔药，代价要写全。 */
+document.addEventListener('click',ev=>{
+ const btn=ev.target.closest('[data-dissolve]');if(!btn||btn.disabled)return;
+ if(ui.quiz.isBusy())return;
+ const plan=dissolveFoundationPlan(state,Number(btn.dataset.dissolve));
+ if(!plan.ok){ui.toast(plan.reason,'warn',2800);return;}
+ if(!confirm(`${plan.name}散去${plan.nodeName}的地气，境界回退到炼气九层、修为清零、`
+   +`${plan.hours} 游戏小时不能修炼、家族道心 ${plan.morality}。功法与家业都保留。确认？`))return;
+ const r=commitDissolveFoundation(state,Number(btn.dataset.dissolve),Date.now());
+ ui.toast(r.ok?`${r.name}散功重修，择地之权仍在手`:'散功失败',r.ok?'warn':'warn',3600);
+ if(r.ok){writeSave(state);ui.render();}
  repaintExpansion(true);
 });
 

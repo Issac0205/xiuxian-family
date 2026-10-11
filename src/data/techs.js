@@ -316,6 +316,11 @@ const EFFECT_LABELS = {
   alchemyRateBonus: (v) => `炼丹成功率 ${signedPoint(v)} 个百分点`,
   trainMult: (v) => `全族修炼速度 ${signedPct(v)}`,
   familyPowerMult: (v) => `家族战力 ${signedPct(v)}`,
+  // 【策划 T-0 / docs/91-落地任务清单.md §三 T-0「实现要点 2」】
+  // 目的：让「探穴 / 界墟」这两项科技在格物页把「线索 +X 条/时」写出来 ——
+  // 缺了这行收益栏会空白（smoke 的「每个 effect 键都有界面文案」会立刻抓到）。
+  // 数值出处：docs/91 T-0 供给侧表（0.0002 与 0.00025 每秒 → 0.72 / 0.90 条每时）。
+  cluePerSecFlat: (v) => `秘闻线索 +${(v * 3600).toFixed(2)} 条/时`,
 };
 
 /** 一项科技的全部收益文案（凡人侧与仙道侧共用）。 */

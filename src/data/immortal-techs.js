@@ -225,7 +225,11 @@ const IMMORTAL_TECHS = [
     cost: 41000,
     stones: 210,
     requires: ['xuanhu'],
-    effect: { mineYieldMult: 0.30, exploreSurviveBonus: 0.04 },
+    // 【策划 T-0 / docs/91-落地任务清单.md §三 T-0「涉及文件」】
+    // 目的：给线索经济补上**可再生**的那条腿（原来只有 SECRETS 一次性 20 条）。
+    // 数值出处：docs/91 T-0 供给侧表 —— 探穴 0.0002 条/秒 = 0.72 条/时，
+    // 44.6 小时产出 32 条。与「探穴」语义一致（它本来就面向洞天）。
+    effect: { mineYieldMult: 0.30, exploreSurviveBonus: 0.04, cluePerSecFlat: 0.0002 },
     desc: '悬壶的医者最先学会的是看人，其次就是看地——'
       + '哪一处山腹可以进、哪一处进去就出不来。',
   },
@@ -268,7 +272,10 @@ const IMMORTAL_TECHS = [
     cost: 120000,
     stones: 720,
     requires: ['lingmai', 'yuanying'],
-    effect: { tradeStoneMult: 0.6, secretChance: 0.02 },
+    // 【策划 T-0 / docs/91-落地任务清单.md §三 T-0「涉及文件」】
+    // 数值出处：docs/91 T-0 供给侧表 —— 界墟 0.00025 条/秒 = 0.90 条/时，44.6 小时产出 40 条。
+    // 与两处合计 1.62 条/时（慢路），相对需求 59 条有 +56% 余量 —— 这是「不投帖也能通关」的保证。
+    effect: { tradeStoneMult: 0.6, secretChance: 0.02, cluePerSecFlat: 0.00025 },
     desc: '云深谷那头的坊市终于认了本家的字号。'
       + '银钱过手能换回更多灵石，往来的人也捎带些不该说的风声。',
   },

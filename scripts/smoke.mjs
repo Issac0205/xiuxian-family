@@ -104,6 +104,8 @@ const X = window.__xiuxian;
 check('调试出口已挂载', Boolean(X && X.state && X.manual && X.realm && X.step && X.derive));
 const state = X.state;
 const ui = X.ui;
+/** 数据表集合。第 15.5 节起就要用，所以在最前面取好。 */
+const d = X.data;
 const $ = (id) => document.getElementById(id);
 clearInterval(X.timer);
 X.seedRng(20260101);
@@ -300,13 +302,17 @@ const atGate = (over = {}) => {
   setPeople(person({ realmIndex: 9, xp: gateNeed, job: 'retreat', talent: 1, ...over }));
   state.spiritStones = 1000;
   state.cultivation.clues = 50;
+  // 【策划 C4 / 任务 T-5】炼气九层那道门槛现在要求「择地筑基」，
+  // 所以测试里必须先把一处地点标成「已抵达」，否则询价会卡在「请先择地」。
+  state.cultivation.world = { reached: ['mosscave'], held: [], garrison: {}, unrest: {} };
   // R5 起突破门槛以丹药为主材料，所以测试里先备上
   X.alchemy.addPills('zhuji', 5);
 };
 atGate();
 check('修为满了进入「瓶颈」状态', X.realm.stateOf(1).kind === 'blocked', X.realm.stateOf(1).kind);
 {
-  const plan = X.realm.plan(1);
+  // 【策划 C4 / 任务 T-5】炼气九层那道门槛现在要先择地，所以询价要带 siteId
+  const plan = X.realm.plan(1, 'mosscave');
   check('询价成立', plan.ok === true, plan.reason || '');
   check('写明从哪到哪', plan.fromName === '炼气九层' && plan.toName === '筑基初期');
   check('代价与门槛表一致', plan.stones === 8 && plan.clues === 2, `${plan.stones} 灵石 / ${plan.clues} 线索`);
@@ -367,7 +373,7 @@ atGate();
   const before = state.spiritStones;
   const cluesBefore = state.cultivation.clues;
   const pillsBefore = X.alchemy.pill('zhuji');
-  const r = X.realm.commit(1, () => 0);   // 骰子必成功
+  const r = X.realm.commitWith(1, 'mosscave', () => 0);   // 骰子必成功
   check('成功时晋升到筑基初期', r.success === true && state.cultivation.cultivators[0].realmIndex === 10,
     r.ok ? X.realm.name(state.cultivation.cultivators[0].realmIndex) : r.reason);
   check('成功后修为清零', state.cultivation.cultivators[0].xp === 0);
@@ -382,7 +388,7 @@ atGate();
 {
   const before = state.spiritStones;
   const pillsBefore = X.alchemy.pill('zhuji');
-  const r = X.realm.commit(1, () => 0.999);   // 骰子必失败
+  const r = X.realm.commitWith(1, 'mosscave', () => 0.999);   // 骰子必失败
   const p = state.cultivation.cultivators[0];
   check('失败时留在原境界', r.success === false && p.realmIndex === 9);
   check('失败时修为倒退', near(p.xp, gateNeed - r.loss, 1e-6), `xp=${p.xp}`);
@@ -400,9 +406,9 @@ atGate();
 const other = person({ id: 2, name: '顾云岚', realmIndex: 9, xp: gateNeed, talent: 1.6 });
 state.cultivation.cultivators.push(other);
 check('给出成功率最高的那个', (() => {
-  const best = X.realm.best();
+  const best = X.realm.best('mosscave');
   return best && best.personId === 2;
-})(), JSON.stringify(X.realm.best()?.name));
+})(), JSON.stringify(X.realm.best('mosscave')?.name));
 
 /* ══════════════════════ 8. 灵根 ══════════════════════ */
 
@@ -1559,16 +1565,18 @@ section('炼符：聚灵符（限时修炼加成）');
 section('炼符：三张「下一次」符');
 {
   // 冲关符
+  // 【策划 C4 / 任务 T-5】炼气九层要先择地，所以这里也带上 siteId
+  state.cultivation.world = { reached: ['mosscave'], held: [], garrison: {}, unrest: {} };
   setPeople(person({ id: 1, realmIndex: 9, xp: X.realm.xpNeeded(9), job: 'retreat', talent: 1 }));
   state.spiritStones = 1000; state.cultivation.clues = 50;
   X.alchemy.addPills('zhuji', 5);
-  const plain = X.realm.plan(1).rate;
+  const plain = X.realm.plan(1, 'mosscave').rate;
   X.runes.give('chongguan', 1, 3);
   X.runes.use('chongguan');
-  const boosted = X.realm.plan(1).rate;
+  const boosted = X.realm.plan(1, 'mosscave').rate;
   check('冲关符抬高冲关成功率', boosted > plain,
     `${(plain * 100).toFixed(1)}% → ${(boosted * 100).toFixed(1)}%`);
-  X.realm.commit(1, () => 0);
+  X.realm.commitWith(1, 'mosscave', () => 0);
   check('冲关用掉后加成消失', X.runes.pending().break === 0);
   check('冲关符是一次性的', X.runes.stock('chongguan') === 0);
 }
@@ -1935,12 +1943,14 @@ section('金手指：效果真的接进去了');
   // 戒中老者：冲关 +12 个百分点
   {
     state.meta.active = ['ring'];
+    // 【策划 C4 / 任务 T-5】炼气九层要先择地
+    state.cultivation.world = { reached: ['mosscave'], held: [], garrison: {}, unrest: {} };
     setPeople(person({ id: 1, realmIndex: 9, xp: X.realm.xpNeeded(9), job: 'retreat', talent: 1 }));
     state.spiritStones = 1000; state.cultivation.clues = 50;
     X.alchemy.addPills('zhuji', 5);
-    const withRing = X.realm.plan(1).rate;
+    const withRing = X.realm.plan(1, 'mosscave').rate;
     state.meta.active = [];
-    const without = X.realm.plan(1).rate;
+    const without = X.realm.plan(1, 'mosscave').rate;
     check('戒中老者抬高冲关成功率 +12 个百分点', near(withRing, without + 0.12, 1e-9),
       `${(without * 100).toFixed(1)}% → ${(withRing * 100).toFixed(1)}%`);
   }
@@ -2044,6 +2054,1055 @@ section('轮回：界面');
   X.cycle.render(true);
   check('解锁后出现「携带」按钮', cycleText().includes('携带'),
     cycleText().replace(/\s+/g, ' ').slice(0, 60));
+}
+
+/* ══════════════════════ 15.5 T-0 线索经济闭环（阻断项） ══════════════════════
+ *
+ * 这一节的由来：`scripts/smoke.mjs` 里原有 17 处 `clues` 命中，
+ * **设置值的一律是常量赋值**（`state.cultivation.clues = 50` 再验），
+ * 断言只覆盖「扣减后等于常量」——**产出侧一条断言都没有**。
+ * 于是「线索总产出 20 条 < 四道门槛累计需求 28 条、一周目数学上无法通关」
+ * 这个阻断缺陷在 633 项断言全绿的情况下活了下来。
+ * 本节的每一条都是**产出侧 / 守恒侧**的断言，就是为了让同类缺陷下次立刻暴露。
+ */
+section('T-0 线索经济（产出侧守恒）');
+{
+  const cluesInfo = X.clues();
+  check('四道门槛累计需求 = 2+4+8+14 = 28 条', cluesInfo.gateDemand === 28, `${cluesInfo.gateDemand} 条`);
+
+  // ① 秘闻池集齐之后，寻秘事件仍然产出线索（池空不再等于线索断供）
+  {
+    const S = X.state;
+    const keep = { secrets: S.secrets.slice(), clues: S.cultivation.clues };
+    S.secrets = X.data.map && Array.from({ length: cluesInfo.poolTotal }, (_, i) => i);
+    S.cultivation.clues = 0;
+    const before = S.secrets.length;
+    const added = X.grantSecretForTest();   // 直接走 grantSecret 那条路
+    check('秘闻池集齐后，寻秘仍然产出一条线索', S.cultivation.clues === 1,
+      `clues=${S.cultivation.clues}（返回 ${added}）`);
+    check('池集齐后 secrets 不再增长', S.secrets.length === before, `${before} → ${S.secrets.length}`);
+    S.secrets = keep.secrets;
+    S.cultivation.clues = keep.clues;
+  }
+
+  // ② cluePerSecFlat 登记齐全 + 真的被消费
+  {
+    const S = X.state;
+    const withClue = d.immortalTechs.filter((t) => typeof t.effect?.cluePerSecFlat === 'number');
+    check('有科技提供 cluePerSecFlat（否则线索仍是不可再生资源）', withClue.length >= 2,
+      withClue.map((t) => `${t.id}=${t.effect.cluePerSecFlat}`).join(' '));
+    check('cluePerSecFlat 有界面文案', Boolean(d.effectLabels.cluePerSecFlat));
+    check('cluePerSecFlat 在合法 effect 键表里', d.immortalEffectKeys.includes('cluePerSecFlat'));
+
+    // 真实消费：装上那两项科技，跑 3600 游戏秒，小数池进位成线索
+    const keep = { immortalTechs: (S.immortalTechs || []).slice(), clues: S.cultivation.clues, pool: S.cultivation.cluePool };
+    S.immortalTechs = withClue.map((t) => t.id);
+    S.cultivation.clues = 0;
+    S.cultivation.cluePool = 0;
+    const rate = X.clues().perSec;
+    check('装上探穴/界墟后 cluePerSecFlat 真的累加到了', rate > 0, `${rate}/秒`);
+    setPeople(person({ realmIndex: 1, xp: 0, job: 'retreat', talent: 1 }));
+    X.tick(3600);
+    const gained = X.clues().clues;
+    const expect = Math.floor(rate * 3600);
+    check('跑 3600 秒后线索按 rate×时间 增长', gained >= expect && gained <= expect + 1,
+      `${gained} 条（期望 ${expect}~${expect + 1}）`);
+    S.immortalTechs = keep.immortalTechs;
+    S.cultivation.clues = keep.clues;
+    S.cultivation.cluePool = keep.pool;
+    X.ui.render();
+  }
+
+  // ③ 总产出 ≥ 门槛需求（长期口径）——「以后再加门槛就立刻失败」的那条
+  {
+    const oneShot = cluesInfo.poolTotal;
+    const clueTechs = d.immortalTechs.filter((t) => typeof t.effect?.cluePerSecFlat === 'number');
+    const perSec = clueTechs.reduce((a, t) => a + t.effect.cluePerSecFlat, 0);
+    const cycleHours = X.realm.pacing().total / H;
+    const renewable = Math.floor(perSec * cycleHours * 3600);
+    check('线索总产出（池 + 仙道科技可再生）≥ 四道门槛累计需求',
+      oneShot + renewable >= cluesInfo.gateDemand,
+      `${oneShot} 池 + ${renewable} 可再生 = ${oneShot + renewable} ≥ ${cluesInfo.gateDemand}（${cycleHours.toFixed(1)} 小时）`);
+    // 慢路的余量（docs/91 T-0 供给侧表要求 ≥ +50%）
+    check('慢路（不投帖）对门槛需求留有 ≥ 50% 余量',
+      oneShot + renewable >= cluesInfo.gateDemand * 1.5,
+      `余量 ${(((oneShot + renewable) / cluesInfo.gateDemand - 1) * 100).toFixed(0)}%`);
+  }
+
+  // ④ 冲关失败不再扣线索（否则「缺线索」会变成死局）
+  {
+    atGate();
+    state.cultivation.world = { reached: ['mosscave'], held: [], garrison: {}, unrest: {} };
+    const cluesBefore = state.cultivation.clues;
+    const stonesBefore = state.spiritStones;
+    const r = X.realm.commitWith(1, 'mosscave', () => 0.999);   // 骰子必失败
+    check('冲关失败时扣灵石（备足材料再冲仍有意义）',
+      r.success === false && state.spiritStones === stonesBefore - 8,
+      `${stonesBefore} → ${state.spiritStones}`);
+    check('冲关失败**不再**扣线索', state.cultivation.clues === cluesBefore,
+      `${cluesBefore} → ${state.cultivation.clues}`);
+  }
+}
+
+/* ══════════════════════ 15.6 T-1 存档白名单（阻断项） ══════════════════════
+ *
+ * 这一节存在的理由与上一节同源：原来的存档断言只查 `saved.cultivation.*` 内部，
+ * 而从没有一条查过「**顶层**字段经过 serialize 之后还在不在」。
+ * 于是 `serialize()` 漏掉 immortalTechs / morality / exchangeCount 三个顶层字段、
+ * 刷新一次整条仙道科技线归零，而测试全绿。
+ */
+section('T-1 存档白名单（顶层字段）');
+{
+  // ① 结构性断言：createState 的每个顶层字段都必须被写出
+  const freshState = X.save.hydrate({ createdAt: 0 });
+  const serialized = X.save.serialize(freshState);
+  // 唯一允许不持久化的运行时字段：lastSeen（在 hydrate 里由 savedAt 赋值）
+  const NOT_PERSISTED = ['lastSeen'];
+  const missingKeys = Object.keys(freshState)
+    .filter((k) => !NOT_PERSISTED.includes(k))
+    .filter((k) => !(k in serialized));
+  check('createState 的每个顶层字段都在 serialize() 里（防止再漏字段）',
+    missingKeys.length === 0, missingKeys.join(',') || '一个都没漏');
+  check('不持久化白名单只有 lastSeen', NOT_PERSISTED.length === 1 && NOT_PERSISTED[0] === 'lastSeen');
+  check('serialize 的键全都是 createState 的键（没有多余字段）',
+    Object.keys(serialized).filter((k) => k !== 'savedAt' && !(k in freshState)).length === 0,
+    Object.keys(serialized).filter((k) => k !== 'savedAt' && !(k in freshState)).join(',') || '');
+  check('三个曾经漏掉的字段都在 serialize 里',
+    ['immortalTechs', 'morality', 'exchangeCount'].every((k) => k in serialized));
+
+  // ② 往返断言：断言**值**不丢（不是「字段存在」）
+  {
+    const S = X.state;
+    const keep = {
+      immortalTechs: (S.immortalTechs || []).slice(),
+      morality: S.morality, exchangeCount: S.exchangeCount,
+      clockYear: Number(S.clock?.year) || 0,
+      metaPoints: X.cycle.meta().points,
+    };
+    S.immortalTechs = ['yinling', 'lingtian'];
+    S.morality = 18;
+    S.exchangeCount = 3;
+    S.clock = { year: 321 };
+    X.cycle.grantPoints(4);
+    const back = X.save.roundTrip();
+    check('往返后 immortalTechs 的值不丢', JSON.stringify(back.immortalTechs) === JSON.stringify(['yinling', 'lingtian']),
+      JSON.stringify(back.immortalTechs));
+    check('往返后 morality 的值不丢', back.morality === 18, `${back.morality}`);
+    check('往返后 exchangeCount 的值不丢', back.exchangeCount === 3, `${back.exchangeCount}`);
+    check('往返后 clock.year 的值不丢', back.clock.year === 321, `${back.clock?.year}`);
+    check('往返后轮回点数不丢（meta 也是顶层字段）', back.meta.points === keep.metaPoints + 4, `${back.meta.points}`);
+    S.immortalTechs = keep.immortalTechs;
+    S.morality = keep.morality;
+    S.exchangeCount = keep.exchangeCount;
+    S.clock = { year: keep.clockYear };
+    X.cycle.meta().points = keep.metaPoints;
+    X.ui.render();
+  }
+
+  // ③ 旧存档（完全没有这三个字段）载入时不炸、走默认值
+  {
+    const legacy = X.save.hydrate({ createdAt: 0, cultivation: { cultivators: [] } });
+    check('旧存档载入不炸且三个字段走默认值',
+      Array.isArray(legacy.immortalTechs) && legacy.immortalTechs.length === 0
+      && legacy.exchangeCount === 0 && legacy.morality === 50,
+      `${JSON.stringify(legacy.immortalTechs)}/${legacy.exchangeCount}/${legacy.morality}`);
+    check('旧存档载入后 clock 存在且归零', legacy.clock && legacy.clock.year === 0);
+  }
+}
+
+/* ══════════════════════ 15.7 T-2 / T-2b 仪表盘与寿元钟 ══════════════════════ */
+section('T-2 境界仪表盘 + personState');
+{
+  const dash = document.getElementById('realm-dashboard');
+  check('#realm-dashboard 存在', Boolean(dash));
+  setPeople(person({ realmIndex: 5, xp: 0, job: 'retreat', talent: 1 }));
+  X.ui.render();
+  check('炼气期仪表渲染行气条 .dash-qi', Boolean(dash.querySelector('.dash-qi')));
+  check('炼气期**不**渲染 .dash-foundation（未解锁的机制 DOM 里不存在）',
+    dash.querySelector('.dash-foundation') === null);
+  setPeople(person({ realmIndex: 12, xp: 0, job: 'retreat', talent: 1 }));
+  X.ui.render();
+  check('筑基期仪表渲染 .dash-foundation', Boolean(dash.querySelector('.dash-foundation')));
+  check('筑基期不再渲染 .dash-qi', dash.querySelector('.dash-qi') === null);
+  setPeople(person({ realmIndex: 15, xp: 0, job: 'retreat', talent: 1 }));
+  X.ui.render();
+  check('金丹期仪表渲染丹图 .dash-core', Boolean(dash.querySelector('.dash-core')));
+  setPeople(person({ realmIndex: 19, xp: 0, job: 'retreat', talent: 1 }));
+  X.ui.render();
+  check('元婴期仪表渲染 .dash-nascent', Boolean(dash.querySelector('.dash-nascent')));
+  setPeople(person({ realmIndex: 23, xp: 0, job: 'retreat', talent: 1 }));
+  X.ui.render();
+  check('化神期仪表渲染 .dash-tribulation', Boolean(dash.querySelector('.dash-tribulation')));
+  check('每格仪表都带 [查百科] 链接（data-target-page="codex"）',
+    dash.querySelectorAll('[data-target-page="codex"]').length === 1);
+  check('凡人（无修士）时仪表隐藏', (() => {
+    setPeople();
+    X.ui.render();
+    return dash.hidden === true && dash.querySelector('.dash-qi') === null;
+  })());
+  check('dashboardVisible() 与渲染出来的那一格一致', (() => {
+    setPeople(person({ realmIndex: 12, xp: 0, job: 'retreat', talent: 1 }));
+    return X.visible.dashboard('foundation') && !X.visible.dashboard('qi');
+  })());
+}
+
+{
+  // personState 是 breakthroughState 的**严格超集**：新态之外必须逐位一致
+  const samples = [
+    { realmIndex: 1, xp: 0, job: 'retreat' },
+    { realmIndex: 9, xp: 0, job: 'retreat' },
+    { realmIndex: 9, xp: X.realm.xpNeeded(9), job: 'retreat' },
+    { realmIndex: 9, xp: X.realm.xpNeeded(9), job: 'sect' },
+    { realmIndex: 12, xp: 10, job: 'retreat' },
+    { realmIndex: 13, xp: X.realm.xpNeeded(13), job: 'retreat' },
+    { realmIndex: 14, xp: 0, job: 'retreat' },
+    { realmIndex: 14, xp: X.realm.xpNeeded(14), job: 'retreat' },
+    { realmIndex: 25, xp: 0, job: 'retreat' },
+    { realmIndex: 3, xp: 0, job: 'labor' },
+    { realmIndex: 3, xp: 0, job: 'guard' },
+  ];
+  const mismatch = [];
+  for (const over of samples) {
+    setPeople(person(over));
+    const p = state.cultivation.cultivators[0];
+    if (X.realm.personState(1) !== X.realm.stateOf(1).kind) {
+      mismatch.push(`${JSON.stringify(over)}: ${X.realm.personState(1)} vs ${X.realm.stateOf(1).kind}`);
+    }
+  }
+  check('personState() 与 breakthroughState() 在不涉及新态时逐位一致',
+    mismatch.length === 0, mismatch.join(' | '));
+
+  setPeople(person({ realmIndex: 3, xp: 0, job: 'errand' }));
+  check('差事在外 → personState = out', X.realm.personState(1) === 'out');
+  setPeople(person({ realmIndex: 3, xp: 0, job: 'retreat', stalled: 5 }));
+  check('气机滞住 → personState = stalled', X.realm.personState(1) === 'stalled');
+  setPeople(person({ realmIndex: 14, xp: X.realm.xpNeeded(14), job: 'retreat' }));
+  check('金丹满修为 → personState = folding', X.realm.personState(1) === 'folding');
+  check('personState(不存在的 id) = mortal', X.realm.personState(9999) === 'mortal');
+  check('九个合法返回值不多不少（含 mortal）', (() => {
+    const seen = new Set();
+    const probes = [
+      null,
+      { realmIndex: 3, xp: 0, job: 'errand' },
+      { realmIndex: 3, xp: 0, job: 'retreat', stalled: 1 },
+      { realmIndex: 14, xp: X.realm.xpNeeded(14), job: 'retreat' },
+      { realmIndex: 25, xp: 0, job: 'retreat' },
+      { realmIndex: 3, xp: 0, job: 'retreat' },
+      { realmIndex: 9, xp: 0, job: 'retreat' },
+      { realmIndex: 9, xp: X.realm.xpNeeded(9), job: 'retreat' },
+    ];
+    for (const probe of probes) {
+      setPeople(probe ? person(probe) : null);
+      if (!probe) setPeople();
+      seen.add(probe ? X.realm.personState(1) : X.realm.personState(9999));
+    }
+    const legal = ['mortal', 'max', 'progressing', 'filling', 'blocked', 'folding', 'errand', 'stalled', 'out'];
+    return [...seen].every((k) => [...legal, 'out', 'stalled'].includes(k));
+  })());
+
+  setPeople(person({ realmIndex: 12, xp: 0, job: 'retreat', talent: 1 }));
+  X.ui.render();
+  const tags = document.querySelectorAll('#cultivator-list .state-tag');
+  check('修士卡片上不出现两个状态标记（每张卡 ≤ 1 个）',
+    tags.length <= 1 && document.querySelectorAll('#cultivator-list .cultivator-card').length === 1,
+    `${tags.length} 个标记 / ${document.querySelectorAll('#cultivator-list .cultivator-card').length} 张卡`);
+}
+
+section('T-2b 寿元钟（收窄版）');
+{
+  check('state.clock 存在', Boolean(X.state.clock), JSON.stringify(X.state.clock));
+  // ① 在线推进 1 游戏小时 → year 恰好 +25
+  {
+    X.state.clock = { year: 0 };
+    setPeople(person({ realmIndex: 5, xp: 0, job: 'retreat', talent: 1 }));
+    X.tick(3600);
+    check('在线推进 1 游戏小时 → year +25', near(X.state.clock.year, 25, 1e-9), `${X.state.clock.year}`);
+    check('在线推进（时间推进路径）与 tick 口径一致', (() => {
+      const before = X.state.clock.year;
+      X.step(3600);
+      return near(X.state.clock.year - before, 25, 1e-9);
+    })(), `${X.state.clock.year}`);
+  }
+  // ② 离线不推年份（本条唯一的硬约束）
+  {
+    const before = X.state.clock.year;
+    X.offline(12 * 3600);
+    check('离线 12 小时**不推**年份', X.state.clock.year === before,
+      `${before} → ${X.state.clock.year}`);
+  }
+  // ③ 境界变化重置 realmEnteredYear
+  {
+    X.state.clock = { year: 100 };
+    setPeople(person({ realmIndex: 1, xp: 0, job: 'retreat', talent: 1, realmEnteredYear: 0 }));
+    X.step(200000);   // 一路自动晋升
+    const p = state.cultivation.cultivators[0];
+    check('自动晋升后 realmEnteredYear 跟着重置', p.realmEnteredYear === X.state.clock.year,
+      `${p.realmEnteredYear} vs ${X.state.clock.year}`);
+    atGate();
+    X.state.cultivation.world = { reached: ['mosscave'], held: [], garrison: {}, unrest: {} };
+    X.state.cultivation.cultivators[0].realmEnteredYear = 0;
+    const r = X.realm.commitWith(1, 'mosscave', () => 0);
+    check('冲关成功后 realmEnteredYear 也被重置',
+      r.success === true && state.cultivation.cultivators[0].realmEnteredYear === X.state.clock.year,
+      `${state.cultivation.cultivators[0].realmEnteredYear} vs ${X.state.clock.year}`);
+  }
+  // ④ 族谱上出现「寿 X，余 Y」+ 三档配色
+  {
+    X.state.clock = { year: 0 };
+    setPeople(person({ realmIndex: 5, xp: 0, job: 'retreat', talent: 1, realmEnteredYear: 0 }));
+    X.ui.render();
+    const text = () => document.getElementById('cultivator-list').textContent;
+    check('炼气期修士的寿元上限是 120', X.realm.lifespan(1).max === 120, `${X.realm.lifespan(1).max}`);
+    check('族谱上出现「寿 120，余 …」', /寿\s*120，余\s*\d+/.test(text()), text().replace(/\s+/g, ' ').slice(0, 80));
+    check('筑基期上限 300 / 金丹 700 / 元婴 1500 / 化神 3000',
+      X.realm.lifespan(1).max === 120
+      && (setPeople(person({ realmIndex: 12 })), X.realm.lifespan(1).max === 300)
+      && (setPeople(person({ realmIndex: 15 })), X.realm.lifespan(1).max === 700)
+      && (setPeople(person({ realmIndex: 19 })), X.realm.lifespan(1).max === 1500)
+      && (setPeople(person({ realmIndex: 23 })), X.realm.lifespan(1).max === 3000));
+    // 三档配色：余量 > 50% 正常 / 20–50% 黄 / < 20% 红
+    const clsAt = (year) => {
+      X.state.clock = { year };
+      setPeople(person({ realmIndex: 12, xp: 0, job: 'retreat', talent: 1, realmEnteredYear: 0 }));
+      X.ui.render();
+      const el = document.querySelector('#cultivator-list .cultivator-life');
+      return el ? el.className : '';
+    };
+    check('余量 > 50% → 正常配色', clsAt(0).includes('dash-life-normal'), clsAt(0));
+    check('余量 20–50% → 黄色', clsAt(200).includes('dash-life-warn'), clsAt(200));
+    check('余量 < 20% → 红色', clsAt(280).includes('dash-life-danger'), clsAt(280));
+    check('余量耗尽 → 灰色「寿元已尽…」，且**不产生任何惩罚**', (() => {
+      const c = clsAt(400);
+      const stillThere = state.cultivation.cultivators.length === 1;
+      return c.includes('dash-life-gone') && stillThere;
+    })(), clsAt(400));
+    check('寿元耗尽不会让修士消失（收窄版不做老死）', state.cultivation.cultivators.length === 1);
+    X.state.clock = { year: 0 };
+  }
+  // ⑤ 旧存档兼容
+  {
+    const legacy = X.save.hydrate({
+      createdAt: 0,
+      cultivation: { cultivators: [{ id: 1, realmIndex: 7, xp: 0, job: 'retreat' }] },
+    });
+    check('旧存档的修士补上了 realmEnteredYear: 0',
+      legacy.cultivation.cultivators[0].realmEnteredYear === 0);
+    check('旧存档补上了 clock', legacy.clock && legacy.clock.year === 0);
+  }
+}
+
+/* ══════════════════════ 15.8 T-3 猛进行气 ══════════════════════ */
+section('T-3 猛进行气（炼气期的第一个决策）');
+{
+  // ① 修为倍率恰好 2.2
+  {
+    const runXp = (push, rngFn) => {
+      // population 归零：用 () => 0 这类极端骰子时，天然出生会把「生一个修士」
+      // 也判成必触发，从而干扰「骰子只用来验走火」这条断言。
+      state.population = 0;
+      setPeople(person({ realmIndex: 3, xp: 0, job: 'retreat', talent: 1, push, stalled: 0 }));
+      state.cultivation.manuals = [];
+      state.cultivation.equippedManual = null;
+      state.meta.active = [];
+      X.setRng(rngFn);
+      X.tick(100);
+      X.setRng(null);
+      return state.cultivation.cultivators[0];
+    };
+    const slow = runXp(false, () => 0.999999);
+    const fast = runXp(true, () => 0.999999);
+    check('猛进的修为增量恰好是缓修的 2.2 倍', near(fast.xp / slow.xp, 2.2, 1e-6), `${(fast.xp / slow.xp).toFixed(6)}`);
+  }
+  // ② 走火：本层修为清零（不是全境界清零）
+  {
+    state.population = 0;
+    setPeople(person({ realmIndex: 3, xp: 20, job: 'retreat', talent: 1, push: true, stalled: 0 }));
+    X.setRng(() => 0);
+    X.tick(1);
+    X.setRng(null);
+    const p = state.cultivation.cultivators[0];
+    check('骰子必触发 → 本层修为清零', p.xp === 0, `${p.xp}`);
+    check('走火只回退到「刚进这一层」，境界不变', p.realmIndex === 3, X.realm.name(p.realmIndex));
+    check('走火**不产生死亡**（走火买的是时间，不是人）', state.cultivation.cultivators.length === 1,
+      `${state.cultivation.cultivators.length} 人`);
+  }
+  {
+    state.population = 0;
+    setPeople(person({ realmIndex: 3, xp: 0, job: 'retreat', talent: 1, push: false, stalled: 0 }));
+    X.setRng(() => 0);
+    X.tick(1);
+    X.setRng(null);
+    check('缓修时有骰子也不走火', state.cultivation.cultivators.length === 1 && state.cultivation.cultivators[0].xp <= 1,
+      `${state.cultivation.cultivators.length} 人 / xp=${state.cultivation.cultivators[0]?.xp}（缓修 1 秒约 +1）`);
+  }
+  // ③ stalled 递减
+  {
+    setPeople(person({ realmIndex: 3, xp: 0, job: 'retreat', talent: 1, push: false, stalled: 10 }));
+    X.setRng(() => 0.999999);
+    X.tick(4);
+    X.setRng(null);
+    const p = state.cultivation.cultivators[0];
+    check('stalled 每秒递减 1（10 − 4 = 6）', p.stalled === 6, `${p.stalled}`);
+    check('stalled > 0 时不涨修为', p.xp === 0, `${p.xp}`);
+  }
+  // ④ 期望走火次数：可算的风险
+  {
+    const expectAt = (idx) => (X.realm.at(idx).local * 1e-4 * X.realm.xpNeeded(idx)) / 2.2;
+    check('九层期望走火 1.49 次（与 docs/91 T-3 表逐位一致）', near(expectAt(9), 1.491, 0.01),
+      `${expectAt(9).toFixed(3)}`);
+    check('八层期望走火 1.05 次', near(expectAt(8), 1.047, 0.01), `${expectAt(8).toFixed(3)}`);
+    check('一层期望走火 0.002 次（低层几乎免费）', expectAt(1) < 0.01, `${expectAt(1).toFixed(4)}`);
+    setPeople(person({ realmIndex: 9, xp: 0, job: 'retreat', talent: 1, push: false }));
+    X.ui.render();
+    const text = document.getElementById('cultivator-list').textContent;
+    check('卡片上写出「期望走火 X 次」（带一位小数，不是「有风险」）',
+      /期望走火\s*1\.\d/.test(text), text.replace(/\s+/g, ' ').slice(0, 100));
+  }
+  // ⑤ 开关只对炼气 + 闭关开放
+  {
+    setPeople(person({ realmIndex: 5, xp: 0, job: 'retreat', talent: 1 }));
+    X.ui.render();
+    check('炼气 + 闭关 → 有猛进开关', document.querySelectorAll('#cultivator-list [data-push]').length === 1);
+    setPeople(person({ realmIndex: 5, xp: 0, job: 'sect', talent: 1 }));
+    X.ui.render();
+    check('宗门修士 → 没有猛进开关（否则 3.5×2.2 会让宗门成为唯一解）',
+      document.querySelectorAll('#cultivator-list [data-push]').length === 0);
+    setPeople(person({ realmIndex: 12, xp: 0, job: 'retreat', talent: 1 }));
+    X.ui.render();
+    check('筑基以上 → 没有猛进开关', document.querySelectorAll('#cultivator-list [data-push]').length === 0);
+  }
+  // ⑥ 旧存档兼容
+  {
+    const legacy = X.save.hydrate({ createdAt: 0, cultivation: { cultivators: [{ id: 1, realmIndex: 4, xp: 0, job: 'retreat' }] } });
+    const p = legacy.cultivation.cultivators[0];
+    check('旧存档载入后 push === false', p.push === false);
+    check('旧存档载入后 stalled === 0', p.stalled === 0);
+  }
+}
+
+/* ══════════════════════ 15.9 T-4 投帖问路 ══════════════════════ */
+section('T-4 投帖问路（拿族人的命换线索）');
+{
+  // ① 差事接进三处数据驱动的地方
+  check('职责表里有 errand（差事）', Boolean(X.data.jobs.errand), Object.keys(X.data.jobs).join(','));
+  check('职责计数里出现「差事」', (() => {
+    setPeople(person({ realmIndex: 3, job: 'errand' }));
+    X.ui.render();
+    const text = document.getElementById('cultivator-job-stats').textContent;
+    return text.includes('差事');
+  })());
+  check('下拉框里有「差事」选项', (() => {
+    setPeople(person({ realmIndex: 3, job: 'retreat' }));
+    X.ui.render();
+    return document.querySelector('#cultivator-list select[data-assign-id]').textContent.includes('差事');
+  })());
+  check('百科里有「差事」条目', (() => {
+    const book = X.codex.book();
+    return JSON.stringify(book).includes('差事');
+  })());
+
+  // ② 在外的人不涨修为
+  {
+    state.population = 0;
+    setPeople(person({ realmIndex: 3, xp: 0, job: 'errand', talent: 1 }));
+    X.setRng(() => 0.999999);
+    X.tick(600);
+    X.setRng(null);
+    check('差事在外的人跑 progressCultivators 后 xp 不变',
+      state.cultivation.cultivators.length === 1 && state.cultivation.cultivators[0].xp === 0,
+      `${state.cultivation.cultivators.length} 人 / xp=${state.cultivation.cultivators[0]?.xp}`);
+  }
+
+  // ③ 不能被派去镇守 / 探险
+  {
+    setPeople(person({ realmIndex: 3, job: 'errand', talent: 1 }));
+    state.cultivation.world = { reached: ['mosscave', 'valley'], held: ['valley'], garrison: {}, unrest: {} };
+    check('在外的人不能被派去镇守', X.map.garrison('valley', 1).ok === false, X.map.garrison('valley', 1).reason);
+    check('在外的人不能去洞天探险', X.map.explore(1, 'mosscave').ok === false, X.map.explore(1, 'mosscave').reason);
+    check('在外的人不在镇守候选名单里（宗门修士同理）', (() => {
+      setPeople(
+        person({ id: 1, realmIndex: 3, job: 'errand', talent: 1 }),
+        person({ id: 2, realmIndex: 3, job: 'sect', talent: 1 }),
+        person({ id: 3, realmIndex: 3, job: 'retreat', talent: 1 }),
+      );
+      const cands = X.map.garrisonCandidates();
+      return cands.length === 1 && cands[0] === 3;
+    })(), JSON.stringify(X.map.garrisonCandidates()));
+  }
+
+  // ④ 线索产出（受控骰子：第一次判不死、第二次判得线索）
+  {
+    // population 归零：用极端骰子时天然出生会把人数搅乱
+    state.population = 0;
+    setPeople(person({ realmIndex: 3, job: 'errand', talent: 1 }));
+    state.cultivation.clues = 0;
+    state.log = [];
+    // 每次 tick 里，在外的人两个骰子：① 死？② 线索？→ 先高后 0
+    let roll = 0;
+    X.setRng(() => (roll += 1) % 2 === 1 ? 0.999999 : 0);
+    X.tick(1);
+    X.setRng(null);
+    check('在外的人必定带回线索时，clues +1', state.cultivation.clues === 1, `${state.cultivation.clues}`);
+    check('线索日志里带上了那个人的名字',
+      state.log.some((e) => typeof e.text === 'string' && e.text.includes('林清衡') && e.text.includes('线索')),
+      (state.log[0]?.text || '').slice(0, 40));
+    state.population = 0;
+    setPeople(person({ realmIndex: 3, job: 'errand', talent: 1 }));
+    state.cultivation.clues = 0;
+    X.seedRng(20260101);
+    X.tick(1);
+    check('在外 1 秒大概率不得线索（2.5e-5 的速率）', state.cultivation.clues === 0, `${state.cultivation.clues}`);
+  }
+
+  // ⑤ 死亡：只死在外的人，且写讣告
+  {
+    state.population = 0;
+    setPeople(person({ realmIndex: 3, job: 'errand', talent: 1 }));
+    state.stats.deaths = 0;
+    state.log = [];
+    X.setRng(() => 0);   // 第一次判定即「不回来」
+    X.tick(1);
+    X.setRng(null);
+    check('骰子必死 → 那个在外的人消失了', state.cultivation.cultivators.length === 0, `${state.cultivation.cultivators.length}`);
+    check('讣告写进了纪事，且带名字',
+      state.log.some((e) => typeof e.text === 'string' && e.text.includes('林清衡')),
+      (state.log[0]?.text || '').slice(0, 40));
+    check('死亡率恒为 0 时不死人', (() => {
+      state.population = 0;
+      setPeople(person({ realmIndex: 3, job: 'errand', talent: 1 }));
+      X.setRng(() => 0.999999);
+      X.tick(3600);
+      X.setRng(null);
+      return state.cultivation.cultivators.length === 1;
+    })());
+  }
+
+  // ⑥ 投帖与召回（走真实的行动入口）
+  {
+    setPeople(
+      person({ id: 1, realmIndex: 3, job: 'retreat', talent: 1 }),
+      person({ id: 2, realmIndex: 3, job: 'retreat', talent: 1 }),
+    );
+    const r = X.immortalAction('errand', '1,2');
+    check('投帖：两人都变成「差事」', r.ok === true
+      && state.cultivation.cultivators.every((p) => p.job === 'errand'), r.reason.slice(0, 30));
+    check('投帖日志带「回不来」的可算概率', /%/ .test(r.reason), r.reason.slice(0, 60));
+    const r2 = X.immortalAction('recall', '1');
+    check('召回：瞬时生效、无冷却',
+      r2.ok === true && state.cultivation.cultivators[0].job === 'retreat', r2.reason);
+    check('投帖不过炼气期（筑基以上拒绝）', (() => {
+      setPeople(person({ id: 1, realmIndex: 12, job: 'retreat', talent: 1 }));
+      return X.immortalAction('errand', '1').ok === false;
+    })());
+    check('投帖不派宗门修士', (() => {
+      setPeople(person({ id: 1, realmIndex: 3, job: 'sect', talent: 1 }));
+      return X.immortalAction('errand', '1').ok === false;
+    })());
+  }
+
+  // ⑦ 卡片上的勾选框与按钮
+  {
+    setPeople(person({ id: 1, realmIndex: 3, job: 'retreat', talent: 1 }));
+    X.ui.render();
+    check('炼气族人卡片上有投帖勾选框',
+      document.querySelectorAll('#cultivator-list [data-errand-check]').length === 1);
+    check('在外的人卡片上有「召回」按钮', (() => {
+      setPeople(person({ id: 1, realmIndex: 3, job: 'errand', talent: 1 }));
+      X.ui.render();
+      return document.querySelectorAll('#cultivator-list [data-recall]').length === 1;
+    })());
+  }
+}
+
+/* ══════════════════════ 15.10 T-5 择地筑基 ══════════════════════ */
+section('T-5 择地筑基（地块变成永久 build）');
+{
+  const prep = (reached) => {
+    atGate();
+    state.cultivation.world = { reached, held: [], garrison: {}, unrest: {} };
+    state.spiritStones = 1000;
+    state.cultivation.clues = 50;
+    X.alchemy.addPills('zhuji', 5);
+  };
+
+  // ① 候选清单只列走到过的节点
+  prep(['mosscave']);
+  check('只走到 mosscave → 候选 1 项', X.realm.foundationSites().length === 1, `${X.realm.foundationSites().length}`);
+  check('未择地时冲关被拒，且理由点名「择地」',
+    X.realm.plan(1).ok === false && X.realm.plan(1).reason.includes('择地'), X.realm.plan(1).reason);
+  prep(['mosscave', 'valley', 'mistcave']);
+  check('走到三处 → 候选 3 项', X.realm.foundationSites().length === 3, `${X.realm.foundationSites().length}`);
+  check('走到 mosscave 后可择地冲关', X.realm.plan(1, 'mosscave').ok === true, X.realm.plan(1, 'mosscave').reason);
+
+  // ② 品阶由 tier 推导（+ 已镇守晋一档）
+  check('tier 1/2/3/4 → 黄/玄/地/天',
+    ['huang', 'xuan', 'di', 'tian'].every((id, i) => X.realm.foundationGrade(i + 1, false).id === id));
+  check('已占领且有效镇守 → 晋一档（含天品越档为仙品 ×1.65）',
+    X.realm.foundationGrade(1, true).id === 'xuan' && X.realm.foundationGrade(4, true).mult === 1.65);
+
+  // ③ 相合 / 相冲（判定依据是**灵根主系**，不是主修功法系别）
+  {
+    prep(['mosscave', 'valley']);
+    setPeople(person({ id: 1, realmIndex: 9, xp: gateNeed, job: 'retreat', talent: 1, root: { grade: 'quad', elements: ['wood', 'water', 'fire', 'earth'], rerolls: 0 } }));
+    const match = X.realm.foundationPlan(1, 'mosscave').preview;
+    check('木灵根 + 木地气 → 相合 ×1.5', match.relation === 'match' && near(match.entryMult, 1.5, 1e-9),
+      `${match.relation} ×${match.entryMult}`);
+    setPeople(person({ id: 1, realmIndex: 9, xp: gateNeed, job: 'retreat', talent: 1, root: { grade: 'quad', elements: ['metal', 'water', 'fire', 'earth'], rerolls: 0 } }));
+    const clash = X.realm.foundationPlan(1, 'mosscave').preview;
+    check('金灵根 + 木地气 → 相冲 ×0.6（金克木）', clash.relation === 'clash' && near(clash.entryMult, 0.6, 1e-9),
+      `${clash.relation} ×${clash.entryMult}`);
+    setPeople(person({ id: 1, realmIndex: 9, xp: gateNeed, job: 'retreat', talent: 1, root: { grade: 'quad', elements: ['water', 'metal', 'fire', 'earth'], rerolls: 0 } }));
+    const neutral = X.realm.foundationPlan(1, 'mosscave').preview;
+    check('水灵根 + 木地气 → 无涉 ×1.0', neutral.relation === 'neutral' && near(neutral.entryMult, 1, 1e-9),
+      `${neutral.relation} ×${neutral.entryMult}`);
+    check('预览里带「地气 / 品阶 / 词条 ×N」三行字', (() => {
+      X.ui.render();
+      const t = document.getElementById('cultivator-list').textContent;
+      return t.includes('地气') && t.includes('品阶') && /×1\.\d\d/.test(t);
+    })());
+  }
+
+  // ④ 提交后落库
+  {
+    prep(['mosscave']);
+    setPeople(person({ id: 1, realmIndex: 9, xp: gateNeed, job: 'retreat', talent: 1, root: { grade: 'quad', elements: ['wood', 'water', 'fire', 'earth'], rerolls: 0 } }));
+    const r = X.realm.commitWith(1, 'mosscave', () => 0);
+    const p = state.cultivation.cultivators[0];
+    check('冲关成功后落库 person.foundation = { nodeId, element, grade }',
+      r.success === true && p.foundation && p.foundation.nodeId === 'mosscave'
+      && p.foundation.element === 'wood' && p.foundation.grade === 1,
+      JSON.stringify(p.foundation));
+    check('存档往返覆盖 foundation', (() => {
+      const back = X.save.roundTrip();
+      const q = back.cultivation.cultivators[0];
+      return q.foundation && q.foundation.nodeId === 'mosscave' && q.foundation.grade === 1;
+    })());
+  }
+
+  // ⑤ 五条词条各接一个真实消费点
+  {
+    // 「有效镇守」需要一名**战力足够**的人站在那块地上，而它必须是名册里的人。
+    // 所以这里统一保留一个守将（id 9），再让被测者（id 1）拿道基 ——
+    // 直接把名册换成一个人会把守将弄丢，然后 quietly 变成「地块已失、词条减半」。
+    const HOLD = (realm = 14) => person({ id: 9, name: '沈守', realmIndex: realm, xp: 0, job: 'garrison', talent: 1 });
+    const make = (element, nodeId, grade = 4) => {
+      setPeople(
+        person({ id: 1, realmIndex: 12, xp: 0, job: 'retreat', talent: 1, foundation: { nodeId, element, grade } }),
+        HOLD(),
+      );
+      state.cultivation.world = { reached: ['mosscave', 'valley', 'mistcave', 'ridge'], held: ['valley', 'ridge'], garrison: { valley: 9, ridge: 9 }, unrest: {} };
+      return state.cultivation.cultivators[0];
+    };
+    const clearF = () => { if (state.cultivation.cultivators[0]) state.cultivation.cultivators[0].foundation = null; };
+    // ── 逐条地气词条：把灵根主系换成与地气**相合**，才能看到满额词条 ──
+    // ⚠ 本文件的 person() 默认灵根是「金水火力土」（主系金），对木地气是**相冲 ×0.6**。
+    //   不显式改灵根，测出来的是「相冲」那一档 —— 这正是一开始踩到的坑。
+    const makeMatch = (element, nodeId, grade = 4) => {
+      const p = make(element, nodeId, grade);
+      p.root = { grade: 'quad', elements: [element, 'metal', 'fire', 'earth'], rerolls: 0 };
+      return p;
+    };
+
+    // 木 → 炼丹成功率
+    // ⚠ 熟练度与丹炉等级都必须压在基准上：它们各给 +1.5pp/炉 与 +2pp/级，
+    //   前面那些炼丹用例已经把它们刷上去了，于是 recipeRate() 会顶在 98% 硬顶上
+    //   —— 那样测出来的是「离封顶还有多少」，不是「道基加了多少」。
+    //   （docs/91 §七.3 第 4 条说的就是这条硬顶。）
+    state.cultivation.alchemy = { herbs: {}, pills: {}, prof: { zhuji: 0 }, furnace: 1, crafts: 0 };
+    make(null, 'mosscave');
+    clearF();
+    const rateBase = X.alchemy.rate('zhuji');
+    makeMatch('wood', 'valley', 1);
+    const rateWood = X.alchemy.rate('zhuji');
+    check('木词条抬高 recipeRate()', rateWood > rateBase, `${rateBase.toFixed(4)} → ${rateWood.toFixed(4)}`);
+    // 玄品（tier1 已镇守晋一档 ×1.10）× 相合 ×1.5 = 8pp × 1.65 = 13.2pp
+    // ⚠ 期望值是「乘积」而不是文档里那个 ×1.5 单独用出来的 12pp：
+    //   docs/91 §三 T-5 的品阶表说「品阶倍率乘的是**一条词条**」，
+    //   所以基准值要先过品阶、再过相合 —— 12pp 那一列只是「品阶 = 黄品」时的特例。
+    check('木词条（已镇守晋一档 × 相合）恰好 +13.2pp',
+      near(rateWood - rateBase, 0.132, 1e-6), `+${((rateWood - rateBase) * 100).toFixed(2)}pp`);
+    check('木词条恰好 = 基准 8pp × 品阶 1.10 × 相合 1.5',
+      near(rateWood - rateBase, 0.08 * 1.10 * 1.5, 1e-9), `+${((rateWood - rateBase) * 100).toFixed(2)}pp`);
+
+    // 相冲那一档：同一块地、同一品阶，只把灵根主系换成克它的金
+    {
+      make(null, 'mosscave');
+      clearF();
+      const b = X.alchemy.rate('zhuji');
+      // ⚠ 这里用 makeMatch 会把灵根主系设成同名元素 —— 对「金」而言那是**相合**，
+      //   测不出相冲。改用 make()（默认灵根主系就是金，金克木 = 相冲）。
+      make('wood', 'valley', 1);
+      const c = X.alchemy.rate('zhuji');
+      check('木词条相冲（金灵根）恰好 = 8pp × 1.10 × 0.6 = +5.28pp',
+        near(c - b, 0.08 * 1.10 * 0.6, 1e-9), `+${((c - b) * 100).toFixed(2)}pp`);
+    }
+
+    // 土 → 领地赋税（valley 是 tier 1，已镇守晋一档 = 玄品 ×1.10）
+    make(null, 'mosscave');
+    clearF();
+    const yBase = X.realm.mapYieldOf('valley');
+    makeMatch('earth', 'valley', 4);
+    const yTu = X.realm.mapYieldOf('valley');
+    check('土词条抬高 mapYieldOf()', yTu > yBase, `${yBase} → ${yTu}`);
+    check('土词条（玄品 1.10 × 相合 1.5）× 基准 25% = +41.25%',
+      near(yTu / yBase - 1, 0.25 * 1.10 * 1.5, 1e-6), `+${((yTu / yBase - 1) * 100).toFixed(2)}%`);
+
+    // 水 → 洞天生还率（mosscave 是洞天，不需要镇守）
+    make(null, 'mosscave');
+    clearF();
+    const sBase = X.manual.survival(1, 'mosscave');
+    makeMatch('water', 'mosscave', 4);
+    const sShui = X.manual.survival(1, 'mosscave');
+    check('水词条抬高 caveSurvival()', sShui > sBase, `${sBase.toFixed(4)} → ${sShui.toFixed(4)}`);
+
+    // 火 → 符箓保质期
+    make(null, 'mosscave');
+    clearF();
+    state.cultivation.runes.stock.juling = { n: 1, expiresAt: Date.now() + 10 * 3600 * 1000 };
+    const eBase = X.runes.expiresIn('juling');
+    state.cultivation.runes.stock.juling = { n: 1, expiresAt: Date.now() + 10 * 3600 * 1000 };
+    makeMatch('fire', 'mistcave', 4);
+    const eHuo = X.runes.expiresIn('juling');
+    check('火词条延长 runeExpiresIn()', eHuo > eBase, `${(eBase / 3600).toFixed(2)}h → ${(eHuo / 3600).toFixed(2)}h`);
+
+    // 金 → 法器耐久损耗（ridge 是 tier 3 且已镇守 → 晋一档 = 天品 1.50）
+    // ⚠ 基准与对照必须用**同一件法器、同一把主系灵根**，只让「道基」这一个变量变，
+    //   否则测出来的差里混着别的因素（这里踩过：换了灵根，基准那一次也变了）。
+    X.forge.give('qingfeng');
+    state.cultivation.forge.equipped = { weapon: 'qingfeng' };
+    const wearAt = () => {
+      state.cultivation.forge.durability = { qingfeng: 100 };
+      const d0 = X.forge.durability('qingfeng');
+      X.forge.wear('attack');
+      return d0 - X.forge.durability('qingfeng');
+    };
+    makeMatch('metal', 'ridge', 4);
+    state.cultivation.cultivators[0].foundation = null;   // 同一把灵根，只摘掉道基
+    const wearBase = wearAt();
+    makeMatch('metal', 'ridge', 4);
+    const wearJin = wearAt();
+    check('金词条降低 wearArtifacts() 的耐久损耗', wearJin < wearBase, `${wearBase} → ${wearJin}`);
+    check('金词条的减免 = 基准 30% × 天品 1.50 × 相合 1.5（= −67.5%，夹在 90% 以内）',
+      near(wearJin / wearBase, 1 - Math.min(0.9, 0.30 * 1.50 * 1.5), 1e-6),
+      `${(wearJin / wearBase).toFixed(4)}`);
+  }
+
+  // ⑥ 地块丢失 → 词条减半，但 foundation 字段仍在
+  {
+    // 地块**存在但没占领/镇守**时：品阶掉回原档 × 减半
+    state.cultivation.world = { reached: ['mosscave'], held: [], garrison: {}, unrest: {} };
+    setPeople(person({ id: 1, realmIndex: 12, xp: 0, job: 'retreat', talent: 1, foundation: { nodeId: 'mosscave', element: 'earth', grade: 1 } }));
+    check('地块未占领时词条倍率减半（×0.5）', near(X.realm.foundationEntryMult(1, false, false), 0.5, 1e-9),
+      `${X.realm.foundationEntryMult(1, false, false)}`);
+    check('地块仍有效镇守时是满额（×1.0）', near(X.realm.foundationEntryMult(1, true, false), 1, 1e-9),
+      `${X.realm.foundationEntryMult(1, true, false)}`);
+    check('地块丢失后 foundation 字段仍在', state.cultivation.cultivators[0].foundation != null);
+    // 节点整个不存在（数据损坏）时退回「按落库品阶」而不是崩掉
+    setPeople(person({ id: 1, realmIndex: 12, xp: 0, job: 'retreat', talent: 1, foundation: { nodeId: '不存在的节点', element: 'earth', grade: 1 } }));
+    check('道基节点不存在时退回落库品阶，不抛错',
+      near(X.realm.foundationEntryMult(1, true), 1, 1e-9), `${X.realm.foundationEntryMult(1, true)}`);
+  }
+
+  // ⑦ 散功重修
+  {
+    setPeople(person({ id: 1, realmIndex: 12, xp: 500, job: 'retreat', talent: 1, foundation: { nodeId: 'mosscave', element: 'wood', grade: 1 } }));
+    const morBefore = X.morality.get();
+    const r = X.realm.dissolve(1);
+    const p = state.cultivation.cultivators[0];
+    check('散功：境界回退到炼气九层', p.realmIndex === 9, X.realm.name(p.realmIndex));
+    check('散功：修为清零', p.xp === 0);
+    check('散功：3 游戏小时不能修炼', p.stalled === 3 * 3600, `${p.stalled}`);
+    check('散功：家族道心 −5', near(X.morality.get() - morBefore, -5, 1e-9), `${X.morality.get() - morBefore}`);
+    check('散功：道基被清掉', p.foundation === null);
+    check('散功后 stalled 真的挡住了修为', (() => {
+      X.setRng(() => 0.999999);
+      X.tick(600);
+      X.setRng(null);
+      return p.xp === 0;
+    })());
+    check('没结过道基的人不能散功', X.realm.dissolve(1).ok === false);
+  }
+
+  // ⑧ 地图数据完整性：每块地都有合法地气
+  {
+    const bad = d.map.filter((n) => !['metal', 'wood', 'water', 'fire', 'earth'].includes(n.earthQi));
+    check('八块地每块都有五行地气', bad.length === 0, bad.map((n) => n.id).join(','));
+    check('地气的 power/tier/yield 一个都没动（纯数据追加）',
+      d.map.find((n) => n.id === 'valley').power === 110
+      && d.map.find((n) => n.id === 'beastnest').power === 12000
+      && d.map.find((n) => n.id === 'beastnest').tier === 4);
+  }
+}
+
+/* ══════════════════════ 15.11 T-6 结丹 ══════════════════════ */
+section('T-6 结丹（每一次修为满，都是一次下注）');
+{
+  const atJindan = () => {
+    setPeople(person({ id: 1, realmIndex: 14, xp: X.realm.xpNeeded(14), job: 'retreat', talent: 1 }));
+    state.spiritStones = 1000000;
+    X.alchemy.addHerbs('grass', 500);
+  };
+
+  // ① 新态 folding，且四态行为逐位不变
+  atJindan();
+  check('金丹期修为满 → breakthroughState 返回 folding', X.realm.stateOf(1).kind === 'folding');
+  check('炼气九层修为满 → 仍然是 blocked（四态不变）', (() => {
+    setPeople(person({ realmIndex: 9, xp: X.realm.xpNeeded(9), job: 'retreat', talent: 1 }));
+    return X.realm.stateOf(1).kind === 'blocked';
+  })());
+  check('修为满也不再自动晋升（跑 600 秒仍停在 14 层）', (() => {
+    atJindan();
+    X.tick(600);
+    return state.cultivation.cultivators[0].realmIndex === 14;
+  })());
+
+  // ② 两个按钮
+  atJindan();
+  X.ui.render();
+  {
+    const list = document.getElementById('cultivator-list');
+    check('丹成待决时卡片上有「晋升」按钮', list.querySelectorAll('[data-breakthrough]').length === 1);
+    check('丹成待决时卡片上有三档火候的「结丹」按钮', list.querySelectorAll('[data-fold]').length === 3);
+  }
+
+  // ③ 三档火候的数值逐位一致，且明文写在按钮上
+  check('文火：+1 纹 / 95% / 止于 6 纹',
+    X.realm.coreFolds()[0].marks === 1 && X.realm.coreFolds()[0].rate === 0.95 && X.realm.coreFolds()[0].cap === 6);
+  check('武火：+3 纹 / 55% / 上限 12 纹',
+    X.realm.coreFolds()[1].marks === 3 && X.realm.coreFolds()[1].rate === 0.55 && X.realm.coreFolds()[1].cap === 12);
+  check('三昧真火：+6 纹 / 25% / 无上限',
+    X.realm.coreFolds()[2].marks === 6 && X.realm.coreFolds()[2].rate === 0.25 && X.realm.coreFolds()[2].cap === null);
+  check('按钮文本里出现 95% / 55% / 25% 与「止于六纹」', (() => {
+    const t = document.getElementById('cultivator-list').textContent;
+    return t.includes('95%') && t.includes('55%') && t.includes('25%') && t.includes('止于六纹');
+  })());
+  check('三昧真火的数学期望最低（+0.75 < 武火 +1.20）——风险买的是上限不是均值',
+    (0.25 * 6 - 0.75 * 1) < (0.55 * 3 - 0.45 * 1));
+
+  // ④ 同一层最多结丹一次
+  {
+    atJindan();
+    const first = X.realm.fold(1, 'wen', () => 0);
+    check('文火必成 → +1 纹', first.success === true && first.marks === 1, `${first.marks} 纹`);
+    check('结丹吃掉本层修为', state.cultivation.cultivators[0].xp === 0);
+    check('本层已结丹 → 第二次被拒', (() => {
+      state.cultivation.cultivators[0].xp = X.realm.xpNeeded(14);
+      return X.realm.foldPlan(1, 'wen').ok === false && X.realm.foldPlan(1, 'wen').reason.includes('已结过丹');
+    })());
+    check('结丹后只剩「晋升」（state 回到 progressing）', (() => {
+      state.cultivation.cultivators[0].xp = X.realm.xpNeeded(14);
+      return X.realm.stateOf(1).kind === 'progressing';
+    })());
+    check('剩余机会 4 → 3', X.realm.coreChancesLeft(1) === 3, `${X.realm.coreChancesLeft(1)}`);
+  }
+
+  // ⑤ 失败：丹纹 −1（最低 0）、mercy += 0.12；成功：mercy 归零
+  {
+    atJindan();
+    state.cultivation.cultivators[0].core = { marks: 5, mercy: 0.4, used: {} };
+    const r = X.realm.fold(1, 'wu', () => 0.999);
+    check('失败：丹纹 −1', r.success === false && r.marks === 4, `${r.marks}`);
+    check('失败：mercy += 0.12', near(r.mercy, 0.52, 1e-9), `${r.mercy}`);
+    check('丹纹最低夹到 0', (() => {
+      state.cultivation.cultivators[0].realmIndex = 15;
+      state.cultivation.cultivators[0].xp = X.realm.xpNeeded(15);
+      state.cultivation.cultivators[0].core = { marks: 0, mercy: 0, used: {} };
+      const r2 = X.realm.fold(1, 'wu', () => 0.999);
+      return r2.marks === 0;
+    })());
+    check('成功：mercy 归零', (() => {
+      atJindan();
+      state.cultivation.cultivators[0].core = { marks: 3, mercy: 0.9, used: {} };
+      const r3 = X.realm.fold(1, 'wen', () => 0);
+      return r3.success === true && X.realm.coreOf(1).mercy === 0;
+    })());
+  }
+
+  // ⑥ 文火止于 6 纹
+  {
+    atJindan();
+    state.cultivation.cultivators[0].core = { marks: 6, mercy: 0, used: {} };
+    const r = X.realm.fold(1, 'wen', () => 0);
+    check('文火封顶：6 纹 + 1 纹仍然只有 6 纹（止于六纹）', r.marks === 6, `${r.marks}`);
+  }
+
+  // ⑦ 丹纹 → 品阶（逐档）
+  {
+    const table = [[0, '九品'], [1, '九品'], [2, '八品'], [3, '八品'], [4, '七品'], [6, '六品'], [8, '六品'],
+      [9, '五品'], [12, '五品'], [13, '四品'], [17, '四品'], [18, '三品'], [21, '二品'], [24, '一品']];
+    const bad = table.filter(([m, name]) => X.realm.coreGradeOf(m).name !== name);
+    check('丹纹档位表逐档一致（五品门槛 = 9 纹）', bad.length === 0,
+      bad.map(([m, n]) => `${m}→${X.realm.coreGradeOf(m).name}(应 ${n})`).join(' '));
+    check('丹纹档位一共产出 9 个品阶', new Set(X.realm.coreGrades().map((g) => g.grade)).size === 9);
+    check('战力倍率跨度上限 ×1.80（刻意不超过一层小境界）',
+      X.realm.coreGradeOf(24).power === 1.80 && X.realm.coreGradeOf(0).power === 1.00);
+  }
+
+  // ⑧ 丹纹接进战力与修炼
+  {
+    setPeople(person({ id: 1, realmIndex: 14, xp: 0, job: 'retreat', talent: 1, core: { marks: 0, mercy: 0, used: {} } }));
+    const powBase = X.derive().cultivatorPower;
+    setPeople(person({ id: 1, realmIndex: 14, xp: 0, job: 'retreat', talent: 1, core: { marks: 24, mercy: 0, used: {} } }));
+    const powMax = X.derive().cultivatorPower;
+    check('丹纹接进 cultivatorPower()（一品 ×1.80）', near(powMax / powBase, 1.80, 1e-6),
+      `${(powMax / powBase).toFixed(4)}`);
+    const xpAt = (marks) => {
+      setPeople(person({ id: 1, realmIndex: 14, xp: 0, job: 'retreat', talent: 1, core: { marks, mercy: 0, used: {} } }));
+      state.cultivation.manuals = []; state.cultivation.equippedManual = null; state.meta.active = [];
+      X.setRng(() => 0.999999);
+      X.tick(100);
+      X.setRng(null);
+      return state.cultivation.cultivators[0].xp;
+    };
+    check('丹纹接进修炼乘数链（一品 ×1.45）', near(xpAt(24) / xpAt(0), 1.45, 1e-6),
+      `${(xpAt(24) / xpAt(0)).toFixed(4)}`);
+  }
+
+  // ⑨ 旧存档兼容
+  check('旧存档补上 core 默认值', (() => {
+    const legacy = X.save.hydrate({ createdAt: 0, cultivation: { cultivators: [{ id: 1, realmIndex: 14, xp: 0, job: 'retreat' }] } });
+    const c = legacy.cultivation.cultivators[0].core;
+    return c && c.marks === 0 && c.mercy === 0 && JSON.stringify(c.used) === '{}';
+  })());
+  check('旧存档补上 foundation: null', (() => {
+    const legacy = X.save.hydrate({ createdAt: 0, cultivation: { cultivators: [{ id: 1, realmIndex: 12, xp: 0, job: 'retreat' }] } });
+    return legacy.cultivation.cultivators[0].foundation === null;
+  })());
+}
+
+/* ══════════════════════ 15.12 本轮四条机制都有百科条目 ══════════════════════ */
+section('本轮机制的百科条目（不做隐藏公式）');
+{
+  // 【策划 各条 / docs/91 §六.7】每条落地都必须同步写百科条目（志书体）。
+  const ids = new Set(X.codex.book().flatMap((c) => c.entries).map((e) => e.id));
+  for (const [id, label] of [
+    ['mech-push', '猛进行气 / 走火入魔（T-3）'],
+    ['mech-errand', '投帖问路（T-4）'],
+    ['mech-foundation', '择地筑基（T-5）'],
+    ['mech-fold', '结丹三档火候（T-6）'],
+  ]) {
+    check(`百科有「${label}」条目`, ids.has(id), id);
+  }
+  // 条目正文里的数字必须来自活表（改表即改百科），而不是抄死在文案里。
+  // ⚠ X.codex.book() 里的 entry.lines 已经是**算好的字符串数组**（渲染用），
+  //   要看原始定义得走 X.codex.raw()。
+  const rawEntry = (id) => X.codex.raw().find((c) => c.id === 'mech').entries.find((e) => e.id === id);
+  const pushLines = X.codex.lines(rawEntry('mech-push')).join(' ');
+  check('走火条目的数值取自活表（写明 ×2.2 与走火速率）',
+    pushLines.includes('2.2') && pushLines.includes('0.0001'), pushLines.slice(0, 120));
+  const foldLines = X.codex.lines(rawEntry('mech-fold')).join(' ');
+  check('结丹条目写明三档成率 95% / 55% / 25%',
+    foldLines.includes('95%') && foldLines.includes('55%') && foldLines.includes('25%'), foldLines.slice(0, 140));
+  check('结丹条目写明「止于 6 纹」与「无上限」',
+    foldLines.includes('止于 6 纹') && foldLines.includes('无上限'), foldLines.slice(0, 140));
+}
+
+/* ══════════════════════ 15.13 T-1 补强：旧存档形状 + 逐字段往返 ══════════════════════
+ *
+ * 这两条原来住在 `scripts/_uat-legacy-save.mjs` / `_uat-save-fields.mjs` 里。
+ * 主策指出：**一次性脚本不防回归**（它们被 gitignore，下次没人跑就形同不存在）。
+ * 所以并进正式的回归套件 —— 下面两条覆盖的正是「产出侧 / 持久化侧」，
+ * 也就是当初让两个阻断缺陷活下来的那类缺口。
+ */
+section('T-1 补强：1.0 时代的旧存档形状');
+{
+  // 最老的形状：cultivation 里**只有 qi 整数**，顶层连 immortalTechs/morality/
+  // exchangeCount/clock/meta 都没有。这一份必须能载入、字段补齐、还能继续跑。
+  const legacy = X.save.hydrate({
+    version: 1, savedAt: Date.now() - 3600000, createdAt: Date.now() - 86400000,
+    generation: 1, silver: 12345, population: 200,
+    buildings: { field: 3, house: 2 },
+    techs: ['realestate', 'architecture'],
+    caravans: [], tradeRuns: 5, milestones: [100],
+    stats: { silverEarned: 1, silverWasted: 0, silverFromSales: 0, births: 1, deaths: 0, playSeconds: 100 },
+    settings: { quizMode: 'off', difficulty: 'normal', speed: 1 },
+    wordStats: {}, customQuizStats: {}, customWrongBooks: {},
+    quiz: { total: 0, right: 0, wrong: 0, streak: 0, bestStreak: 0, lost: 0, lostStones: 0, wrongBook: [] },
+    spiritStones: 50, secrets: [0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+    cultivation: { qi: 3 },   // ← 只有 qi 整数
+    log: [],
+    ui: { buyMode: '1', page: 'home', techLine: 'mortal', codexChapter: 'all', codexQuery: '', codexShowLocked: false, hideDoneTechs: false, collapsed: {} },
+  });
+  check('1.0 时代的旧存档载入不炸', Boolean(legacy) && legacy.cultivation != null);
+  check('qi=3 迁移成三名修士', legacy.cultivation.cultivators.length === 3,
+    `${legacy.cultivation.cultivators.length} 名`);
+  check('顶层三字段走默认值（[] / 0 / 50）',
+    Array.isArray(legacy.immortalTechs) && legacy.immortalTechs.length === 0
+    && legacy.exchangeCount === 0 && legacy.morality === 50);
+  check('clock 补成 {year:0}', legacy.clock && legacy.clock.year === 0);
+  check('cluePool 补成 0', legacy.cultivation.cluePool === 0);
+  check('meta 补成初始元进度', legacy.meta && legacy.meta.cycle === 1 && legacy.meta.points === 0);
+  const lp = legacy.cultivation.cultivators[0];
+  check('逐人新字段全部补齐（push/stalled/realmEnteredYear/foundation/core）',
+    lp.push === false && lp.stalled === 0 && lp.realmEnteredYear === 0
+    && lp.foundation === null && lp.core && lp.core.marks === 0
+    && JSON.stringify(lp.core.used) === '{}',
+    JSON.stringify({ push: lp.push, stalled: lp.stalled, year: lp.realmEnteredYear, f: lp.foundation, core: lp.core }));
+}
+
+section('T-1 补强：逐字段往返（不只查那三个字段）');
+{
+  // 「三个字段不丢」是底线；这一条查的是**所有**顶层字段的值都能原样回来。
+  // ⚠ 键序不是语义（hydrate 重建对象会改键序），所以排序后再比。
+  const canon = (v) => {
+    if (Array.isArray(v)) return v.map(canon);
+    if (v && typeof v === 'object') {
+      return Object.fromEntries(Object.keys(v).sort().map((k) => [k, canon(v[k])]));
+    }
+    return v;
+  };
+  const S = X.state;
+  const keep = JSON.parse(JSON.stringify({
+    immortalTechs: S.immortalTechs, exchangeCount: S.exchangeCount, morality: S.morality,
+    clock: S.clock, generation: S.generation, silver: S.silver, population: S.population,
+    tradeRuns: S.tradeRuns, milestones: S.milestones, spiritStones: S.spiritStones,
+    secrets: S.secrets, meta: S.meta, ui: S.ui,
+  }));
+  S.immortalTechs = ['yinling'];
+  S.exchangeCount = 7;
+  S.morality = 12.5;
+  S.clock = { year: 42 };
+  S.generation = 3;
+  S.silver = 999;
+  S.population = 77;
+  S.tradeRuns = 11;
+  S.milestones = [100, 200];
+  S.spiritStones = 4.5;
+  S.secrets = [0, 1];
+  S.ui.buyMode = '10';
+  S.meta.cycle = 2;
+  S.meta.points = 9;
+
+  const back = X.save.roundTrip();
+  const freshState = X.save.hydrate({ createdAt: 0 });
+  const diffs = [];
+  for (const k of Object.keys(freshState)) {
+    if (k === 'lastSeen') continue;   // 唯一允许不持久化的运行时字段
+    if (canon(S[k]) === undefined) continue;
+    const a = JSON.stringify(canon(S[k]));
+    const b = JSON.stringify(canon(back[k]));
+    // cultivation 会由 repairCultivation 补默认值，逐人字段的补齐已由上一节覆盖，
+    // 这里只查**顶层标量/数组**字段的值。
+    if (k === 'cultivation') continue;
+    if (a !== b) diffs.push(`${k}: ${String(a).slice(0, 40)} ≠ ${String(b).slice(0, 40)}`);
+  }
+  check('除 cultivation 外的每个顶层字段，往返后值都不变', diffs.length === 0, diffs.join(' | '));
+
+  // 还原
+  S.immortalTechs = keep.immortalTechs;
+  S.exchangeCount = keep.exchangeCount;
+  S.morality = keep.morality;
+  S.clock = keep.clock;
+  S.generation = keep.generation;
+  S.silver = keep.silver;
+  S.population = keep.population;
+  S.tradeRuns = keep.tradeRuns;
+  S.milestones = keep.milestones;
+  S.spiritStones = keep.spiritStones;
+  S.secrets = keep.secrets;
+  S.meta = keep.meta;
+  S.ui = keep.ui;
+  X.ui.render();
 }
 
 /* ══════════════════════ 16. 存档 ══════════════════════ */
@@ -2311,7 +3370,6 @@ console.log('\n── R10：流派与道心 ──');
 
 section('仙凡科技线：数据完整性');
 
-const d = X.data;
 const imm = X.immortal;
 
 check('仙道科技表非空', d.immortalTechs.length > 0, `${d.immortalTechs.length} 项`);

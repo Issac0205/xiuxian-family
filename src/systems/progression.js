@@ -83,3 +83,48 @@ function immortalBlockVisible(state, key) {
 function anyCraftingVisible(state) {
   return ['alchemy', 'forge', 'runes'].some((k) => immortalBlockVisible(state, k));
 }
+
+/**
+ * 【策划 C15 / 任务 T-2 验收标准 1、2】境界仪表盘：首页顶部**随境界换一块表**。
+ *
+ * 返回此刻应当渲染的那一格（**只返回一格**），以及它的 key。
+ *   ''            凡人：不显示（沿用现有 overview）
+ *   'qi'          炼气（1–9） 行气条
+ *   'foundation'  筑基（10–13）道基牌位
+ *   'core'        金丹（14–17）丹图
+ *   'nascent'     元婴（18–21）元婴列表（第二阶段 T-7 填充）
+ *   'tribulation' 化神（22–25）法旨行 + 天劫预告（第二阶段 T-8 填充）
+ *
+ * 口径取自最高境界：取全族 `realmIndex` 的最大值（没有修士时按凡人算）。
+ * 未解锁的境界格**根本不渲染**（DOM 里不存在），而不是渲染成空 ——
+ * 与 pageVisible() / immortalBlockVisible() 是同一套思路。
+ * 出处：docs/91-落地任务清单.md §三 T-2 验收标准 1、2 与「数值设计」那张对应表。
+ */
+function highestRealmIndex(state) {
+  let top = 0;
+  for (const p of state?.cultivation?.cultivators || []) {
+    const i = Math.floor(Number(p.realmIndex) || 0);
+    if (i > top) top = i;
+  }
+  return top;
+}
+
+/** 现在该渲染哪一格仪表；凡人返回 null。 */
+function realmDashboardKey(state) {
+  const top = highestRealmIndex(state);
+  if (top <= 0) return null;
+  const tier = realmInfo(top).tierId;
+  switch (tier) {
+    case 'qi': return 'qi';
+    case 'zhuji': return 'foundation';
+    case 'jindan': return 'core';
+    case 'yuanying': return 'nascent';
+    case 'huashen': return 'tribulation';
+    default: return null;
+  }
+}
+
+/** 某一格仪表现在该不该出现（界面与测试共用同一个判据）。 */
+function dashboardVisible(state, key) {
+  return realmDashboardKey(state) === key;
+}

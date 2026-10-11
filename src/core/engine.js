@@ -55,11 +55,21 @@ function applyPenalty(state, plan, now = Date.now()) {
 
 /**
  * 记下一条秘闻。抽到过的不会重复抽，抽完为止。
- * @returns {number|null} 秘闻下标；已全部集齐时返回 null
+ *
+ * 【策划 T-0 / docs/91-落地任务清单.md §三 T-0 验收标准 2】
+ * **池空不再等于「线索断供」**：线索是能不能突破大境界的硬通货，
+ * 而 SECRETS 只有 20 条、四道门槛要 28 条 —— 池子抽干之后必须还能继续产线索，
+ * 否则「修为满了、丹药有了、灵石够了，就是没有线索」会变成一个死局。
+ * 所以这里在 `return null` **之前**先把线索加上，池空时依然返回 null（调用方靠它判重）。
+ *
+ * @returns {number|null} 秘闻下标；池子已空时返回 null（但线索照加）
  */
 function grantSecret(state, now = Date.now(), rng = Math.random) {
   const pool = SECRETS.map((_, i) => i).filter((i) => !state.secrets.includes(i));
-  if (!pool.length) return null;
+  if (!pool.length) {
+    if (state.cultivation) state.cultivation.clues = (state.cultivation.clues || 0) + 1;
+    return null;
+  }
 
   const idx = pool[Math.min(pool.length - 1, Math.floor(rng() * pool.length))];
   state.secrets.push(idx);
@@ -802,6 +812,16 @@ function checkMilestones(state, now, silent = false) {
  */
 function tick(state, gameDt, now = Date.now(), rng = Math.random) {
   if (gameDt > 0) {
+    // ══════════════════════════════════════════════════════════════════
+    // 【策划 C14 / 任务 T-2b 验收标准 1】世界钟：在线每过 1 游戏小时 = +25 年。
+    // 尺度出处：docs/91-落地任务清单.md §三 T-2b（1 h = 25 年，一周目 44.6 h = 1115 年）。
+    // ⚠ 这里只推**年份**，不产生任何惩罚（没有老死、没有冲关修正）——
+    //   它的全部作用是让族谱上的「寿 X，余 Y」动起来。
+    // ⚠ 倍速会一起放大（gameDt 已乘过倍速），这是**有意的**：
+    //   倍速是「快进这个世界的年月」，寿元钟理应跟着快。
+    // ══════════════════════════════════════════════════════════════════
+    ensureClock(state);
+    state.clock.year += (gameDt / 3600) * YEARS_PER_GAME_HOUR;
     simulateSpan(state, gameDt, MAX_SIM_STEP, rng, now);
     advanceCaravans(state, gameDt, now, rng);
   }
@@ -811,6 +831,12 @@ function tick(state, gameDt, now = Date.now(), rng = Math.random) {
 /**
  * 离线结算。**不吃倍速**，一律按 1 倍速算，上限 OFFLINE_CAP_HOURS 小时。
  * @param {number} seconds 离线秒数
+ *
+ * ⚠ 【策划 C14 / 任务 T-2b 验收标准 2】**离线不推年份**（这是本条唯一的硬约束）。
+ *   原因有二：① 离线 12 小时 = 300 年，收窄版的寿元上限会被瞬间吃穿，
+ *   界面上会出现满屏「寿元已尽」的假警报；② 完整版的 T-7（元婴出窍）也要动这个函数，
+ *   而「离线不推年份」正是让 T-2b 与 T-7 能共存的具体做法。
+ *   所以下面这段**刻意不碰 state.clock** —— 不改行为本身就是验收标准。
  */
 function runOffline(state, seconds, now = Date.now()) {
   if (!(seconds > 1)) return null;

@@ -469,6 +469,139 @@ function createUI({ getState, actions, rng }) {
     }
   }
 
+  /* ═══════════════ 【策划 C15 / 任务 T-2】境界仪表盘 ═══════════════
+   *
+   * 首页顶部**随境界换一块表**：炼气看到行气条，筑基换成道基牌位，金丹换成丹图……
+   * 玩家一眼就知道自己进入了新玩法。
+   *
+   * 三条硬约定（出自 docs/91-落地任务清单.md §三 T-2 验收标准）：
+   *   1. 容器有稳定 id `#realm-dashboard`，内容**只渲染当前最高境界那一格**；
+   *   2. 未解锁的机制**不渲染**（DOM 里根本不存在），靠 `hidden` 属性兜底；
+   *   3. 每格都带一个 `[查百科]` 链接（`data-target-page="codex"` + 真实条目 id）。
+   *
+   * 落地的顺序约定（同文档）：T-3～T-8 每做完一条就顺手补它那一格，
+   * 所以本函数里的 qi / foundation / core 三格是**本轮负责**的，
+   * nascent / tribulation 两格留给第二阶段（T-7 / T-8），现在只给占位说明。
+   */
+
+  /** 「寿 X，余 Y」这一小行：族谱与仪表盘共用。 */
+  function lifeSpanText(s, p) {
+    const max = realmLifespan(p.realmIndex);
+    const used = Math.max(0, (Number(s.clock?.year) || 0) - (Number(p.realmEnteredYear) || 0));
+    const left = max - used;
+    // 【策划 C14 / 任务 T-2b】余量为负（磨蹭太久）时**夹到 0** 并改文案。
+    // 收窄版没有老死，所以负数只是文案；不夹的话界面上会出现「余 −69」。
+    // 出处：docs/91 §三 T-2b「⚠ 结合［实跑］」那一段（原文要求「显示夹到 max(0, Y)」）。
+    const shown = Math.max(0, Math.round(left));
+    const ratio = max > 0 ? Math.max(0, Math.min(1, left / max)) : 0;
+    const cls = left <= 0 ? 'dash-life-gone' : ratio < 0.2 ? 'dash-life-danger'
+      : ratio < 0.5 ? 'dash-life-warn' : 'dash-life-normal';
+    const text = left <= 0 ? `寿 ${max}，寿元已尽…` : `寿 ${max}，余 ${shown}`;
+    return { text, cls };
+  }
+
+  /** 每格的「查百科」链接。条目 id 必须真实存在于 data/codex.js。 */
+  function dashCodexLink(entryId, label) {
+    return `<button class="dash-link" type="button" data-target-page="codex" data-target-id="${entryId}">查百科 · ${label}</button>`;
+  }
+
+  function renderDashboardCell(s, key) {
+    const people = s.cultivation?.cultivators || [];
+    if (key === 'qi') {
+      // ── 炼气：行气条（T-3 的猛进开关 + T-4 的在外人数）──
+      const qi = people.filter((p) => p.realmIndex <= 9);
+      const pushing = qi.filter((p) => p.push === true).length;
+      const out = qi.filter((p) => p.job === 'errand').length;
+      const stalled = qi.filter((p) => (Number(p.stalled) || 0) > 0).length;
+      const avg = qi.length ? qi.reduce((a, p) => {
+        const need = cultivateXpNeeded(p.realmIndex) || 1;
+        return a + Math.min(100, (100 * (p.xp || 0)) / need);
+      }, 0) / qi.length : 0;
+      return `<div class="dash-cell dash-qi">
+        <div class="dash-head"><span class="dash-title">行气 · 炼气</span>
+          <span class="dash-note">拨「猛进」换速度与走火之险；派「差事」换秘闻线索</span>
+          ${dashCodexLink('mech-realm', '境界')}</div>
+        <div class="dash-bar"><i style="width:${avg.toFixed(1)}%"></i></div>
+        <div class="dash-row"><span>炼气族人 <b>${qi.length}</b></span>
+          <span>猛进行气 <b>${pushing}</b></span>
+          <span>差事在外 <b>${out}</b></span>
+          <span>气机滞住 <b>${stalled}</b></span>
+          <span>平均行气 <b>${avg.toFixed(1)}%</b></span></div>
+      </div>`;
+    }
+    if (key === 'foundation') {
+      // ── 筑基：道基牌位（T-5 的 person.foundation）──
+      const rows = people.filter((p) => p.foundation).map((p) => {
+        const f = p.foundation;
+        const node = mapNode(f.nodeId);
+        const grade = FOUNDATION_GRADE_MAP[f.grade] || FOUNDATION_GRADE_MAP[1];
+        const qi = EARTH_QI[f.element] || EARTH_QI.tu;
+        const held = mapHeld(s, f.nodeId) && mapIsPacified(s, f.nodeId);
+        const rel = earthQiRelation((p.root?.elements || [])[0] || null, f.element);
+        const relText = rel === 'match' ? '相合 ×1.5' : rel === 'clash' ? '相冲 ×0.6' : '无涉';
+        const life = lifeSpanText(s, p);
+        return `<span>${p.name} · ${node ? node.name : f.nodeId}（${grade.name} · ${qi.name}气）· ${relText}${held ? '' : ' · <b>地已失，词条减半</b>'} · <i class="${life.cls}">${life.text}</i></span>`;
+      });
+      const body = rows.length
+        ? `<div class="dash-row">${rows.join('')}</div>`
+        : `<span class="dash-note">尚无人择地筑基。炼气九层冲关时会让你先挑一块走到过的地。</span>`;
+      return `<div class="dash-cell dash-foundation">
+        <div class="dash-head"><span class="dash-title">道基 · 筑基</span>
+          <span class="dash-note">地气定词条，灵根主系定相合相冲</span>
+          ${dashCodexLink('realm-zhuji', '筑基')}</div>
+        ${body}
+      </div>`;
+    }
+    if (key === 'core') {
+      // ── 金丹：丹图（T-6 的丹纹 / 品阶 / 剩余机会）──
+      const grid = coreDashboard(s);
+      const rows = grid.map((g) => `<span>${g.name} · <b>${g.marks} 纹</b> · ${g.grade} · 余 ${g.chancesLeft} 次</span>`);
+      const body = rows.length ? `<div class="dash-row">${rows.join('')}</div>`
+        : `<span class="dash-note">修为满时不再自动晋升：面板上会出现「晋升 / 结丹」两个按钮。</span>`;
+      return `<div class="dash-cell dash-core">
+        <div class="dash-head"><span class="dash-title">丹图 · 金丹</span>
+          <span class="dash-note">每层一次机会：文火稳、武火中、三昧真火买上限</span>
+          ${dashCodexLink('realm-jindan', '金丹')}</div>
+        ${body}
+      </div>`;
+    }
+    if (key === 'nascent') {
+      // ── 元婴：第二阶段 T-7 填充。现在只给一句说明，不摆假数据 ──
+      return `<div class="dash-cell dash-nascent">
+        <div class="dash-head"><span class="dash-title">元婴 · 圣胎</span>
+          <span class="dash-note">圣胎温养（第二阶段 T-7）—— 本体在家，元婴在外，两者都在消耗你</span>
+          ${dashCodexLink('realm-yuanying', '元婴')}</div>
+      </div>`;
+    }
+    // ── 化神：第二阶段 T-8 填充 ──
+    return `<div class="dash-cell dash-tribulation">
+      <div class="dash-head"><span class="dash-title">化神 · 天劫</span>
+        <span class="dash-note">天劫（第二阶段 T-8）—— 你越强，天地越要收你</span>
+        ${dashCodexLink('realm-huashen', '化神')}</div>
+    </div>`;
+  }
+
+  function updateDashboard(s) {
+    const host = $('realm-dashboard');
+    if (!host) return;
+    const key = realmDashboardKey(s);
+    // ⚠ 脏检查：只在「该显示哪一格」或内容真的变了时才重画。
+    //   仪表里的数字（行气 %、在外人数）每帧都在动，所以用较粗的取整口径做签名，
+    //   否则每个 tick 都会重排 DOM（界面会闪）。
+    const people = s.cultivation?.cultivators || [];
+    const sig = `${key}|${Math.round((Number(s.clock?.year) || 0) / 5)}|` + people.map((p) => {
+      const need = cultivateXpNeeded(p.realmIndex) || 1;
+      return `${p.id}:${p.realmIndex}:${p.job}:${p.push ? 1 : 0}:${Math.round((Number(p.stalled) || 0) / 60)}`
+        + `:${p.foundation ? `${p.foundation.nodeId}/${p.foundation.grade}` : '-'}`
+        + `:${coreOf(p).marks}:${Math.floor((100 * (p.xp || 0)) / need / 5)}`;
+    }).join(',');
+    if (host.dataset.signature === sig) return;
+    host.dataset.signature = sig;
+    if (!key) { host.hidden = true; host.innerHTML = ''; return; }
+    host.hidden = false;
+    host.innerHTML = renderDashboardCell(s, key);
+  }
+
   /* ─────────────────────── 各区块刷新 ─────────────────────── */
 
   function updateTopbar(s, d) {
@@ -1046,14 +1179,21 @@ function createUI({ getState, actions, rng }) {
       jobNode.innerHTML=Object.entries(CULTIVATOR_JOBS).map(([id,def])=>`<div class="job-stat"><strong>${counts[id]}</strong><span>${def.name}</span></div>`).join('');
     }
     const host=$('cultivator-list');
-    // 脏检查要把「会影响冲关按钮状态的一切」都算进去：
-    // 境界、修为、失败次数，以及灵石与线索（否则材料变少了按钮不会变灰）。
+    // 脏检查要把「会影响卡片上一切按钮状态的东西」都算进去：
+    // 境界、修为、失败次数、灵石与线索（否则材料变少了按钮不会变灰），
+    // 以及本轮新增的 push / stalled / 在外 / 道基 / 丹纹 / 年份
+    // （**不加就不会刷新** —— 这是一个静默失败，见 docs/91 §六.10）。
     const sig=people.map(p=>{
       const st=breakthroughState(p);
       const need=cultivateXpNeeded(p.realmIndex)||1;
       return `${p.id}:${p.job}:${p.realmIndex}:${p.talent}:${Math.floor(100*(p.xp/need))}:${st.kind}:${p.breakFailures||0}`
-        + `:${p.root?.grade||'-'}:${(p.root?.elements||[]).join('')}:${p.root?.rerolls||0}`;
-    }).join('|')+`#${Math.floor(s.spiritStones||0)}:${s.cultivation?.clues||0}`;
+        + `:${p.root?.grade||'-'}:${(p.root?.elements||[]).join('')}:${p.root?.rerolls||0}`
+        + `:${p.push?1:0}:${Math.floor((Number(p.stalled)||0)/30)}`
+        + `:${p.foundation?`${p.foundation.nodeId}${p.foundation.grade}`:'-'}`
+        + `:${coreOf(p).marks}:${Object.keys(coreOf(p).used).join('')}`
+        + `:${p.realmEnteredYear||0}:${Math.floor((Number(p.stalled)||0)>0?1:0)}`;
+    }).join('|')+`#${Math.floor(s.spiritStones||0)}:${s.cultivation?.clues||0}:${Math.floor(Number(s.clock?.year)||0)}`
+      +`:${worldOf(s).reached.join(',')}:${(s.cultivation?.alchemy?.herbs?.grass||0)>0?1:0}`;
     if(host.dataset.signature===sig) return;
     host.dataset.signature=sig;
     if(!people.length){
@@ -1063,40 +1203,142 @@ function createUI({ getState, actions, rng }) {
     host.innerHTML=people.map(p=>{
       const cap=cultivateLevelCap(p);
       const st=breakthroughState(p);
+      const pState=personState(p);
+      const stateTag=PERSON_STATE_LABELS[pState]||PERSON_STATE_LABELS.mortal;
       const need=cultivateXpNeeded(p.realmIndex);
       const atCeiling=st.kind==='max';
       const pct=atCeiling?100:Math.min(100,100*p.xp/(Number.isFinite(need)?need:1));
       const role=Object.entries(CULTIVATOR_JOBS).map(([id,def])=>`<option value="${id}" ${id===p.job?'selected':''}>${def.name}</option>`).join('');
+      // 【策划 C14 / 任务 T-2b 验收标准 4、5】族谱上的「寿 X，余 Y」+ 三档配色
+      const life=lifeSpanText(s,p);
 
       // 底部一行：平时显示修炼进度，卡在瓶颈上时换成「缺什么」
       let footText;
       if(atCeiling) footText='已至此界尽头';
+      else if(pState==='out') footText=`<b>差事在外</b> · 修为暂停，一条条带回线索`;
+      else if(pState==='stalled') footText=`<b>气机滞住</b> · 还需 ${Math.ceil(Number(p.stalled)||0)} 刻才能再修`;
+      else if(pState==='folding') footText='<b>丹成待决</b> · 晋升，还是结丹？';
       else if(st.kind==='blocked') footText='<b>瓶颈</b> · 可冲关';
       else if(st.kind==='filling') footText=`待冲关 · 还需 ${Math.ceil(st.remaining)} 点修为`;
       else if(p.job==='retreat') footText=`修炼 ${pct.toFixed(1)}%`;
       else footText='未闭关 · 修为暂停';
 
-      // 只有 blocked 才给突破按钮 —— 这是全篇唯一需要玩家主动点的境界操作
+      // 【策划 C2 / 任务 T-3】猛进行气开关：**只在**炼气（1–9）且闭关时出现。
+      // 宗门弟子不给（那会变成 3.5 × 2.2 = 7.7 倍，宗门立刻成为唯一解）。
+      // 出处：docs/91-落地任务清单.md §三 T-3 验收标准 1 与「为什么猛进只对 retreat 开放」。
+      let pushBtn='';
+      if(p.realmIndex>=1&&p.realmIndex<=9&&p.job==='retreat'){
+        const exp=pushFireExpectation(p);
+        // 验收标准 5：必须写出**可算的**风险，文案里带一位小数的数字
+        const tip=p.push
+          ?`正在猛进：本层期望走火 ${exp.toFixed(1)} 次；走火即本层修为清零（无死亡）`
+          :`改为猛进：修为快 ${PUSH_RATE_MULT} 倍；本层期望走火 ${exp.toFixed(1)} 次，走火即本层修为清零`;
+        pushBtn=`<button class="btn push ${p.push?'is-on':''}" data-push="${p.id}" title="${tip}">`
+          +`${p.push?'猛进中':'缓修'} · 期望走火 ${exp.toFixed(1)} 次</button>`;
+      }
+
+      // 【策划 C1 / 任务 T-4】投帖问路：勾选框 + 投帖 / 召回。
+      // 只对炼气族人与在外的人显示 —— 过了炼气期的人不该看见这个按钮。
+      let errandBox='';
+      if(p.realmIndex>=1&&p.realmIndex<=9&&p.job!=='sect'&&p.job!=='garrison'){
+        if(p.job==='errand'){
+          errandBox=`<label class="errand-box"><input type="checkbox" data-errand-check="${p.id}">在外中</label>`
+            +`<button class="btn recall" data-recall="${p.id}" title="召回瞬时生效、无冷却">召回</button>`;
+        }else{
+          errandBox=`<label class="errand-box"><input type="checkbox" data-errand-check="${p.id}">选去投帖</label>`;
+        }
+      }
+
+      // 【策划 C6 / 任务 T-6 验收标准 2、4】丹成待决时给两个按钮：
+      // 「晋升」（无风险，进下一层）与「结丹」（留在本层，把这份修为烧成丹纹）。
+      // 三档火候的成率与丹纹**明文写在按钮上**，含文火的「止于六纹」。
+      // ⚠ 选中档位用 data-* 而不是 select.value：垫片里读不到 select 的当前值，
+      //   而那正是「按钮文案与实际结算不一致」这类静默失败的来源。
+      let foldRow='';
+      if(pState==='folding'){
+        const fp=foldPlan(s,p.id,CORE_FOLDS[0].id);
+        const marks=coreOf(p).marks;
+        const grade=coreGradeOf(marks);
+        foldRow=`<div class="fold-box"><div class="fold-head">丹图：<b>${marks} 纹</b> · ${grade.name}`
+          +` · 本层余 ${fp.chancesLeft} 次机会</div><div class="fold-actions">`
+          +`<button class="btn fold promote" data-breakthrough="${p.id}" data-force="1" title="无风险，直接进入下一层">晋升${realmName(p.realmIndex+1)}</button>`
+          +CORE_FOLDS.map(f=>{
+            const plan=foldPlan(s,p.id,f.id);
+            const capText=f.cap===null?'无上限':`止于 ${f.cap} 纹`;
+            const costText=f.stones||f.herb?` · 耗 ${f.herb?`药草×${f.herb}`:''}${f.herb&&f.stones?' + ':''}${f.stones?`${f.stones} 灵石`:''}`:'';
+            const title=plan.ok
+              ?`成算 ${(f.rate*100).toFixed(0)}%，成则 +${f.marks} 纹（${capText}）；失败丹裂掉一纹（当前 ${marks} → ${Math.max(0,marks-1)}）${costText}`
+              :plan.reason;
+            return `<button class="btn fold ${plan.ok?'':'is-locked'}${f.id==='wen'?'':' fold-'+f.id}" data-fold="${f.id}" data-person="${p.id}" ${plan.ok?'':'disabled'}`
+              +` title="${title}">${f.name} ${(f.rate*100).toFixed(0)}% · ${f.marks>0?'+':''}${f.marks} 纹${f.cap!==null?` · 止于${f.cap===6?'六':f.cap}纹`:''}</button>`;
+          }).join('')
+          +`</div></div>`;
+      }
+
+      // 【策划 C4 / 任务 T-5 验收标准 1、2】择地下拉框：**只列出走到过的节点**，
+      // 每项下面写清三行字（地气 / 品阶 / 词条效果数值，含 ×1.5 / ×0.6 的预览）。
+      // ⚠ 这一段必须算在 gateBtn **之前**：冲关按钮的询价要读 `[data-site-for]`，
+      //   而卡片 HTML 是一次性写进 host 的 —— 先算谁不影响最终顺序，但影响能否读到。
+      let siteRow='';
+      // 「本次实际用的那块地」＝上次渲染留下的选择；没有就取候选清单的第一项
+      // （下拉框默认就是选中第一项，两处必须一致，否则界面写的与实际落库的不是同一块）。
+      let siteIdForGate=null;
+      if(st.kind==='blocked'&&st.gate?.requiresSite){
+        const fplan=foundationPlan(s,p.id);
+        if(fplan.ok){
+          const prev=host.querySelector(`[data-site-for="${p.id}"]`);
+          const chosen=(prev&&prev.value)||fplan.sites[0].id;
+          siteIdForGate=chosen;
+          const pv=(foundationPreview(p,chosen,!!(fplan.sites.find(n=>n.id===chosen)||{}).held))||fplan.preview;
+          const opts=fplan.sites.map(n=>`<option value="${n.id}"${n.id===chosen?' selected':''}>${n.name} · T${n.tier}${n.held?' · 已镇守（晋一档）':''}</option>`).join('');
+          const relText=pv.relation==='match'?'相合 ×1.5':pv.relation==='clash'?'相冲 ×0.6':'无涉';
+          siteRow=`<div class="site-box"><div class="site-head">择地筑基：先挑一块走到过的地</div>`
+            +`<select class="site-select" data-site-for="${p.id}">${opts}</select>`
+            +`<div class="site-preview" data-site-preview="${p.id}">`
+            +`<span>地气 <b>${pv.elementName}</b>（${pv.label}）</span>`
+            +`<span>品阶 <b>${pv.gradeName}</b> ×${pv.gradeMult.toFixed(2)}</span>`
+            +`<span>词条 <b>×${pv.entryMult.toFixed(2)}</b>（${relText}）</span>`
+            +`</div></div>`;
+        }else{
+          siteRow=`<div class="site-box"><div class="site-head is-short">${fplan.reason}</div></div>`;
+        }
+      }
+
+      // 冲关按钮：blocked 时才出现（择地那一道要先选地，见 plan.ok）
       let gateBtn='';
       if(st.kind==='blocked'){
-        // 注意：本文件里 state 是取值函数，状态对象是形参 s
-        const plan=breakthroughPlan(s,p.id);
+        const plan=breakthroughPlan(s,p.id,siteIdForGate||undefined);
         const rate=realmBreakRate(p.realmIndex,p.talent,p.breakFailures);
         const cls=plan.ok?'btn break is-ready':'btn break';
         const tip=plan.ok
           ? `${plan.pillName?`需 ${plan.pillName} ×1，`:''}耗 ${plan.stones} 灵石 + ${plan.clues} 线索，成功率 ${(plan.rate*100).toFixed(0)}%；失败修为倒退 ${plan.loss} 点`
           : plan.reason;
-        gateBtn=`<button class="${cls}" data-breakthrough="${p.id}" ${plan.ok?'':'disabled'} title="${tip}">`
+        gateBtn=`<button class="${cls}" data-breakthrough="${p.id}" data-force="1" ${plan.ok?'':'disabled'} title="${tip}">`
           + `冲关 ${realmName(p.realmIndex+1)} · ${(rate*100).toFixed(0)}%</button>`;
-        // 代价里要把丹药写在最前面 —— 没有丹就冲不了关，这是玩家最需要知道的一条
         const pillTxt=plan.pillName?`<b>${plan.pillName}</b> + `:'';
         if(plan.ok) gateBtn+=`<span class="break-cost">${pillTxt}${plan.stones} 灵石 + ${plan.clues} 线索</span>`;
         else gateBtn+=`<span class="break-cost is-short">${plan.reason}</span>`;
       }
 
-      return `<article class="cultivator-card">
-        <div class="cultivator-card-top"><span class="cultivator-name">${p.name}</span><span class="cultivator-origin ${p.origin==='innate'?'is-innate':''}">${p.origin==='innate'?'天生':'后天'}</span></div>
-        <div class="cultivator-realm"><strong>${realmName(p.realmIndex)}</strong><em>最多可至 ${realmName(cap)}</em></div>
+      // 【策划 C4 / 任务 T-5 验收标准 6】散功重修：昂贵但不致命的后悔药
+      let dissolveBtn='';
+      if(p.foundation){
+        const dp=dissolveFoundationPlan(s,p.id);
+        if(dp.ok){
+          dissolveBtn=`<button class="btn dissolve" data-dissolve="${p.id}" `
+            +`title="境界回退到炼气九层、修为清零、${dp.hours} 游戏小时不能修炼、家族道心 ${dp.morality}">`
+            +`散功重修 · 道心 ${dp.morality}</button>`;
+        }
+      }
+
+      const coreText=p.core&&coreOf(p).marks>0
+        ?`<span class="core-tag">丹纹 ${coreOf(p).marks} · ${coreGradeOf(coreOf(p).marks).name}</span>`:'';
+
+      return `<article class="cultivator-card" data-person="${p.id}" data-pstate="${pState}">
+        <div class="cultivator-card-top"><span class="cultivator-name">${p.name}</span><span class="cultivator-origin ${p.origin==='innate'?'is-innate':''}">${p.origin==='innate'?'天生':'后天'}</span>
+          <span class="state-tag ${stateTag.cls}">${stateTag.text}</span></div>
+        <div class="cultivator-realm"><strong>${realmName(p.realmIndex)}</strong><em>最多可至 ${realmName(cap)}</em>
+          <span class="cultivator-life ${life.cls}">${life.text}</span>${coreText}</div>
         <div class="cultivator-root" title="${rootGradeOf(p).desc}">
           <span class="root-grade grade-${rootGradeOf(p).id}">${rootGradeOf(p).name}</span>
           <span class="root-elements">${rootElementsOf(p).map((e)=>`<i class="el-${e}">${elementName(e)}</i>`).join('') || '—'}</span>
@@ -1105,13 +1347,15 @@ function createUI({ getState, actions, rng }) {
         <div class="cultivator-progress"><span style="width:${pct.toFixed(1)}%"></span></div>
         <div class="cultivator-foot"><span>${footText}</span>
         <select class="cultivator-assignment" data-assign-id="${p.id}" aria-label="指派${p.name}的工作">${role}</select></div>
+        <div class="cultivator-errand">${errandBox}${pushBtn}</div>
+        ${siteRow}${foldRow}
         <div class="cultivator-break">${gateBtn}${(()=>{
           const cost=rootRerollCost(p);
           const rp=rootRerollPlan(s,p.id);
           return `<button class="btn reroll" data-root-reroll="${p.id}" ${rp.ok?'':'disabled'}`
             + ` title="${rp.ok?`消耗 ${cost} 灵石重测灵根。测得更差会保留原有的，只扣灵石。`:rp.reason}">`
             + `测灵根 · ${cost} 灵石</button>`;
-        })()}</div>
+        })()}${dissolveBtn}</div>
       </article>`;
     }).join('');
   }
@@ -1556,6 +1800,7 @@ function createUI({ getState, actions, rng }) {
 
     updateTopbar(s, d);
     updateOverview(s, d);
+    updateDashboard(s);
     updatePageRes(s, d);
     updateSlots(s, d);
     for (const def of BUILDINGS) updateCard(def, s, d);

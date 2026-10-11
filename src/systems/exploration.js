@@ -82,7 +82,9 @@ function mapNodeStatus(state, nodeId) {
 function cultivatorPower(state, person) {
   if (!person) return 0;
   const idx = Math.max(0, Math.min(cultivateLevelCap(person), person.realmIndex || 0));
-  return cultivateBasePower(idx) * (1 + manualBonusFor(state, person).power);
+  // 【策划 C6 / 任务 T-6 验收标准 6】丹品战力倍率（九品 ×1.00 … 一品 ×1.80）。
+  // 出处：docs/91-落地任务清单.md §三 T-6「丹纹 → 品阶」表。
+  return cultivateBasePower(idx) * (1 + manualBonusFor(state, person).power) * corePowerMult(person);
 }
 
 /**
@@ -164,19 +166,49 @@ function mapYieldPerSec(state) {
  *
  * 「周天搬运」「结庐」这类科技加的正是这一项 ——
  * 所以打下来的地会**随仙道进度一起变肥**，而不是越到后面越不值钱。
+ *
+ * 【策划 C4 / 任务 T-5 验收标准 4】土系道基加成：
+ * 家族里有人把道基压在「土」地上，这块地的赋税就厚一层。
+ * 出处：docs/91-落地任务清单.md §三 T-5「五条地气词条」（土 → 领地赋税与材料 +25%）。
+ * ⚠ 领地是**家族级**的产出，所以取全族土系词条里最高的那一条（不相乘，避免堆人爆表）。
  */
 function mapYieldOf(state, nodeId) {
   const node = mapNode(nodeId);
   if (!node) return 0;
   const fx = techEffects(state);
-  return (node.yield || 0) * (1 + (fx.territoryYieldMult || 0));
+  return (node.yield || 0) * (1 + (fx.territoryYieldMult || 0)) * (1 + earthQiLandBonus(state));
+}
+
+/**
+ * 全族土系道基给出的「领地赋税与材料」加成（不含品阶/相合，那是 foundationEntryMult 的事）。
+ * 只统计仍在筑基以上、且道基落在**有效镇守**地块上的人。
+ */
+function earthQiLandBonus(state) {
+  let best = 0;
+  for (const p of state.cultivation?.cultivators || []) {
+    if (!p.foundation || p.foundation.element !== 'earth') continue;
+    if (p.realmIndex < 10) continue;
+    const node = mapNode(p.foundation.nodeId);
+    if (!node) continue;
+    const held = worldOf(state).held.includes(node.id) && mapIsPacified(state, node.id);
+    const m = foundationEntryMult(p, node, held);
+    const bonus = EARTH_QI.earth.pct * m;
+    if (bonus > best) best = bonus;
+  }
+  return Math.max(0, best);
 }
 
 /* ── 镇守指派 ── */
 
-/** 可以被派去镇守的人（宗门修士不可）。 */
+/**
+ * 可以被派去镇守的人（宗门修士与出门在外的人不可）。
+ *
+ * 【策划 C1 / 任务 T-4 验收标准 3】排除 `errand`：
+ * 在外打探消息的人不能被派去镇守 —— 他不在家，也不在山里。
+ * 出处：docs/91-落地任务清单.md §三 T-4 涉及文件（原只排除 sect）。
+ */
 function mapGarrisonCandidates(state) {
-  return (state.cultivation?.cultivators || []).filter((p) => p.job !== 'sect');
+  return (state.cultivation?.cultivators || []).filter((p) => p.job !== 'sect' && p.job !== 'errand');
 }
 
 /**
@@ -194,6 +226,8 @@ function mapAssignGarrison(state, nodeId, personId) {
   const p = findCultivator(state, personId);
   if (!p) return { ok: false, reason: '修士不存在' };
   if (p.job === 'sect') return { ok: false, reason: '宗门修士不可调回' };
+  // 【策划 C1 / 任务 T-4 验收标准 3】在外的人不在家，派不了
+  if (p.job === 'errand') return { ok: false, reason: `${p.name}出门在外，需先召回` };
   if (mapGarrisonFull(state, nodeId)) {
     return { ok: false, reason: `至多同时镇守 ${mapGarrisonLimit(state)} 处（仙道「镇岳」可加位）` };
   }
@@ -240,7 +274,8 @@ function advanceTerritories(state, dt, now = Date.now()) {
       state.spiritStones = (state.spiritStones || 0)
         + (node.yield || 0) * yieldMult * dt * metaStoneMult(state) * moralityTaxMult(state);
       // 药材、矿料、符文跟赋税同规则：只有当有效镇守时才产出
-      const matMult = metaMaterialMult(state) * yieldMult;
+      // 【策划 C4 / 任务 T-5 验收标准 4】土系道基同样抬高这三种材料（同一件事的四种形态）
+      const matMult = metaMaterialMult(state) * yieldMult * (1 + earthQiLandBonus(state));
       if (node.herb) addHerbs(state, node.herb, (node.herbYield || 0) * dt * matMult);
       if (node.ore) addOres(state, node.ore, (node.oreYield || 0) * dt * matMult);
       if (node.rune) addRuneMats(state, node.rune, (node.runeYield || 0) * dt * matMult);
@@ -329,6 +364,8 @@ function commitExplore(state, nodeId, personId, now = Date.now(), rng = Math.ran
   const p = findCultivator(state, personId);
   if (!p) return { ok: false, reason: '请选择修士' };
   if (p.job === 'sect') return { ok: false, reason: '宗门修士不可擅自离宗探险' };
+  // 【策划 C1 / 任务 T-4 验收标准 3】在外的人不能同时去探洞天
+  if (p.job === 'errand') return { ok: false, reason: `${p.name}出门在外，需先召回才能探险` };
 
   state.spiritStones -= node.fee;
   c.clues = Math.max(0, c.clues - node.clues);

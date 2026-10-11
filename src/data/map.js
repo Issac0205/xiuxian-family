@@ -40,49 +40,58 @@ const MAP_ROWS = 2;
  * 三条线共用领地供给，但材料彼此独立，所以玩家不必在三者之间做排他选择。
  *
  * 所有节点都有 tier（1–4）与 lore（百科/提示用）。
+ *
+ * 【策划 C4 / 任务 T-5】`earthQi` —— 每块地的**地气**（五行之一）。
+ * 「择地筑基」时选中的地会把这条地气烧进族谱，此后该修士的道基一直带着一条
+ * 「地气词条」（与灵根主系相合则 ×1.5、相冲则 ×0.6，详见 data/realms.js 的 EARTH_QI）。
+ * 出处：docs/91-落地任务清单.md §三 T-5 涉及文件（建议值：mosscave 木、valley 木、
+ * mistcave 火、river 水、grotto 水、ridge 金、wastes 土、beastnest 火）。
+ * ⚠ 取值口径与 `data/roots.js` 的 ROOT_ELEMENTS 一致（metal/wood/water/fire/earth），
+ *   这样它能与 `person.root.elements[0]` 直接比较（相合判定就靠这一条）。
+ * ⚠ 纯数据，逻辑一处不动 —— `power` / `tier` / `yield` 全部保持原值。
  */
 const MAP_NODES = [
   /* ── 第一列：起点区 ── */
   {
-    id: 'mosscave', name: '青苔谷', col: 0, row: 0, tier: 1, kind: 'cave',
+    id: 'mosscave', name: '青苔谷', col: 0, row: 0, tier: 1, kind: 'cave', earthQi: 'wood',
     realm: 1, fee: 0.2, clues: 1, stones: 0.7, manual: 0.05,
     lore: '谷口终年湿滑，苔痕没膝。谷底有一处天然石穴，灵气比外头稠些，是家族子弟开眼界的头一站。',
   },
   {
-    id: 'valley', name: '青木寨', col: 0, row: 1, tier: 1, kind: 'foe',
+    id: 'valley', name: '青木寨', col: 0, row: 1, tier: 1, kind: 'foe', earthQi: 'wood',
     power: 110, stones: 3, manual: 0.10, yield: 0.001, herb: 'grass', herbYield: 0.002, ore: 'lingmu', oreYield: 0.0008, rune: 'paper', runeYield: 0.0006,
     lore: '占山为寨的散修百余口，靠劫掠过路商队过活。寨子里没有高手，但人多。',
   },
   /* ── 第二列 ── */
   {
-    id: 'mistcave', name: '流霞坡', col: 1, row: 0, tier: 2, kind: 'cave',
+    id: 'mistcave', name: '流霞坡', col: 1, row: 0, tier: 2, kind: 'cave', earthQi: 'fire',
     realm: 3, fee: 1, clues: 2, stones: 3, manual: 0.15,
     lore: '坡上常年笼着一层赤霞，据说是前人斗法余烬未散。往里走能拾到烧残的法器碎片。',
   },
   {
-    id: 'river', name: '黑水门', col: 1, row: 1, tier: 2, kind: 'foe',
+    id: 'river', name: '黑水门', col: 1, row: 1, tier: 2, kind: 'foe', earthQi: 'water',
     power: 560, stones: 15, manual: 0.32, yield: 0.003, herb: 'ling', herbYield: 0.0015, ore: 'hantie', oreYield: 0.0006, rune: 'cinnabar', runeYield: 0.00045,
     lore: '盘踞黑水渡口的修士门派，靠收渡钱起家。门主炼气七层，门下弟子都懂些水法。',
   },
   /* ── 第三列 ── */
   {
-    id: 'grotto', name: '玄阴涧', col: 2, row: 0, tier: 3, kind: 'cave',
+    id: 'grotto', name: '玄阴涧', col: 2, row: 0, tier: 3, kind: 'cave', earthQi: 'water',
     realm: 6, fee: 4, clues: 3, stones: 12, manual: 0.34,
     lore: '涧底终年不见天日，阴气凝而不散。传闻有人在里面见过完整的古碑。',
   },
   {
-    id: 'ridge', name: '玄铁宗', col: 2, row: 1, tier: 3, kind: 'foe',
+    id: 'ridge', name: '玄铁宗', col: 2, row: 1, tier: 3, kind: 'foe', earthQi: 'metal',
     power: 2400, stones: 65, manual: 0.7, yield: 0.010, herb: 'iron', herbYield: 0.001, ore: 'xuantie', oreYield: 0.0005, rune: 'ink', runeYield: 0.00035,
     lore: '以炼器立宗的小门派，山门用整块玄铁铸成。宗内弟子皆习金系功法，硬碰硬讨不到好。',
   },
   /* ── 第四列：深处 ── */
   {
-    id: 'wastes', name: '太虚原', col: 3, row: 0, tier: 4, kind: 'cave',
+    id: 'wastes', name: '太虚原', col: 3, row: 0, tier: 4, kind: 'cave', earthQi: 'earth',
     realm: 9, fee: 12, clues: 5, stones: 40, manual: 0.7,
     lore: '一片寸草不生的荒原，据说上古时有大能在此开过一场法会，余威至今未散。',
   },
   {
-    id: 'beastnest', name: '万兽谷', col: 3, row: 1, tier: 4, kind: 'foe',
+    id: 'beastnest', name: '万兽谷', col: 3, row: 1, tier: 4, kind: 'foe', earthQi: 'fire',
     power: 12000, stones: 240, manual: 0.7, yield: 0.025, herb: 'flame', herbYield: 0.0008, ore: 'yaogu', oreYield: 0.0003, rune: 'blood', runeYield: 0.0002,
     lore: '深谷里盘踞着一头筑基期的妖兽，方圆百里的散修都绕道走。占了这里，商路才算真正打通。',
   },

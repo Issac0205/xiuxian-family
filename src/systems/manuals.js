@@ -108,10 +108,31 @@ function caveSurvival(state, person, cave) {
   const moral = moralityCaveBonus(state) + schoolFx(state, 'caveBonus');
   // 仙道科技「洞府」：在山里凿出退路，全族进洞天都多一分生还
   const tech = techEffects(state).exploreSurviveBonus;
+  // 【策划 C4 / 任务 T-5 验收标准 4】水系道基：洞天生还率 +8pp（相合 ×1.5 / 相冲 ×0.6）
+  const earth = foundationCaveBonus(state);
   // 层差按全局 realmIndex 算。炼气期的 index 与「层数」同值，所以既有的配平不变。
   const levelGap = Math.max(0, (cave?.realm || 1) - (person?.realmIndex || 1));
   const base = .82 * Math.exp(-.78 * levelGap) * (person?.talent || 1);
-  return Math.max(.015, Math.min(.98, base + mb.survive + art.survive + rune + meta + moral + tech));
+  return Math.max(.015, Math.min(.98, base + mb.survive + art.survive + rune + meta + moral + tech + earth));
+}
+
+/**
+ * 【策划 C4 / 任务 T-5 验收标准 4】水系道基给的洞天生还率加成（百分点）。
+ * 全族取最高的那一条。出处：docs/91-落地任务清单.md §三 T-5「五条地气词条」表
+ * （与 exploreSurviveBonus 同类但**独立来源** —— 这个来自道基，不来自科技）。
+ */
+function foundationCaveBonus(state) {
+  let best = 0;
+  for (const p of state.cultivation?.cultivators || []) {
+    if (!p.foundation || p.foundation.element !== 'water') continue;
+    if (p.realmIndex < 10) continue;
+    const node = mapNode(p.foundation.nodeId);
+    if (!node) continue;
+    const held = worldOf(state).held.includes(node.id) && mapIsPacified(state, node.id);
+    const bonus = EARTH_QI.water.pp * foundationEntryMult(p, node, held);
+    if (bonus > best) best = bonus;
+  }
+  return best;
 }
 
 /** 该道途当前是否已被某个位置占用（同途不可两立）。 */function manualDaoTaken(state, dao, exceptId) {

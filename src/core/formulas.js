@@ -25,6 +25,13 @@ const IMMORTAL_EFFECT_KEYS = [
   'exploreSurviveBonus', 'breakBonusFlat', 'tradeStoneMult',
   'cityMaterialMult', 'runeBenchFree', 'alchemyRateBonus', 'trainMult',
   'familyPowerMult',
+  // 【策划 T-0 / docs/91-落地任务清单.md §三 T-0「实现要点 1」】第 16 个键。
+  // 目的：把「秘闻线索」从**一次性池子**（SECRETS 20 条）改成**按秒累积的可再生资源**，
+  // 否则 20 < REALM_GATES 四道门槛的 2+4+8+14=28 条，一周目在数学上无法通关。
+  // 数值出处：docs/91 T-0「供给侧」表 —— tanxue +0.0002/秒、jiexu +0.00025/秒，
+  // 慢路合计 1.62 条/时，44.6 小时产出 92 条，相对需求 59 条有 +56% 余量。
+  // 消费点：systems/cultivation.js 的 progressCultivators()（**不是** cultivationBonuses）。
+  'cluePerSecFlat',
 ];
 
 const ALL_EFFECT_KEYS = [...MORTAL_EFFECT_KEYS, ...IMMORTAL_EFFECT_KEYS];

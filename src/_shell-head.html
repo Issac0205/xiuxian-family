@@ -1263,6 +1263,30 @@ body { font-size: 14px; letter-spacing: .06px; }
 .overview-status b { font-size:14px; color:var(--jade); font-variant-numeric:tabular-nums; }
 .overview-status b.is-down { color:var(--danger); }
 
+/* ══════ 【策划 C15 / 任务 T-2】境界仪表盘 ══════
+   复用已有的 chip / immortal-statline 观感，不引入新 UI 形态（T-2 非目标）。
+   三个主题（classic / inkwash / daotian）都用的是同一套 CSS 变量，所以不必各写一份；
+   只有 inkwash 那种浅底需要把边线压深一点，与 .immortal-block 的做法一致。 */
+.realm-dashboard { margin-top:14px; padding:13px 15px; border:1px solid var(--line); background:var(--ink-1); border-radius:11px; }
+.realm-dashboard[hidden] { display:none; }
+.dash-head { display:flex; align-items:baseline; justify-content:space-between; gap:10px; flex-wrap:wrap; margin-bottom:9px; }
+.dash-title { color:var(--gold-soft); font:600 15px var(--font-serif); letter-spacing:1px; }
+.dash-note { color:var(--muted); font-size:12px; }
+.dash-row { display:flex; gap:8px; flex-wrap:wrap; }
+.dash-row span { font-size:12px; background:var(--ink-3); padding:5px 8px; border-radius:6px; font-variant-numeric:tabular-nums; }
+.dash-row span b { color:var(--gold-soft); }
+.dash-bar { height:8px; margin:9px 0 4px; background:rgba(3,8,11,.78); border-radius:8px; overflow:hidden; border:1px solid rgba(255,255,255,.1); }
+.dash-bar>i { display:block; height:100%; width:0; background:linear-gradient(90deg,#b5883c,#e3bd70,#79cbb2); }
+.dash-link { margin-left:auto; font-size:11px; color:var(--muted); background:none; border:1px solid var(--line-strong); border-radius:6px; padding:3px 8px; cursor:pointer; }
+.dash-link:hover { color:var(--gold-soft); }
+.dash-cell { display:grid; gap:7px; }
+.dash-life-normal { color:var(--jade); }
+.dash-life-warn { color:#e3bd70; }
+.dash-life-danger { color:var(--danger); }
+.dash-life-gone { color:var(--muted); }
+body[data-theme="inkwash"] .realm-dashboard { background:#f8f5ee; border-color:#d6cfc0; }
+body[data-theme="inkwash"] .dash-row span { background:#e8e2d5; color:#2f2b26; }
+
 /* 手机优先布局：解决原版 390px 屏幕却延伸至 590px 的横向溢出 */
 @media (max-width: 1180px) {
   .shell-side { position:static; }
@@ -1743,8 +1767,52 @@ body[data-theme="inkwash"] .bank-ai-copy:hover:not(:disabled) { background:#5450
 .cultivator-name { color:var(--gold-soft); font:600 15px var(--font-serif); }
 .cultivator-origin { font-size:10px; color:var(--muted); border:1px solid var(--line); padding:2px 6px; border-radius:999px; white-space:nowrap; }
 .cultivator-origin.is-innate { color:var(--jade); border-color:rgba(99,201,168,.35); }
-.cultivator-realm { font-size:12px; color:var(--text); margin-top:9px; display:flex; justify-content:space-between; gap:5px; }
+.cultivator-realm { font-size:12px; color:var(--text); margin-top:9px; display:flex; justify-content:space-between; gap:5px; flex-wrap:wrap; }
 .cultivator-realm em { color:var(--muted); font-style:normal; font-size:11px; }
+
+/* ══════ 【策划 C15 / 任务 T-2 验收标准 5】卡片上唯一的那个状态标记 ══════
+   收敛到 personState() 之后，同一张卡上**绝不允许出现两个状态标记**。
+   出处：docs/91-落地任务清单.md §三 T-2 验收标准 3、5。 */
+.state-tag { margin-left:auto; font-size:10.5px; padding:2px 7px; border-radius:5px; border:1px solid var(--line-strong); background:var(--ink-3); color:var(--muted); }
+.state-tag.st-progressing { color:var(--jade); border-color:rgba(99,201,168,.35); }
+.state-tag.st-blocked { color:var(--gold-soft); border-color:rgba(227,189,112,.45); }
+.state-tag.st-filling { color:var(--gold-soft); }
+.state-tag.st-folding { color:#e3bd70; border-color:rgba(227,189,112,.55); }
+.state-tag.st-out { color:#89b6d6; border-color:rgba(137,182,214,.4); }
+.state-tag.st-stalled { color:var(--danger); border-color:rgba(214,110,110,.45); }
+.state-tag.st-max { color:var(--muted); }
+
+/* 【策划 C14 / 任务 T-2b 验收标准 4、5】族谱上的「寿 X，余 Y」三档配色。
+   余量 > 50% 正常 / 20–50% 黄 / < 20% 红；**不做任何惩罚**，只是文案与颜色。 */
+.cultivator-life { font-size:11px; font-variant-numeric:tabular-nums; }
+.cultivator-life.dash-life-normal { color:var(--jade); }
+.cultivator-life.dash-life-warn { color:#e3bd70; }
+.cultivator-life.dash-life-danger { color:var(--danger); }
+.cultivator-life.dash-life-gone { color:var(--muted); }
+.core-tag { font-size:11px; color:var(--gold-soft); }
+
+/* 【策划 C1 / 任务 T-4】投帖问路的勾选与【策划 C2 / 任务 T-3】猛进开关 */
+.cultivator-errand { display:flex; align-items:center; gap:8px; flex-wrap:wrap; margin-top:8px; }
+.errand-box { display:inline-flex; align-items:center; gap:5px; font-size:11px; color:var(--muted); }
+.errand-box input { accent-color:var(--jade); }
+.btn.push { font-size:11px; }
+.btn.push.is-on { border-color:rgba(214,110,110,.6); color:#f0b9b9; }
+
+/* 【策划 C4 / 任务 T-5】择地下拉框 + 三行预览 */
+.site-box { margin-top:9px; padding:9px; border:1px dashed var(--line-strong); border-radius:8px; display:grid; gap:6px; }
+.site-head { font-size:11px; color:var(--gold-soft); }
+.site-head.is-short { color:var(--muted); }
+.site-select { background:var(--ink-2); color:var(--text); border:1px solid var(--line-strong); border-radius:6px; padding:5px 7px; font-size:12px; }
+.site-preview { display:flex; gap:8px; flex-wrap:wrap; font-size:11px; color:var(--muted); }
+.site-preview b { color:var(--text); }
+
+/* 【策划 C6 / 任务 T-6】丹图与三档火候 */
+.fold-box { margin-top:9px; padding:9px; border:1px dashed rgba(227,189,112,.5); border-radius:8px; display:grid; gap:7px; }
+.fold-head { font-size:11px; color:var(--gold-soft); }
+.fold-actions { display:flex; gap:7px; flex-wrap:wrap; }
+.btn.fold { font-size:11px; }
+.btn.fold.is-locked { opacity:.45; }
+.btn.dissolve { font-size:11px; color:#e6c78f; }
 .cultivator-progress { height:6px; margin:8px 0; background:var(--ink-0); border-radius:6px; overflow:hidden; }
 .cultivator-progress > span { height:100%; display:block; background:var(--jade); border-radius:6px; }
 .cultivator-foot { display:flex; align-items:center; justify-content:space-between; gap:8px; font-size:11px; color:var(--muted); }
@@ -2211,6 +2279,14 @@ body[data-theme="daotian"] ::-webkit-scrollbar-thumb:hover { background: #3a4c60
           <div class="overview-status"><span>实时人口增长</span><b id="overview-trend">+0.012 人/秒</b></div>
         </div>
       </section>
+
+      <!-- ══════════════ 【策划 C15 / 任务 T-2】境界仪表盘 ══════════════
+           首页顶部一块**随境界换**的表：同一块屏幕，五个不同的游戏。
+           内容由 ui/app.js 的 updateDashboard() 填充，**只渲染当前最高境界那一格**
+           （未解锁的机制 DOM 里根本不存在，而不是渲染成空）。
+           出处：docs/91-落地任务清单.md §三 T-2 验收标准 1、2。
+           结构与类名约定：每格用 .dash-<key>，查询链接用 [data-target-page="codex"]。 -->
+      <section id="realm-dashboard" class="realm-dashboard" hidden></section>
 
       <section class="panel" data-panel="population">
         <div class="panel-head">

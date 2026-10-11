@@ -177,15 +177,51 @@ function commitRune(state, id, now = Date.now(), rng = Math.random) {
 function runeCount(state, id, now = Date.now()) {
   const e = runesOf(state).stock[id];
   if (!e || e.n <= 0) return 0;
-  if (e.expiresAt > 0 && now >= e.expiresAt) return 0;
+  if (e.expiresAt > 0 && now >= foundationRuneExpiry(state, e.expiresAt)) return 0;
   return e.n;
+}
+
+/**
+ * 【策划 C4 / 任务 T-5 验收标准 4】火系道基给的**符箓保质期**倍率。
+ *
+ * 全族取最高的那一条火系词条（「松绑炼符刻意的『囤不住』设计」，
+ * 出处：docs/91-落地任务清单.md §三 T-5「五条地气词条」表的火那一行）。
+ * ⚠ 不能改写下落时的 expiresAt（那会污染存档语义），而是**在读取时**把
+ *   有效期拉长 —— 于是「画好之后 N 小时内不用就作废」变成「N×1.5 小时」。
+ */
+function foundationRuneShelfMult(state) {
+  let best = 0;
+  for (const p of state.cultivation?.cultivators || []) {
+    if (!p.foundation || p.foundation.element !== 'fire') continue;
+    if (p.realmIndex < 10) continue;
+    const node = mapNode(p.foundation.nodeId);
+    if (!node) continue;
+    const held = worldOf(state).held.includes(node.id) && mapIsPacified(state, node.id);
+    const mult = foundationEntryMult(p, node, held);
+    const bonus = EARTH_QI.fire.pct * mult;
+    if (bonus > best) best = bonus;
+  }
+  return 1 + Math.max(0, best);
+}
+
+/**
+ * 【策划 C4 / 任务 T-5 验收标准 4】火系道基给出的**实际到期绝对时刻**（毫秒）。
+ *
+ * 做法：不动存档里的 `expiresAt`（它记的是「下落时刻 + 基础保质期」），
+ * 而是在**读取时**把到期时刻推后 `(shelf − 1) × RUNE_SHELF_HOURS`。
+ * 于是界面上、消费判定上、清理判定上读到的都是同一个被拉长的保质期。
+ */
+function foundationRuneExpiry(state, expiresAt) {
+  const shelf = foundationRuneShelfMult(state);
+  if (shelf <= 1) return expiresAt;
+  return expiresAt + (shelf - 1) * RUNE_SHELF_HOURS * 3600 * 1000;
 }
 
 /** 距离过期还有多少秒；没有存货返回 0。 */
 function runeExpiresIn(state, id, now = Date.now()) {
   const e = runesOf(state).stock[id];
   if (!e || e.n <= 0) return 0;
-  return Math.max(0, (e.expiresAt - now) / 1000);
+  return Math.max(0, (foundationRuneExpiry(state, e.expiresAt) - now) / 1000);
 }
 
 /** 消耗一张符。不够就返回 false。 */
@@ -259,7 +295,7 @@ function advanceRunes(state, dt, now = Date.now()) {
   }
   for (const id of Object.keys(r.stock)) {
     const e = r.stock[id];
-    if (e.expiresAt > 0 && now >= e.expiresAt) {
+    if (e.expiresAt > 0 && now >= foundationRuneExpiry(state, e.expiresAt)) {
       pushLog(state, `${RUNE_ITEM_MAP[id]?.name || id}过了保质期，${e.n} 张尽数作废。`, 'cultivate', null, now);
       delete r.stock[id];
     }

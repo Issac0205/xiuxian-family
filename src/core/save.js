@@ -1,4 +1,13 @@
-/** 把状态整理成可序列化的存档对象。 */
+/**
+ * 把状态整理成可序列化的存档对象。
+ *
+ * ⚠ **这是一份手写白名单 —— 加顶层字段时必须同步加进来，否则刷新即静默丢失。**
+ *   本项目已经因此踩过一次坑：`immortalTechs` / `morality` / `exchangeCount`
+ *   三个顶层字段当初漏在这里，于是刷新一次整条仙道科技线归零、道心回 50、
+ *   坊市兑换次数回 0，而所有测试都是绿的（因为旧断言只查 cultivation.* 内部）。
+ *   现在 scripts/smoke.mjs 里有一条结构性断言守着：
+ *   「`createState()` 的每个顶层字段都必须在 serialize() 的键集合里」。
+ */
 function serialize(state) {
   return {
     version: SAVE_VERSION,
@@ -9,6 +18,13 @@ function serialize(state) {
     population: state.population,
     buildings: state.buildings,
     techs: state.techs,
+    // 【策划 T-1 / docs/91-落地任务清单.md §三 T-1】阻断缺陷修复：补三个顶层字段。
+    immortalTechs: state.immortalTechs,
+    exchangeCount: state.exchangeCount,
+    morality: state.morality,
+    // 【策划 T-2b / docs/91 §三 T-2b 涉及文件】世界钟（寿元钟）。
+    // 它是 T-1 那条结构性断言的**第一个受益者**：加字段的同时就必须加这里。
+    clock: state.clock,
     caravans: state.caravans,
     tradeRuns: state.tradeRuns,
     milestones: state.milestones,
@@ -21,6 +37,11 @@ function serialize(state) {
     spiritStones: state.spiritStones,
     secrets: state.secrets,
     cultivation: state.cultivation,
+    // 【策划 T-1】元进度（轮回点 / 金手指）也是**顶层**字段。
+    // 它原来是整个白名单里唯一「写进去又读不回来」的字段：hydrate() 会重建 meta，
+    // 而 serialize() 从不写出 —— 于是每次读档都把轮回进度清空。
+    // 这属于同一起缺陷（白名单漏顶层字段），一并补上。
+    meta: state.meta,
     log: state.log.slice(0, 20),
     ui: state.ui,
   };
@@ -163,7 +184,14 @@ function hydrate(raw) {
             .filter(e=>ROOT_ELEMENTS[e]).slice(0,rootGrade.count),
           rerolls:Math.max(0,Math.floor(num(p.root.rerolls,0))),
         }:null;
-        fresh.cultivation.cultivators.push({id,name:cultivateName(id),origin,root,realmIndex,xp,breakFailures:bf,talent:Math.max(1,Math.min(100,num(p.talent,origin==='innate'?1.1:1))),job:CULTIVATOR_JOBS[p.job]?p.job:'retreat',parentage:origin==='innate'?(p.parentage==='cultivator-cultivator'?'cultivator-cultivator':'cultivator-mortal'):'awakening'});
+        fresh.cultivation.cultivators.push({id,name:cultivateName(id),origin,root,realmIndex,xp,breakFailures:bf,talent:Math.max(1,Math.min(100,num(p.talent,origin==='innate'?1.1:1))),job:CULTIVATOR_JOBS[p.job]?p.job:'retreat',parentage:origin==='innate'?(p.parentage==='cultivator-cultivator'?'cultivator-cultivator':'cultivator-mortal'):'awakening',
+          // 【策划 C2 / C14 / C4 / C6】本节点新增的四个逐人字段。
+          // 老存档里没有它们 —— 这里只做「搬运」，一律由 repairCultivation()
+          // 的 ensurePersonFields() 幂等补默认值（两处共用同一份口径）。
+          // 所以旧存档读进来**不报错、也不会被当成损坏而重开**。
+          push:p.push===true, stalled:p.stalled, realmEnteredYear:p.realmEnteredYear,
+          foundation:p.foundation||null, core:p.core||null,
+        });
       }
       fresh.cultivation.nextId=Math.max(Math.floor(num(raw.cultivation.nextId,1)),1,...fresh.cultivation.cultivators.map(p=>p.id+1));
     } else {
@@ -171,7 +199,9 @@ function hydrate(raw) {
       for(let i=1;i<=oldQi;i++) fresh.cultivation.cultivators.push({id:i,name:cultivateName(i),origin:'awakened',root:null,realmIndex:1,xp:0,breakFailures:0,job:'retreat',talent:1,parentage:'awakening'});
       fresh.cultivation.nextId=oldQi+1;
     }
-    for(const [k,v] of Object.entries({poolBlueprint:false,pool:0,compass:false,veins:[],mineLevel:0,mineWorkers:0,clues:0,caveRuns:0,conquests:[],humanPills:0})){fresh.cultivation[k]=raw.cultivation[k]===undefined?v:raw.cultivation[k];}
+    // 【策划 T-0 / docs/91-落地任务清单.md §三 T-0「涉及文件」save.js】
+    // cluePool 与 clues 一起迁移；老存档没有这个字段 → 0。
+    for(const [k,v] of Object.entries({poolBlueprint:false,pool:0,compass:false,veins:[],mineLevel:0,mineWorkers:0,clues:0,cluePool:0,caveRuns:0,conquests:[],humanPills:0})){fresh.cultivation[k]=raw.cultivation[k]===undefined?v:raw.cultivation[k];}
     fresh.cultivation.humanPills=Math.max(0,Math.floor(num(fresh.cultivation.humanPills,0)));
     fresh.cultivation.clues=Math.max(0,Math.floor(num(fresh.cultivation.clues,0)));
     fresh.cultivation.pool=Math.max(0,Math.min(10,Math.floor(num(fresh.cultivation.pool,0))));
@@ -307,6 +337,28 @@ function hydrate(raw) {
   // 它没有被列进 REINCARNATION_KEEP，所以重开会回到中庸。
   fresh.morality=Math.max(MORALITY_MIN,Math.min(MORALITY_MAX,num(raw.morality,MORALITY_START)));
 
+  // ══════════════════════════════════════════════════════════════════
+  // 【策划 T-1 / docs/91-落地任务清单.md §三 T-1】阻断缺陷修复的**回读侧**。
+  //
+  // 这两段原来根本没有 —— 因为 serialize() 从不写出它们，所以 raw 里永远是
+  // undefined，于是「读回来是默认值」这件事被兜底掩盖了，静默得很干净。
+  // 现在写出侧补齐了，回读侧也必须补上：缺字段（老存档）时照旧用默认值。
+  //
+  // immortalTechs：与 state.techs 平行的那条仙道科技线。
+  //   过滤掉已不存在于表中的 id —— 改了数据表之后旧存档仍然能 load。
+  // exchangeCount：云深谷坊市的递进兑换次数（界面上画成一条进度条）。
+  // ══════════════════════════════════════════════════════════════════
+  fresh.immortalTechs = Array.isArray(raw.immortalTechs)
+    ? raw.immortalTechs.filter((id) => typeof id === 'string' && IMMORTAL_TECH_MAP[id])
+    : [];
+  fresh.exchangeCount = Math.max(0, Math.floor(num(raw.exchangeCount, 0)));
+
+  // 【策划 T-2b / docs/91 §三 T-2b 涉及文件】世界钟：老存档没有 clock 字段。
+  {
+    const rc = raw.clock && typeof raw.clock === 'object' ? raw.clock : {};
+    fresh.clock = { year: Math.max(0, num(rc.year, 0)) };
+  }
+
   // 元进度：跨周目保留的那一份。
   // **漏掉这一段等于每次读档都把轮回进度清空** —— 这是这一区块最危险的迁移点。
   {
@@ -398,6 +450,9 @@ function num(v, fallback) {
   const n = Number(v);
   return Number.isFinite(n) ? n : fallback;
 }
+
+/** 道基品阶的取值范围：1..5（5 = 天品地块 + 已镇守越的那一档）。 */
+const FOUNDATION_GRADE_MAX_SAVE = 5;
 
 /** 写入本地存档。返回是否成功。 */
 function save(state) {
