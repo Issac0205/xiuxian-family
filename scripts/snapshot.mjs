@@ -33,12 +33,34 @@ const ROOT = resolve(HERE, '..');
 const SNAP_DIR = resolve(ROOT, '..', '.snapshots');   // 仓库之外，不会被 git add 扫到
 const KEEP_DEFAULT = 40;
 
+let IDENT = null;
+/**
+ * 提交者身份：优先用仓库已配置的 user.name/user.email，没有再兜底。
+ * 必须显式给 —— `git commit-tree` 在**没有配置身份的环境**里会直接失败
+ * （实测：新克隆里报 `fatal: unable to auto-detect email address`）。
+ * 原仓库恰好配过身份，所以这个坑只在克隆/新机器上暴露。
+ */
+function identity() {
+  if (IDENT) return IDENT;
+  const pick = (key, fb) => {
+    const r = spawnSync('git', ['config', '--get', key], { cwd: ROOT, encoding: 'utf8' });
+    return (r.status === 0 && (r.stdout || '').trim()) || fb;
+  };
+  const name = pick('user.name', 'xiuxian-checkpoint');
+  const mail = pick('user.email', 'checkpoint@localhost');
+  IDENT = {
+    GIT_AUTHOR_NAME: name, GIT_AUTHOR_EMAIL: mail,
+    GIT_COMMITTER_NAME: name, GIT_COMMITTER_EMAIL: mail,
+  };
+  return IDENT;
+}
+
 /** 跑一条 git 命令；env 用于注入临时索引。 */
 function git(args, env = {}, { allowFail = false } = {}) {
   const r = spawnSync('git', args, {
     cwd: ROOT,
     encoding: 'utf8',
-    env: { ...process.env, ...env },
+    env: { ...process.env, ...identity(), ...env },
     maxBuffer: 64 * 1024 * 1024,
   });
   if (r.status !== 0 && !allowFail) {
