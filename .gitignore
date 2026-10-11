@@ -1,3 +1,5 @@
-﻿node_modules/
+node_modules/
 *.log
 *.tmp
+# 平衡仿真器的一次性 stdout 产物（node scripts/balance.mjs ... > _bal-xxx.txt 2>&1）
+_bal-*.txt
