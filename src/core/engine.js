@@ -835,6 +835,11 @@ function tick(state, gameDt, now = Date.now(), rng = Math.random) {
     advanceCaravans(state, gameDt, now, rng);
   }
   checkMilestones(state, now);
+  // 【架构 docs/101 §3.3】开发者模式：在**每 tick 的末尾**统一补满。
+  // 放在这里而不是逐个改扣减点 —— 扣减点散在 engine / alchemy / forge /
+  // runes / immortal-actions / markets / breakthrough 七处，逐个改必漏。
+  // ⚠ 参数名不能叫 state：本函数内部一直用 `state` 指当前状态。
+  devRefill(state);
 }
 
 /**
@@ -877,6 +882,10 @@ function runOffline(state, seconds, now = Date.now()) {
 
   advanceCaravans(state, capped, now);
   const top = checkMilestones(state, now, true);
+
+  // 【架构 docs/101 §3.3】离线结算同样收在末尾补满一次：
+  // 离线是「一帧跑完 12 小时」，末尾补一次就等于「回来时资源是满的」。
+  devRefill(state);
 
   return {
     seconds: capped,

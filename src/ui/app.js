@@ -50,6 +50,8 @@ function createUI({ getState, actions, rng }) {
   let difficultySig = null;
   let speedSig = null;
   let quizModeSig = null;
+  /** 【架构 docs/101】上一次同步过的开发者模式状态。 */
+  let devModeSig = null;
   let themeSig = null;
   let secretSig = null;
   let collapseSig = null;
@@ -1788,6 +1790,44 @@ function createUI({ getState, actions, rng }) {
     }
   }
 
+  /**
+   * 【架构 docs/101】开发者模式的界面同步。
+   *
+   * 严格用 `is-hidden` 切换可见性（**不删 DOM**）—— #tech-list 那次的教训：
+   * 删掉的宿主元素不会自己回来，后续渲染找不到挂点。
+   *
+   * 三处一起动：
+   *   #dev-badge  顶栏常驻徽标（开启才露）
+   *   #dev-state  设置里那行说明（开 / 关都写文字）
+   *   #dev-submit 按钮文案（开启 → 「关闭」，未开启 → 「开启」）
+   */
+  function syncDevMode() {
+    const on = typeof devModeOn === 'function' && devModeOn(state());
+    const text = typeof devStatusLine === 'function' ? devStatusLine(state()) : '';
+    if (devModeSig !== null && devModeSig.on === on && devModeSig.text === text) return;
+    devModeSig = { on, text };
+
+    const badge = $('dev-badge');
+    if (badge) badge.classList.toggle('is-hidden', !on);
+
+    const row = $('dev-mode-row');
+    row?.classList.toggle('is-on', on);
+
+    const label = $('dev-state');
+    if (label) {
+      label.textContent = text || (on ? '开发者模式已开启。' : '开发者模式未开启。');
+      // 通过状态里也带上「已开启」四个字，方便玩家（与测试）一眼确认
+      if (on && !label.textContent.includes('已开启')) label.textContent += '（已开启）';
+      label.classList.toggle('is-on', on);
+    }
+
+    const submit = $('dev-submit');
+    if (submit) submit.textContent = on ? '关闭' : '开启';
+    // 已开启时输入框没有意义，禁用掉，免得让人以为还要再输一次
+    const key = $('dev-password');
+    if (key) key.disabled = on;
+  }
+
   function syncSpeed() {
     const speed = currentSpeed(state());
     if (speed === speedSig) return;
@@ -1951,6 +1991,13 @@ function createUI({ getState, actions, rng }) {
 
       if (quizView.isBusy()) return;
 
+      // 【架构 docs/101】开发者模式：口令按钮最先处理 —— 它不属于任何面板的
+      // 「作答后生效」语义，答错返还那套规则在这里没有意义。
+      if (ev.target.closest('#dev-submit')) {
+        actions.submitDevPassword($('dev-password')?.value ?? '');
+        return;
+      }
+
       const speedEl = ev.target.closest('[data-speed]');
       if (speedEl) {
         actions.setSpeed(speedEl.dataset.speed);
@@ -2049,6 +2096,7 @@ function createUI({ getState, actions, rng }) {
     syncDifficulty();
     syncSpeed();
     syncQuizMode();
+    syncDevMode();
     syncCollapsed();
     syncPage();
     syncHideDone();
@@ -2072,6 +2120,7 @@ function createUI({ getState, actions, rng }) {
     syncSpeed,
     syncTheme,
     syncQuizMode,
+    syncDevMode,
     syncCollapsed,
     syncPage,
     syncHideDone,

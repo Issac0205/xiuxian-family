@@ -1513,6 +1513,30 @@ body[data-theme="inkwash"] .rite-overlay { background:rgba(40,36,30,.45); }
   box-shadow:0 0 0 1px rgba(255,255,255,.08);
 }
 
+/* ══════════ 【架构 docs/101】开发者模式：设置行 + 常驻徽标 ══════════
+   这两块**始终留在 DOM 里**，只靠 .is-hidden 切换可见性 ——
+   沿用 #tech-list 那次的教训：删 DOM 会让后续渲染找不到宿主元素。
+   ⚠ 口令输入框本身是常驻的（不然没法「在设置里输密码」）；
+     真正隐藏的是「已开启」的提示与徽标。 */
+.setting-row-dev { align-items:center; }
+.dev-key {
+  width:110px; min-height:34px; padding:4px 8px;
+  border:1px solid var(--line-strong); border-radius:8px;
+  background:rgba(0,0,0,.28); color:var(--text);
+  font-size:13px; letter-spacing:2px; text-align:center;
+}
+.dev-key:focus { outline:1px solid var(--gold-soft); }
+.dev-state { font-size:11.5px; color:var(--muted); }
+.dev-state.is-on { color:var(--gold-soft); }
+.dev-badge {
+  display:inline-flex; align-items:center; gap:4px;
+  margin-left:8px; padding:2px 8px;
+  border:1px solid var(--gold-soft); border-radius:999px;
+  background:rgba(217,180,94,.16); color:var(--gold-soft);
+  font-size:11px; letter-spacing:1px;
+}
+.dev-badge.is-hidden { display:none; }
+
 @media (max-width:720px) {
   .settings-toggle { margin-left:auto; }
   .topbar-actions {
@@ -2251,6 +2275,10 @@ body[data-theme="daotian"] ::-webkit-scrollbar-thumb:hover { background: #3a4c60
       </span>
     </div>
     <button class="btn settings-toggle" id="settings-toggle" type="button" aria-expanded="false" aria-controls="global-settings" aria-label="展开游戏设置">⚙ 设置</button>
+    <!-- 【架构 docs/101】常驻的开发者模式徽标：默认 is-hidden（藏），
+         开启后由 src/ui/app.js 的 renderDevMode() 取掉 is-hidden。
+         ⚠ 只切 class，不删 DOM。 -->
+    <span class="dev-badge is-hidden" id="dev-badge" role="status" aria-live="polite">⚑ DEV</span>
     <div class="topbar-actions" id="global-settings" aria-hidden="true">
       <div class="seg-group">
         <span class="seg-label">界面风格</span>
@@ -2287,6 +2315,19 @@ body[data-theme="daotian"] ::-webkit-scrollbar-thumb:hover { background: #3a4c60
           <button class="seg-btn" data-difficulty="hell">地狱</button>
         </div>
       </div>
+
+      <!-- 【架构 docs/101】开发者模式：在设置里输四位口令。
+           ⚠ 口令**不以明文**写在页面里（页面只带散列值，比对在
+             src/systems/resources.js 的 devCheckPassword()）。
+           ⚠ 输入框常驻（不然没法「在设置里输密码」）；
+             「已开启」的状态与关闭按钮由 renderDevMode() 切换 is-hidden。 -->
+      <div class="seg-group setting-row-dev" id="dev-mode-row">
+        <span class="seg-label">开发者模式</span>
+        <input class="dev-key" id="dev-password" type="password" inputmode="numeric"
+               autocomplete="off" maxlength="8" aria-label="开发者模式口令" placeholder="口令">
+        <button class="btn ghost" type="button" id="dev-submit">开启</button>
+      </div>
+      <p class="setting-tip" id="dev-state">开发者模式未开启。</p>
 
       <button class="btn ghost" data-action="save" title="立即写入本地存档">立即存档</button>
       <button class="btn ghost danger" data-action="reset" title="清空存档，重新开始">清空重开</button>

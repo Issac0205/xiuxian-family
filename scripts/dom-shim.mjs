@@ -356,6 +356,22 @@ export function installDOM(html, opts = {}) {
     removeItem: (k) => store.delete(k),
   };
 
+  /**
+   * 【架构 docs/101】sessionStorage 垫片。
+   *
+   * 浏览器里**必然存在** sessionStorage，所以仿真环境少了它，
+   * `devTokenPresent()` 会一路走 catch 返回 false ——
+   * 于是「开发者模式」在 smoke 里永远开不起来，那道闸门就成了没测过的东西。
+   * 语义与浏览器一致：**每次 installDOM 都是新的一份**（关掉标签页即失效），
+   * 与 localStorage 的复用 store 语义刻意不同。
+   */
+  const sessionStore = new Map();
+  const sessionStorage = {
+    getItem: (k) => (sessionStore.has(k) ? sessionStore.get(k) : null),
+    setItem: (k, v) => sessionStore.set(k, String(v)),
+    removeItem: (k) => sessionStore.delete(k),
+  };
+
   const winListeners = {};
   const scrolls = [];
   const window = {
@@ -369,6 +385,7 @@ export function installDOM(html, opts = {}) {
   globalThis.document = document;
   globalThis.window = window;
   globalThis.localStorage = localStorage;
+  globalThis.sessionStorage = sessionStorage;
   // 【修复 t4 缺陷⑦ 的前提】浏览器里 `confirm()` 是**全局**函数，
   //   而垫片原来只把它挂在 `window` 上 ⇒ `src/main.js` 里 12 处裸 `confirm(`
   //   在 Node 下抛 ReferenceError，被 `dom.click()` 的循环安静吞掉，
@@ -382,5 +399,5 @@ export function installDOM(html, opts = {}) {
   /** 模拟用户点击（走真实的事件委托链）。 */
   const click = (el) => { for (const fn of docListeners.click || []) fn({ target: el }); };
 
-  return { document, window, localStorage, store, docListeners, winListeners, byId, click, scrolls };
+  return { document, window, localStorage, sessionStorage, store, docListeners, winListeners, byId, click, scrolls };
 }

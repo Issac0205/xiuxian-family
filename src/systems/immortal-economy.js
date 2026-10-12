@@ -21,7 +21,7 @@ function advanceImmortalEconomy(state,dt,now,rng){
  // ── 灵池 ──
  // 灵池的产出是「觉醒的修士」，同时它拉高天生灵根的诞生率（见 innatePoolBonus）。
  if(c.pool>0 && state.population>=1){
-   const cost=c.pool*.00013*dt;
+   const cost=c.pool*POOL_STONE_PER_SEC*dt;
    const operating=Math.min(1,cost>0?state.spiritStones/cost:0);
    state.spiritStones=Math.max(0,state.spiritStones-cost*operating);
    // 灵池不吃 immortalCapFlat 吗？—— 吃的。名册满了就不再产人，

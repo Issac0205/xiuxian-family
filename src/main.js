@@ -183,6 +183,11 @@ ui = createUI({
       );
     },
 
+    /** 【架构 docs/101】设置里的开发者模式：输口令进入 / 再点一次退出。 */
+    submitDevPassword(input) {
+      return toggleDevMode(String(input ?? ''));
+    },
+
     assignCultivator(id,job) {
       const p=state.cultivation?.cultivators?.find(person=>person.id===id);
       if(!p || !CULTIVATOR_JOBS[job] || p.job===job)return;
@@ -354,7 +359,51 @@ if (isFresh) {
   ui.render();
 }
 
-/* ─────────────────────── 主循是─────────────────────── */
+/* ─────────────────────── 开发者模式（架构 docs/101）─────────────────────── */
+
+/**
+ * 走进开发者模式的三步，收在一个函数里（口令校验 → 生效 → 写日志）。
+ *
+ * 时序（docs/101 §3.5）：
+ *   ① 玩家在设置里输口令 → submitDevPassword()
+ *   ② 校验（devCheckPassword）→ 只有逐字相等才继续
+ *   ③ devEnable(state)：写 settings.devMode = true **并写会话令牌**
+ *   ④ 立刻补满一次（devRefill），玩家不用等下一个 tick
+ *   ⑤ 顶栏徽标与设置行跟着变（ui.syncDevMode）
+ *   ⑥ 写一条族谱纪事（dev:on）
+ * 关闭同理（第 ③ 步换成 devDisable）。
+ *
+ * ⚠ 口令**不以明文**出现在页面里：game.html 里只有散列值。
+ * ⚠ 令牌在 sessionStorage，**不进存档**；关掉标签页即失效。
+ */
+function toggleDevMode(input) {
+  if (devModeOn(state)) {
+    // 已开启：同一个按钮就是「关闭」
+    devDisable(state);
+    // ⚠ 关闭后**已经补出来的量不会回滚**：那些量是合法的当前状态，
+    //   把它们按时间倒推回去既没有记录也无从算起 —— 只会造出一个
+    //   谁也解释不清的中间态。
+    writeLog(state, '开发者模式已关闭。已补出的资源留在原处，不再继续补满。', 'unlock', 'dev:off', Date.now());
+    ui.render();
+    ui.toast('开发者模式已<b>关闭</b>', 'warn', 2600);
+    return { ok: true, on: false };
+  }
+
+  if (!devCheckPassword(input)) {
+    // 口令错误：什么都不改（连 settings.devMode 都不碰），只给一句提示
+    ui.toast('口令不正确。', 'warn', 2400);
+    return { ok: false, reason: '口令不正确' };
+  }
+
+  devEnable(state);
+  const n = devRefill(state);
+  writeLog(state, `开发者模式已开启（本次补满 ${n} 项已解锁资源）。`, 'unlock', 'dev:on', Date.now());
+  ui.render();
+  ui.toast('开发者模式已<b>开启</b>：已解锁的资源无限', 'ok', 3200);
+  return { ok: true, on: true, refilled: n };
+}
+
+/* ─────────────────────── 主循环 ─────────────────────── */
 
 let last = Date.now();
 let saveAccum = 0;
@@ -951,15 +1000,72 @@ window.__xiuxian = {
    * 这正是当初漏掉三个顶层字段却全绿的原因（旧断言只查 cultivation.* 内部）。
    */
   save: {
-    serialize: () => serialize(state),
+    /**
+     * ⚠ 必须接受显式状态参数：原来的 `serialize: () => serialize(state)` **吞掉了实参**，
+     *   于是 X.save.serialize(某份状态) 悄悄序列化的是**主状态** ——
+     *   「拿一份可抛弃的状态验往返」会得到一份完全无关的数据，还全绿。
+     *   缺参数时才回落到当前状态（既有调用点的语义不变）。
+     */
+    serialize: (s) => serialize(s || state),
     hydrate: (raw) => hydrate(raw),
     /** 走一遍真实的「写出 → JSON → 读回」，返回读回后的状态。 */
-    roundTrip: () => hydrate(JSON.parse(JSON.stringify(serialize(state)))),
+    roundTrip: (s) => hydrate(JSON.parse(JSON.stringify(serialize(s || state)))),
     /** 只读一份存档（不改当前状态）。 */
     peek: () => JSON.parse(JSON.stringify(serialize(state))),
   },
   /** 【策划 C14 / 任务 T-2b 验收标准 2】离线结算：用来断言「离线不推年份」。 */
   offline: (seconds) => runOffline(state, Number(seconds) || 0, Date.now()),
+  /**
+   * 【架构 docs/101】资源注册表 + 解锁状态 + 开发者模式。
+   *
+   * ⚠ 这里一律传**显式状态**（默认当前状态），并且 dev.enter / dev.leave
+   *   刻意不写会话令牌 —— 测试与调试要能在一局里反复开关，
+   *   而令牌是「关掉标签页即失效」的那一层，不该被测试顺手改掉。
+   *   真·玩家路径（设置里输口令）走 actions.submitDevPassword()。
+   */
+  res: {
+    list: () => RESOURCES,
+    map: () => RESOURCE_MAP,
+    kinds: () => RESOURCE_KINDS,
+    groups: () => RESOURCE_GROUPS,
+    of: (id) => RESOURCE_MAP[id] || null,
+    read: (id, s) => readResourceNumber(s || state, id),
+    /** 读一条资源的原始形态（符箓/法器是存货对象）。 */
+    raw: (id, s) => readResource(s || state, id),
+    /** 写一条资源（只给开发者模式与测试用；正常玩法走 plan/commit）。 */
+    write: (id, n, s) => writeResource(s || state, id, n),
+    /** **纯函数**解锁判据（只看当前状态）。 */
+    unlocked: (id, s) => unlockOf(s || state, id),
+    unlockedIds: (s) => RESOURCES.filter((r) => unlockOf(s || state, r.id)).map((r) => r.id),
+    visible: (id, s) => visibleOf(s || state, id),
+    canBeGiven: (id) => resourceCanBeGiven(RESOURCE_MAP[id]),
+    giveTo: (id, s) => devGiveTo(s || state, id),
+    lockedUi: (id, s) => {
+      const res = RESOURCE_MAP[id];
+      return res ? (unlockOf(s || state, res) ? 'shown' : res.lockedUi) : null;
+    },
+    hint: (id) => lockedHintOf(id),
+    /** 把 state 的容器补齐（丹房/器房/符房等），与真实游戏路径同一个函数。 */
+    repair: (s) => repairCultivation(s || state),
+    /** 未解锁时把 DOM 宿主加上 is-hidden（**不删元素**）。 */
+    hideLocked: (id, host) => resHideLocked(state, id, host),
+    clearSticky: () => resClearSticky(),
+  },
+  dev: {
+    /** 口令校验（纯函数，不改状态）。 */
+    check: (input) => devCheckPassword(input),
+    /** 此刻是否生效（settings.devMode === true **且**有会话令牌）。 */
+    on: (s) => devModeOn(s || state),
+    /** 只补一次（不开关），用来断言「关闭时写入恒 0」。 */
+    refill: (s) => devRefill(s || state),
+    enabled: (id, s) => devResourceActive(s || state, id),
+    status: (s) => devStatusLine(s || state),
+    /** 测试/调试用：直接开关，**不写会话令牌**。 */
+    enter: (s) => devEnable(s || state, { writeToken: false }),
+    leave: (s) => devDisable(s || state, { writeToken: false }),
+    /** 玩家路径：与设置里输口令走同一个函数（含令牌与日志）。 */
+    submit: (input) => toggleDevMode(String(input ?? '')),
+  },
 };
 
 /* ────────────── 新版仙途展示与操作 ────────────── */
@@ -991,13 +1097,13 @@ ${blk('market','🏪 坊市与通商 · 剿城开市')}${(()=>{const mk=marketOv
 <div class="immortal-mini">${mk.flatMap(m=>m.goods.map(g=>`<div class="immortal-mini-row${m.open&&g.unlocked?'':' is-locked'}"><div><b>${g.name}</b><span class="map-tier">${m.name}</span><small>${g.desc} · 售 ${g.price} 灵石 · ${g.unlocked?'已解锁':`需 ${g.unlockSecrets} 条秘闻解锁`}</small></div>${g.unlocked?`<button class="btn" data-immortal-action="market-buy" data-good="${g.id}" ${g.canBuy?'':'disabled'}>买入</button>`:`<button class="btn" data-immortal-action="market-unlock" data-good="${g.id}" ${g.canUnlock?'':'disabled'}>解锁</button>`}</div>`)).join('')}</div>
 <div class="immortal-actions"><button class="btn" data-immortal-action="market-sell" ${q.ok?'':'disabled'}>灵石 → 银两 · 1 枚换 ${q.silver} 两（折价 20%）</button></div>`;})()}
 ${blk('pool','🌿 灵池 · 后天祛障')}<p>在坊市花 1 条秘闻解锁「灵池蓝图」后即可购得。灵池每秒消耗灵石，使凡人有机会后天祛障，初始天赋为1。无灵石时自动停运。</p>
-<div class="immortal-statline"><span>灵池 ${c.pool}/10 座</span><span>灵石消耗 ${(c.pool*.00013).toFixed(5)}/秒</span><span>蓝图 ${c.poolBlueprint?'已得':'未得'}</span></div>
+<div class="immortal-statline"><span>灵池 ${c.pool}/${POOL_MAX} 座</span><span>灵石消耗 ${(c.pool*POOL_STONE_PER_SEC).toFixed(5)}/秒</span><span>蓝图 ${c.poolBlueprint?'已得':'未得'}</span></div>
 <div class="immortal-actions"><button class="btn" data-immortal-action="pool-blueprint" ${c.poolBlueprint||!goodUnlocked(state,'poolblueprint')?'disabled':''}>坊市购蓝图 · 2灵石</button><button class="btn" data-immortal-action="pool-build" ${!c.poolBlueprint?'disabled':''}>营造灵池 · 3灵石+5万银两</button></div></div>
 ${blk('mine','⛏️ 寻龙探脉 · 灵石矿场')}<p>秘闻≥15后研习寻龙尺，耗费灵石勘探不同品阶与储量的灵脉。矿场将持续产出灵石，并因危险作业额外损失凡人人口。</p>
 <div class="immortal-statline"><span>寻龙尺 ${c.compass?'已研习':'未研习'}</span><span>灵脉 ${ready.length} 处可采</span><span>矿场 ${c.mineLevel?'已建成':'未建成'}</span><span>矿工 ${c.mineWorkers} 人</span></div>
 <p>${activeMine?`当前矿脉（${activeMine.grade}阶） · 储量 ${activeMine.reserve.toFixed(2)} 灵石`:'目前尚无可开采的灵脉。'}</p>
-<div class="immortal-actions"><button class="btn" data-immortal-action="compass" ${c.compass||state.secrets.length<15?'disabled':''}>寻龙尺 · 3灵石</button><button class="btn" data-immortal-action="survey" ${!c.compass?'disabled':''}>探寻灵脉 · 1灵石</button><button class="btn" data-immortal-action="mine-build" ${!ready.length||c.mineLevel?'disabled':''}>开设矿场 · 2灵石+8万银两</button></div>
-${c.mineLevel?`<div class="immortal-actions"><label>矿工人数 <input id="mine-workers" type="number" min="0" max="1000" step="10" value="${c.mineWorkers}" style="width:95px"></label><button class="btn" data-immortal-action="mine-workers">调整派工</button></div>`:''}
+<div class="immortal-actions"><button class="btn" data-immortal-action="compass" ${c.compass||state.secrets.length<COMPASS_SECRET_REQ?'disabled':''}>寻龙尺 · 3灵石</button><button class="btn" data-immortal-action="survey" ${!c.compass?'disabled':''}>探寻灵脉 · 1灵石</button><button class="btn" data-immortal-action="mine-build" ${!ready.length||c.mineLevel?'disabled':''}>开设矿场 · 2灵石+8万银两</button></div>
+${c.mineLevel?`<div class="immortal-actions"><label>矿工人数 <input id="mine-workers" type="number" min="0" max="${MINE_WORKER_MAX}" step="10" value="${c.mineWorkers}" style="width:95px"></label><button class="btn" data-immortal-action="mine-workers">调整派工</button></div>`:''}
 <p class="immortal-warning">矿场可能显著提高凡人死亡人数，灵脉储量耗尽后需重新勘探；修士不受凡人矿难死亡率影响。</p></div>
 ${blk('sect','🏯 宗门修行 · 上等资质的安全道路')}<p>三灵根及以上的修士可入宗门修炼：安全稳定、不受洞天与攻伐折损，但不再提供驻守／劳作／探索加成，也不向家族传授宗门功法。入宗时宗门会按资质赠一份引荐礼（灵石）。</p>
 <div class="immortal-statline"><span>在宗 ${ps.filter(p=>p.job==='sect').length} 人</span><span>平均天赋 ${averageTalent(state).toFixed(2)}</span></div>

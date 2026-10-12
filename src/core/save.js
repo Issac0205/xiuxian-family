@@ -227,9 +227,14 @@ function hydrate(raw) {
     for(const [k,v] of Object.entries({poolBlueprint:false,pool:0,compass:false,veins:[],mineLevel:0,mineWorkers:0,clues:0,cluePool:0,caveRuns:0,conquests:[],humanPills:0})){fresh.cultivation[k]=raw.cultivation[k]===undefined?v:raw.cultivation[k];}
     fresh.cultivation.humanPills=Math.max(0,Math.floor(num(fresh.cultivation.humanPills,0)));
     fresh.cultivation.clues=Math.max(0,Math.floor(num(fresh.cultivation.clues,0)));
-    fresh.cultivation.pool=Math.max(0,Math.min(10,Math.floor(num(fresh.cultivation.pool,0))));
+    // 【架构 docs/101 §4 S1】这三行的上限从魔数收敛成 core/config.js 的具名常量。
+    // ⚠ 唯一**不改值**的一处：mineWorkers 这里原来夹 10000，而操作层
+    //   （systems/immortal-actions.js 的派工）夹 MINE_WORKER_MAX=1000 ——
+    //   两处本就不一致。本次只登记，不顺手改夹取行为（那会把「常量收敛」
+    //   变成一次配平改动，藏在同一个提交里谁也 review 不出来）。
+    fresh.cultivation.pool=Math.max(0,Math.min(POOL_MAX,Math.floor(num(fresh.cultivation.pool,0))));
     fresh.cultivation.mineWorkers=Math.max(0,Math.min(10000,Math.floor(num(fresh.cultivation.mineWorkers,0))));
-    fresh.cultivation.veins=Array.isArray(fresh.cultivation.veins)?fresh.cultivation.veins.slice(0,20).map(v=>({grade:Math.max(1,Math.min(5,Math.floor(num(v.grade,1)))),reserve:Math.max(0,num(v.reserve,0))})):[];
+    fresh.cultivation.veins=Array.isArray(fresh.cultivation.veins)?fresh.cultivation.veins.slice(0,VEIN_MAX).map(v=>({grade:Math.max(1,Math.min(5,Math.floor(num(v.grade,1)))),reserve:Math.max(0,num(v.reserve,0))})):[];
     fresh.cultivation.conquests=Array.isArray(fresh.cultivation.conquests)?fresh.cultivation.conquests.filter(v=>typeof v==='string').slice(0,3):[];
     // 地图：抵达记录 / 已占领地 / 镇守指派 / 民怨
     {
@@ -418,6 +423,16 @@ function hydrate(raw) {
     }
     const speed = Number(raw.settings.speed);
     if (SPEED_OPTIONS.includes(speed)) fresh.settings.speed = speed;
+
+    // 【架构 docs/101】开发者模式开关：严格 `=== true` 才算数。
+    // 旧存档没有这个字段 / 被手改成字符串 "false" / 数字 1 —— 一律为 false；
+    // 写进令牌盒时也**不**替玩家开令牌（令牌只在真正按开关时写），
+    // 所以「手改存档」这条路走不通（还要有会话令牌才生效）。
+    if (raw.settings[DEV_MODE_SETTING] === true) {
+      devEnable(fresh, { writeToken: false });
+    }
+    // 读档会换掉整个状态，粘性可见痕迹跟着清账（避免串档）。
+    resClearSticky();
   }
 
   // 单词统计

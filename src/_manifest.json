@@ -176,6 +176,15 @@
     "marker": "/* ══════════ src/core/save.js ══════════ */"
   },
   {
+    "comment": "【架构 docs/101】资源注册表与资源系统。位置在**所有数据表之后**：注册表用工厂展开药材/矿料/符料/建筑/法器/丹药各表，与它们求值时必须已经声明过（单文件里没有 import，只有顺序）。",
+    "path": "src/data/resources.js",
+    "marker": "/* ══════════ src/data/resources.js ══════════ */"
+  },
+  {
+    "path": "src/systems/resources.js",
+    "marker": "/* ══════════ src/systems/resources.js ══════════ */"
+  },
+  {
     "path": "src/ui/quiz-view.js",
     "marker": "/* ══════════ src/ui/quiz-view.js ══════════ */"
   },

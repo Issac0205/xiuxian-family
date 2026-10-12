@@ -335,3 +335,40 @@ const MARKET_EXCHANGE_MAX = 12;
 /** 每研习一项撑胃口的科技（tradeStoneMult 之外的）额外增加的兑换次数。 */
 const MARKET_EXCHANGE_BONUS_PER_TECH = 4;
 
+/* ══════════════════ 【架构 docs/101】资源体系与开发者模式 ══════════════════
+ *
+ * 这一节把原先散落在界面与系统层的**魔数**收成具名常量，并给开发者模式
+ * 一组它自己的常量。出处：docs/101-内部架构与资源体系.md §4 S1。
+ *
+ * ⚠ 只替换常量、**不顺手改行为**：save.js 里矿工夹取到 10000，而操作层
+ *   （immortal-actions 的派工）夹到 1000 —— 这个不一致**登记在案**，
+ *   但本次不夹带修改，免得把一个「常量收敛」的提交变成一次配平改动。
+ */
+
+/** 寻龙尺的秘闻门槛（原来在 main.js 与 immortal-actions.js 各写死一个 15）。 */
+const COMPASS_SECRET_REQ = 15;
+
+/** 灵池座数上限。 */
+const POOL_MAX = 10;
+/** 每座灵池每秒消耗的灵石（原来在 main.js 与 immortal-economy.js 各写死一次）。 */
+const POOL_STONE_PER_SEC = 0.00013;
+/** 灵脉记录上限（处）。 */
+const VEIN_MAX = 20;
+/** 矿场用工上限（人）。操作层与本常量一致；save.js 的 10000 是既有的不一致，已登记。 */
+const MINE_WORKER_MAX = 1000;
+
+/**
+ * 开发者模式的口令散列（FNV-1a 32 位，见 systems/resources.js 的 devHash）。
+ *
+ * ⚠ 这里**只放散列值，不放明文** —— 口令不能以明文出现在 game.html 里
+ *   （那是玩家随手就能搜到的「开发者模式」入口）。
+ *   对应的明文是四位数字；改口令只需换这一个常量。
+ */
+const DEV_PASSWORD_HASH = 3242275822;
+
+/** 开发者模式「补满」的目标值：无上限的资源补到这里。 */
+const DEV_ABUNDANCE = 1e12;
+
+/** 开发者模式开关所在的设置键（settings 已在存档白名单里 ⇒ 零新增顶层字段）。 */
+const DEV_MODE_SETTING = 'devMode';
+

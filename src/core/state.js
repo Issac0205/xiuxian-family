@@ -72,11 +72,16 @@ function createState(now = Date.now()) {
      *  - quizMode：'always'（必答）/ 'half'（一半概率）/ 'off'（不触发单词题）
      *  - difficulty：'normal'（答错返还）或 'hell'（答错不退还）；只在真的出题时才有意义
      *  - speed：手动倍速，只作用于页面开着时的推进；离线一律按 1 倍速结算
+     *  - devMode：【架构 docs/101】开发者模式开关。默认 **false**；
+     *      settings 本就在 serialize 白名单里，所以这里加一项**不新增顶层字段**。
+     *      ⚠ 它只是「玩家按过开关」这一事实；真正生效还要有**会话令牌**
+     *      （sessionStorage，不入存档）—— 见 systems/resources.js 的 devModeOn()。
      */
     settings: {
       quizMode: 'always',
       difficulty: 'normal',
       speed: 1,
+      devMode: false,
     },
 
     /** 背单词统计：wordId -> { seen, right, wrong }，只记录见过的词。 */

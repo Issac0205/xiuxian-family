@@ -5447,5 +5447,462 @@ section('仙凡经济：城市作坊与兑率');
   S.secrets = keep.secrets;
 }
 
+/* ══════════════════════ S7. 资源体系与开发者模式 ══════════════════════
+ *
+ * 【架构 docs/101】把「玩家可见的量」收进注册表 + 给它解锁状态 + 加开发者模式。
+ * 这一段**只追加**，前面 987 项一条不动。
+ *
+ * 每条断言都做过变异测试（故意改坏 → 必红 → 还原），见交付说明。
+ */
+
+section('资源体系：注册表与解锁状态');
+
+/**
+ * 开发者模式要过「会话令牌」那道闸 —— 测试里主动写一份（浏览器里由开关自己写）。
+ * ⚠ 写 **globalThis.sessionStorage**：源码读的是全局那一份；而 `dom.sessionStorage`
+ *   是 installDOM 时那一份快照，后面的 installDOM 会把全局换成新的（旧的就不再被读到）。
+ */
+const DEV_TOKEN_KEY = 'xiuxian-family/dev/token/v1';
+const devEnter = (s) => { globalThis.sessionStorage.setItem(DEV_TOKEN_KEY, String(Date.now())); X.dev.enter(s); };
+const devLeave = (s) => { if (s) X.dev.leave(s); globalThis.sessionStorage.removeItem(DEV_TOKEN_KEY); };
+
+/**
+ * 「一份可抛弃的干净状态」：形状取 createState 的默认值（人口 10 / 银两 100 / 容器齐全），
+ * 只把**容器**这一段用当前状态补上（丹房、器房、符房、地图、名册都要有键）。
+ * ⚠ 刻意不用 `X.state` 本身：主状态已经被前面几千条断言改得面目全非，
+ *   拿它当基线会让「补满不碰人口」这类断言读到一堆无关噪声。
+ */
+const resState = () => {
+  const src = X.state;
+  const s = X.save.hydrate({ createdAt: 0 });
+  s.cultivation.alchemy = JSON.parse(JSON.stringify(src.cultivation.alchemy || {}));
+  s.cultivation.forge = JSON.parse(JSON.stringify(src.cultivation.forge || {}));
+  s.cultivation.runes = JSON.parse(JSON.stringify(src.cultivation.runes || {}));
+  s.cultivation.world = { reached: [], held: [], garrison: {}, unrest: {} };
+  s.cultivation.cultivators = [];
+  s.cultivation.qi = 0;
+  X.res.repair(s);
+  return s;
+};
+/** 一条资源此刻的数值读数。 */
+const rv = (id, s = X.state) => X.res.read(id, s);
+
+{
+  const R = X.res.list();
+  const ids = R.map((r) => r.id);
+  check('注册表条目数 ≥ 60', R.length >= 60, `${R.length} 条`);
+  check('id 全表唯一', new Set(ids).size === ids.length, `${ids.length} 个 id`);
+  check('六类体系齐全（C/M/P/G/X/F）',
+    ['currency', 'material', 'population', 'progress', 'modifier', 'flag']
+      .every((k) => R.some((r) => r.kind === k)),
+    X.res.kinds().join('/'));
+  check('每条资源都有显示名（非中文一律不算）',
+    R.every((r) => typeof r.name === 'string' && /[\u4e00-\u9fff]/.test(r.name)),
+    R.filter((r) => !/[\u4e00-\u9fff]/.test(r.name || '')).map((r) => r.id).join(' '));
+  check('每条资源的 lockedUi 都是三口径之一（必须显式声明）',
+    R.every((r) => ['hide', 'dim', 'mask'].includes(r.lockedUi)),
+    R.filter((r) => !['hide', 'dim', 'mask'].includes(r.lockedUi)).map((r) => r.id).join(' '));
+  check('每条资源的 gate 都是已知判据 kind',
+    R.every((r) => ['null', 'tech', 'itech', 'secrets', 'realm', 'held', 'canAct', 'flag']
+      .includes(r.gate?.kind)),
+    R.filter((r) => !['null', 'tech', 'itech', 'secrets', 'realm', 'held', 'canAct', 'flag']
+      .includes(r.gate?.kind)).map((r) => r.id).join(' '));
+  check('hint 全是 ≥4 个汉字的中文提示',
+    R.every((r) => typeof r.hint === 'string' && r.hint.length >= 4 && /[\u4e00-\u9fff]/.test(r.hint)),
+    R.filter((r) => !(typeof r.hint === 'string' && r.hint.length >= 4)).map((r) => r.id).join(' '));
+
+  // 每条 gate 的 kind 都至少出现在一条资源上（没有写了却没人用的判据）
+  const usedKinds = new Set(R.map((r) => r.gate.kind));
+  check('用到的判据种类覆盖 tech/secrets/realm/held/canAct/flag',
+    ['tech', 'secrets', 'realm', 'held', 'canAct', 'flag'].every((k) => usedKinds.has(k)),
+    [...usedKinds].join('/'));
+
+  // 货币与材料：要么有产出速率，要么显式声明「非产出型」（rate 为 null 也算声明）
+  const bad = R.filter((r) => (r.kind === 'currency' || r.kind === 'material') && r.rate === undefined);
+  check('货币与材料都声明了自己的产出速率位（null 也是声明）', bad.length === 0,
+    bad.map((r) => r.id).join(' '));
+
+  // 同名不同物必须拆成两个 id，且名字两两不同
+  check('秘闻与线索是两个独立 id（同名不同物的历史）',
+    X.res.of('secret') && X.res.of('clue') && X.res.of('secret').id !== X.res.of('clue').id);
+  const four = ['silver', 'spiritStones', 'secret', 'clue'].map((id) => X.res.of(id).name);
+  check('银两/灵石/秘闻/线索 四个显示名两两不同', new Set(four).size === 4, four.join(' / '));
+  check('秘闻的备注写清了它与线索同名不同物',
+    /同名不同物/.test(X.res.of('secret').note) && /同名不同物/.test(X.res.of('clue').note));
+}
+
+{
+  // 注册表字段名与 createState() 顶层字段名的交集必须为空（防退化成第二份真相源）
+  const topKeys = Object.keys(X.state);
+  const overlaps = Object.keys(X.res.of('silver')).filter((k) => topKeys.includes(k));
+  check('注册表字段名与 createState() 顶层字段名交集为空', overlaps.length === 0, overlaps.join(' '));
+  check('注册表禁用字段名 value/amount/count',
+    X.res.list().every((r) => !('value' in r) && !('amount' in r) && !('count' in r)));
+  // 每个「有玩家可见状态」的顶层字段都要在注册表里找到归属（顶层即资源，或有专门条目）
+  const needsHome = ['silver', 'population', 'spiritStones', 'secrets', 'morality', 'clock', 'meta', 'settings'];
+  const homeless = needsHome.filter((k) => !X.res.list().some((r) => r.note.includes(k)));
+  check('顶层可见字段在注册表里都有归属（银两属于「资源」大类）', homeless.length === 0,
+    homeless.join(' '));
+}
+
+{
+  // 新开局与「满进度」两种状态：path 都必须返回数字、不抛错
+  const fresh = X.save.hydrate({ createdAt: 0 });
+  const full = resState();
+  full.techs = d.techs.map((t) => t.id);
+  full.immortalTechs = d.immortalTechs.map((t) => t.id);
+  full.secrets = Array.from({ length: 20 }, (_, i) => i);
+  full.buildings = Object.fromEntries(Object.keys(full.buildings).map((k) => [k, 2]));
+  full.cultivation.veins = [{ grade: 3, reserve: 100 }];
+  full.cultivation.compass = true;
+  full.cultivation.mineLevel = 1;
+  full.cultivation.pool = 1;
+  full.cultivation.poolBlueprint = true;
+  full.cultivation.world = { reached: ['mosscave'], held: ['valley'], garrison: {}, unrest: {} };
+  full.cultivation.cultivators = [person({ realmIndex: 22 })];
+  full.cultivation.qi = 1;
+
+  const readAll = (s) => X.res.list().map((r) => { X.res.read(r.id, s); return true; });
+  check('新开局：每条资源都能读出数（无异常）', readAll(fresh).length === X.res.list().length);
+  check('满进度：每条资源都能读出数（无异常）', readAll(full).length === X.res.list().length);
+  check('读数永不 undefined（容器缺失也返回 0）', (() => {
+    const empty = { cultivation: {} };
+    return X.res.list().every((r) => X.res.read(r.id, empty) !== undefined);
+  })());
+  check('读数永不 NaN', X.res.list().every((r) => {
+    const v = X.res.read(r.id, full);
+    return typeof v === 'object' ? true : !Number.isNaN(v);
+  }));
+  check('满进度下解锁条目远多于新开局（两种状态真的不同）',
+    X.res.unlockedIds(full).length > X.res.unlockedIds(fresh).length,
+    `${X.res.unlockedIds(fresh).length} → ${X.res.unlockedIds(full).length}`);
+  check('新开局就有「无事可做」的判据为真（gate 可达）',
+    X.res.unlocked('silver', fresh) && X.res.unlocked('building:field', fresh),
+    X.res.unlockedIds(fresh).join(','));
+}
+
+{
+  const fresh = X.save.hydrate({ createdAt: 0 });
+  // 「全开」状态：每条门控都不再被前置挡住（只测判据可达，不测界面）
+  const all = resState();
+  all.techs = d.techs.map((t) => t.id);
+  all.immortalTechs = d.immortalTechs.map((t) => t.id);
+  all.secrets = Array.from({ length: 20 }, (_, i) => i);
+  all.cultivation.veins = [{ grade: 3, reserve: 100 }];
+  all.cultivation.compass = true;
+  all.cultivation.poolBlueprint = true;
+  all.cultivation.mineLevel = 1;
+  all.cultivation.world = { reached: ['mosscave'], held: ['valley'], garrison: {}, unrest: {} };
+  all.cultivation.cultivators = [person({ realmIndex: 22 })];
+  all.cultivation.qi = 1;
+  // 每一条 gate 都要在某一种状态里成立 —— 否则那道门永远打不开
+  const dead = X.res.list().filter((r) => !X.res.unlocked(r.id, fresh) && !X.res.unlocked(r.id, all));
+  check('每一条门控都有可达状态使其为真（没有永远锁死的资源）', dead.length === 0,
+    dead.map((r) => `${r.id}(${r.gate.kind}:${r.gate.value})`).join(' '));
+  // 自我门控必死锁
+  const selfGated = X.res.list().filter((r) => r.gate.kind === 'flag' && r.gate.value === r.id);
+  check('没有资源用自己当门控（自我门控必死锁）', selfGated.length === 0,
+    selfGated.map((r) => r.id).join(' '));
+  // 带门控的资源，hint 必须说清「为什么看不见」（开局即有的那批不必）
+  const gated = X.res.list().filter((r) => r.gate.kind !== 'null');
+  const vague = gated.filter((r) => !/(先|才|须|一|每|集齐|占|研习|走到|没有|之后|解锁|可)/.test(r.hint));
+  check('有门控的资源的 hint 都在说前置条件（不是废话）', vague.length === 0,
+    vague.map((r) => `${r.id}:${r.hint}`).join(' '));
+  check('无门控的资源确实不需要 hint 解释前置（它们开局即见）',
+    X.res.list().filter((r) => r.gate.kind === 'null').length > 0,
+    `${X.res.list().filter((r) => r.gate.kind === 'null').length} 条`);
+}
+
+{
+  // hide 口径的资源不占资源条格子：资源条上出现的资源名必须都是「此刻已解锁」的
+  const bar = $('page-res').textContent;
+  const shownNames = X.res.list()
+    .filter((r) => r.kind !== 'pointer' && bar.includes(r.name))
+    .map((r) => r.name);
+  const illegal = shownNames.filter((n) => {
+    const res = X.res.list().find((r) => r.name === n);
+    return res && !X.res.unlocked(res.id, X.state);
+  });
+  check('资源条上出现的资源名都是此刻已解锁的（未解锁的不占格子）',
+    illegal.length === 0, illegal.join(' '));
+  // 未解锁且 hide 口径的资源不得出现在资源条上
+  const hiddenLeak = X.res.list()
+    .filter((r) => r.lockedUi === 'hide' && !X.res.unlocked(r.id, X.state) && r.kind !== 'pointer')
+    .filter((r) => bar.includes(r.name) || bar.includes(r.uiLabel))
+    .map((r) => `${r.id}(${r.uiLabel})`);
+  check('hide 口径且未解锁的资源不出现在资源条上', hiddenLeak.length === 0, hiddenLeak.join(' '));
+  // 资源条上每一格都必须能对上注册表里的一条（不许有「无出处的数字」）
+  const chips = [...$('page-res').querySelectorAll('.pres-chip')]
+    .map((c) => c.querySelector('.pres-label')?.textContent || '');
+  const chipOk = (n) => X.res.list().some((r) => r.name === n || r.uiLabel === n);
+  check('资源条的每一格都能在注册表里找到出处（银两在册）',
+    chips.length > 0 && chips.every(chipOk),
+    chips.map((n) => `[${n}]${chipOk(n) ? '' : '✗'}`).join(' '));
+}
+
+{
+  // 解锁状态经 serialize → hydrate 往返不丢
+  const s = resState();
+  s.techs = ['realestate', 'architecture', 'finance', 'trade', 'quzhang'];
+  s.immortalTechs = ['yinling'];
+  s.secrets = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];
+  s.cultivation.alchemy.furnace = 3;
+  const beforeIds = X.res.unlockedIds(s);
+  const back = X.save.hydrate(JSON.parse(JSON.stringify(X.save.serialize(s))));
+  check('解锁状态经 serialize→hydrate 往返不丢',
+    JSON.stringify(X.res.unlockedIds(back)) === JSON.stringify(beforeIds),
+    `${beforeIds.length} → ${X.res.unlockedIds(back).length}`);
+  check('往返后科技数一条不少', back.techs.length === s.techs.length,
+    `${s.techs.length} → ${back.techs.length}`);
+  check('往返后仙道科技一条不少', back.immortalTechs.length === s.immortalTechs.length);
+  check('往返后丹炉等级不丢', rv('alchemyFurnace', back) === 3, `${rv('alchemyFurnace', back)}`);
+  const locked = X.res.list().filter((r) => !X.res.unlocked(r.id, s)).map((r) => r.id);
+  check('往返不会把未解锁的变成解锁',
+    locked.every((id) => !X.res.unlocked(id, back)), locked.filter((id) => X.res.unlocked(id, back)).join(' '));
+}
+
+section('开发者模式：补满的边界');
+
+{
+  const s = resState();
+  s.settings.devMode = false;
+  s.silver = 137;
+  const before = rv('silver', s);
+  check('devMode=false 时资源不会被补满', X.dev.refill(s) === 0 && rv('silver', s) === before,
+    `${before} → ${rv('silver', s)}`);
+  check('devMode=false 时 devRefill 返回 0（一项都没补）', X.dev.refill(s) === 0);
+  check('devMode=false 时开发者模式未生效', X.dev.on(s) === false);
+}
+
+{
+  const s = resState();
+  s.techs = ['trade', 'quzhang'];
+  s.secrets = [0, 1, 2];
+  s.spiritStones = 0;
+  devEnter(s);
+  check('devMode=true（已解锁「银两」）时银两被补满',
+    (X.dev.refill(s), rv('silver', s) > 0.9e12), `${rv('silver', s)}`);
+  check('未解锁的资源不补：只有 3 条秘闻时灵石纹丝不动',
+    rv('spiritStones', s) === 0, `${rv('spiritStones', s)}`);
+  check('未解锁的资源不补：线索也没被补（仙途页还没开）',
+    rv('cluePool', s) === 0 && X.res.canBeGiven('cluePool') === false, `${rv('cluePool', s)}`);
+
+  s.secrets = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];   // 集齐 10 条 → 坊市开
+  X.dev.refill(s);
+  check('补满后凑够秘闻：灵石跟着被补满', rv('spiritStones', s) > 0.9e12, `${rv('spiritStones', s)}`);
+  check('秘闻是「累计凭证」：补满只补到池子抽干为止，不会凭空造下标',
+    X.res.canBeGiven('secret') === true && rv('secret', s) === 20, `${rv('secret', s)}`);
+  check('已花秘闻是记账：绝不能补（必须恒 ≤ 累计数）',
+    X.res.canBeGiven('secretUsed') === false, `${rv('secretUsed', s)}`);
+  check('有上限的资源补到上限，不会超（灵池上限 10）',
+    X.res.giveTo('pool', s) === 10, `${X.res.giveTo('pool', s)}`);
+  devLeave(s);
+}
+
+{
+  // 非货币 / 非材料一律不补
+  check('population / progress / modifier / flag 全部不可补',
+    X.res.list().filter((r) => r.kind !== 'currency' && r.kind !== 'material')
+      .every((r) => X.res.canBeGiven(r.id) === false));
+  // ④ 把「不该给的」硬塞进注册表也补不出来：canBeGiven 必须由 kind 判据兜底，
+  //    不能只看 dev.give 这个字段（否则「手滑把 progress 标成 give:true」就破了口子）
+  check('就算把 progress 条目的 dev.give 硬改成 true，canBeGiven 仍然为假', (() => {
+    const target = X.res.list().find((r) => r.kind === 'progress');
+    const saved = target.dev;
+    target.dev = { give: true, to: 1 };
+    const ok = X.res.canBeGiven(target.id) === false;
+    target.dev = saved;
+    return ok;
+  })(), 'canBeGiven 的判据必须同时看 dev.give 与 kind');
+  check('dev.give 为真的条目只可能是 currency 或 material',
+    X.res.list().filter((r) => r.dev && r.dev.give === true)
+      .every((r) => r.kind === 'currency' || r.kind === 'material'));
+  check('dev.give 为假的条目覆盖了全部 population',
+    X.res.list().filter((r) => r.kind === 'population').every((r) => X.res.canBeGiven(r.id) === false));
+
+  // 补满不许动「非资源」的那批字段（人口 / 境界 / 倍率 / 上限）
+  const s = resState();
+  s.techs = d.techs.map((t) => t.id);
+  s.immortalTechs = d.immortalTechs.map((t) => t.id);
+  s.secrets = Array.from({ length: 20 }, (_, i) => i);
+  s.cultivation.cultivators = [person({ realmIndex: 14, xp: 33 })];
+  s.cultivation.qi = 1;
+  const snap = (x) => JSON.stringify({
+    population: x.population,
+    realm: x.cultivation.cultivators.map((p) => p.realmIndex),
+    xp: x.cultivation.cultivators.map((p) => p.xp),
+    birth: X.res.read('m_birthRate', x),
+    death: X.res.read('m_deathRate', x),
+    cap: X.res.read('m_silverCap', x),
+    house: X.res.read('housingCap', x),
+    highest: X.res.read('highestRealmIndex', x),
+  });
+  const before = snap(s);
+  s.settings.devMode = false;
+  devEnter(s);
+  X.dev.refill(s);
+  check('补满不碰人口 / 境界 / 修为 / 倍率 / 上限（逐字段相等）',
+    snap(s) === before, snap(s));
+  check('补满也确实补到了东西（阳性对照）', rv('silver', s) > 0.9e12, `${rv('silver', s)}`);
+  // 容器里没有的条目：不凭空造出来
+  const clean = X.save.hydrate({ createdAt: 0 });
+  devEnter(clean);
+  X.dev.refill(clean);
+  check('不凭空造出 33 条材料（容器里没有的条目不动）',
+    Object.keys(clean.cultivation.alchemy?.herbs || {}).length === 0,
+    Object.keys(clean.cultivation.alchemy?.herbs || {}).join(' '));
+  check('开局没有法器存货时不会造出第 1 件法器',
+    Object.keys(clean.cultivation.forge?.items || {}).length === 0);
+  devLeave(clean);
+}
+
+{
+  // 关掉之后：写入恒 0，且序列化前后逐字段相等
+  const s = resState();
+  s.techs = ['trade'];
+  s.settings.devMode = false;
+  devLeave(s);
+  const j1 = JSON.stringify(X.save.serialize(s));
+  X.dev.refill(s);
+  const j2 = JSON.stringify(X.save.serialize(s));
+  check('关闭时 devRefill 写入恒 0（序列化前后逐字段相等）', j1 === j2);
+  check('关闭时 devRefill 的返回值为 0', X.dev.refill(s) === 0);
+
+  // 真的走一次 tick 入口：devMode=false 时那一帧不许补任何东西
+  X.state.settings.devMode = false;
+  const silverBefore = X.state.silver;
+  X.tick(0);
+  check('tick 在 devMode=false 时不补资源（真实入口）',
+    X.state.silver === silverBefore, `${silverBefore} → ${X.state.silver}`);
+
+  // 阳性对照：开启之后，**同一个 tick 入口**必须把银两封顶
+  devEnter(X.state);   // 只写开关，不写令牌（测试不碰会话盒子）
+  X.tick(0);
+  check('tick 在 devMode=true 时补满已解锁资源（阳性对照）',
+    X.state.silver > 0.9e12, `${X.state.silver}`);
+  devLeave(X.state);
+  X.state.silver = silverBefore;
+  X.tick(0);
+  check('关闭后同一个入口立刻停手（银两保持原值）',
+    X.state.silver === silverBefore, `${X.state.silver}`);
+}
+
+section('开发者模式：口令与四道闸');
+
+{
+  check('新开局的 devMode 默认 false', X.save.hydrate({ createdAt: 0 }).settings.devMode === false);
+  check('旧存档（没有 devMode 字段）读进来仍是 false',
+    X.save.hydrate({ createdAt: 1, silver: 500, settings: { speed: 2 } }).settings.devMode === false);
+  check('手改存档 devMode:true 时，没有会话令牌也不生效（第三道闸）', (() => {
+    const s = X.save.hydrate({ createdAt: 1, settings: { devMode: true } });
+    const noToken = X.dev.on(s) === false;
+    // 补一次也不该动任何资源
+    const before = rv('silver', s);
+    X.dev.refill(s);
+    return noToken && rv('silver', s) === before;
+  })());
+  check('devMode 字段认严格 true：字符串 "false" / 数字 1 都不算',
+    X.save.hydrate({ createdAt: 1, settings: { devMode: 'false' } }).settings.devMode === false
+    && X.save.hydrate({ createdAt: 1, settings: { devMode: 1 } }).settings.devMode === false);
+  check('开启状态经 serialize→hydrate 往返不丢（这一行也不能漏）', (() => {
+    const a = resState();
+    a.settings.devMode = true;
+    const backA = X.save.hydrate(JSON.parse(JSON.stringify(X.save.serialize(a))));
+    const b = resState();
+    b.settings.devMode = false;
+    const backB = X.save.hydrate(JSON.parse(JSON.stringify(X.save.serialize(b))));
+    return backA.settings.devMode === true && backB.settings.devMode === false;
+  })());
+  check('口令 3303 通过', X.dev.check('3303') === true);
+  check('错误口令一律拒绝：330 / 33030 / 空串 / null / 数字 3303',
+    ['330', '33030', '', ' 3303', '3303 ', null, undefined, 3303].every((p) => X.dev.check(p) === false),
+    ['330', '33030', '', ' 3303', null, 3303].map((p) => `${String(p)}=${X.dev.check(p)}`).join(' '));
+  check('页面里没有明文口令（game.html 搜不到 3303 这个口令串）',
+    !/3303/.test(html), '口令只以散列值出现在产物里');
+}
+
+{
+  // 真·玩家路径：设置里输口令（含会话令牌与日志）
+  const wrong = X.dev.submit('9999');
+  check('错误口令不进入开发者模式', wrong.ok === false && X.state.settings.devMode === false,
+    `${wrong.reason}`);
+  const right = X.dev.submit('3303');
+  check('正确口令进入开发者模式', right.ok === true && X.state.settings.devMode === true);
+  check('进入后立刻生效（令牌也在）', X.dev.on(X.state) === true);
+  check('进入后已解锁的资源确实被封顶（银两）', rv('silver', X.state) > 0.9e12, `${rv('silver', X.state)}`);
+  check('写了一条 dev:on 族谱纪事', X.state.log.some((l) => l.key === 'dev:on'));
+  const offAgain = X.dev.submit('3303');
+  check('再点一次即关闭', offAgain.ok === true && X.state.settings.devMode === false
+    && X.dev.on(X.state) === false);
+  check('关闭写了一族谱纪事 dev:off', X.state.log.some((l) => l.key === 'dev:off'));
+}
+
+{
+  // 界面层单独开一个干净实例：这一段要**真的点按钮**（走 app.js 的事件委托），
+  // 而主实例的点击监听器在更早的「刷新」测试里已经被换掉了 —— 拿它点等于点空气。
+  const dom3 = installDOM(html, { store: dom.store });
+  new Function(code)();
+  const X3 = globalThis.window.__xiuxian;
+  clearInterval(X3.timer);
+  const $3 = (id) => dom3.document.getElementById(id);
+
+  check('开发者模式的三件界面元素都在（徽标 / 设置行 / 状态行）',
+    Boolean($3('dev-badge') && $3('dev-mode-row') && $3('dev-state') && $3('dev-submit')));
+  X3.ui.render();
+  check('默认状态下徽标是藏的（加 is-hidden，不删 DOM）',
+    $3('dev-badge').classList.contains('is-hidden') && Boolean($3('dev-badge')));
+
+  const key3 = $3('dev-password');
+  key3.value = '0000';
+  dom3.click($3('dev-submit'));
+  check('点按钮输错口令：不进入，徽标仍藏着',
+    X3.state.settings.devMode === false && $3('dev-badge').classList.contains('is-hidden'));
+
+  key3.value = '3303';
+  dom3.click($3('dev-submit'));
+  X3.ui.render();
+  check('点按钮输对口令：进入开发者模式',
+    X3.state.settings.devMode === true && X3.dev.on(X3.state) === true);
+  check('进入后徽标立刻露出来', !$3('dev-badge').classList.contains('is-hidden'));
+  check('进入后设置行写着「开发者模式已开启」',
+    /已开启/.test($3('dev-state').textContent), $3('dev-state').textContent);
+  check('进入后按钮文案变成「关闭」', $3('dev-submit').textContent === '关闭',
+    $3('dev-submit').textContent);
+
+  dom3.click($3('dev-submit'));   // 同一次点击是「关闭」
+  X3.ui.render();
+  check('再点一次：关闭并收起徽标',
+    X3.state.settings.devMode === false && $3('dev-badge').classList.contains('is-hidden'));
+  key3.value = '9999';
+  dom3.click($3('dev-submit'));   // 再点一次（这回是「开启」，口令是错的）
+  X3.ui.render();
+  check('关闭后状态行回到「未开启」', /已关闭|未开启/.test($3('dev-state').textContent),
+    $3('dev-state').textContent);
+  // 界面测试的实例到此为止：它有自己的 DOM 与状态，不影响后面任何断言
+}
+
+section('魔数收敛（S1）');
+
+{
+  const cfg = readFileSync('src/core/config.js', 'utf8');
+  const blocks = ['src/core/config.js', 'src/main.js', 'src/systems/immortal-actions.js',
+    'src/systems/immortal-economy.js', 'src/core/save.js'].map((p) => readFileSync(p, 'utf8')).join('\n');
+  check('寻龙尺门槛收成一个常量（COMPASS_SECRET_REQ）', /COMPASS_SECRET_REQ\s*=\s*15/.test(cfg));
+  check('灵池上限与耗石速率收成常量',
+    /POOL_MAX\s*=\s*10/.test(cfg) && /POOL_STONE_PER_SEC\s*=\s*0\.00013/.test(cfg));
+  check('灵脉与矿工上限收成常量（VEIN_MAX / MINE_WORKER_MAX）',
+    /VEIN_MAX\s*=\s*20/.test(cfg) && /MINE_WORKER_MAX\s*=\s*1000/.test(cfg));
+  check('源码里不再有散落的 0.00013 魔数',
+    !/\*\.00013/.test(blocks) && !/c\.pool\*\.00013/.test(blocks));
+  check('源码里不再有散落的「秘闻 ≥15」字面量',
+    !/secrets\.length\s*<\s*15/.test(blocks) && !/需要15条秘闻/.test(blocks));
+  check('源码里不再有灵池的 10 座 / 20 处灵脉的裸字面量',
+    !/c\.pool\s*>=\s*10/.test(blocks) && !/veins\.length\s*>=\s*20/.test(blocks));
+  // save.js 的 10000 与操作层 1000 不一致 —— 登记在案但本次不夹带修改
+  check('save.js 的矿工夹取仍是 10000（只收常量、不改行为）',
+    /Math\.min\(10000,Math\.floor\(num\(fresh\.cultivation\.mineWorkers/.test(
+      readFileSync('src/core/save.js', 'utf8')));
+}
+
 console.log(failed === 0 ? '\n全部通过 ✓\n' : `\n${failed} 项未通过 ✗\n`);
 process.exit(failed ? 1 : 0);

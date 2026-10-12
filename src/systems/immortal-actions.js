@@ -30,18 +30,18 @@ function immortalAction(s,kind,param,rng=Math.random){
    s.spiritStones-=2;c.poolBlueprint=true;msg='购得灵池蓝图，已可营造灵池';
  }else if(kind==='pool-build'){
    if(!c.poolBlueprint)return fail('请先在坊市购买灵池蓝图');
-   if(c.pool>=10)return fail('灵池已达上限');
+   if(c.pool>=POOL_MAX)return fail('灵池已达上限');
    if(s.spiritStones<3 || s.silver<50000)return fail('营造需要3灵石与5万银两');
    s.spiritStones-=3;s.silver-=50000;c.pool++;msg=`灵池营造完成（${c.pool}座），持续消耗灵石祛障`;
  }else if(kind==='compass'){
-   if(s.secrets.length<15)return fail('需要15条秘闻');
+   if(s.secrets.length<COMPASS_SECRET_REQ)return fail(`需要${COMPASS_SECRET_REQ}条秘闻`);
    if(s.spiritStones<3)return fail('研习寻龙尺需3灵石');
    if(c.compass)return fail('已掌握寻龙尺');
    s.spiritStones-=3;c.compass=true;msg='研习寻龙尺成功，可探寻灵脉';
  }else if(kind==='survey'){
    if(!c.compass)return fail('先研习寻龙尺');
    if(s.spiritStones<1)return fail('探脉需要1灵石');
-   if(c.veins.length>=20)return fail('最多保有20处灵脉记录');
+   if(c.veins.length>=VEIN_MAX)return fail(`最多保有${VEIN_MAX}处灵脉记录`);
    s.spiritStones-=1;
    const grade=1+Math.floor(Math.pow(rng(),2)*5);
    c.veins.push({grade,reserve:Math.round((10+grade*17)*(0.8+rng()*.5))});
@@ -54,7 +54,7 @@ function immortalAction(s,kind,param,rng=Math.random){
    msg='矿场开始运转，已投入50名凡人矿工（存在持续死亡风险）';
  }else if(kind==='mine-workers'){
    if(!c.mineLevel)return fail('请先建造矿场');
-   c.mineWorkers=Math.max(0,Math.min(1000,Math.round(Number(param)||0)));
+   c.mineWorkers=Math.max(0,Math.min(MINE_WORKER_MAX,Math.round(Number(param)||0)));
    msg=`矿场用工调整为${c.mineWorkers}人`;
  }else if(kind==='sect'){
    const p=c.cultivators.find(v=>v.id===Number(param)); if(!p)return fail('修士不存在');
