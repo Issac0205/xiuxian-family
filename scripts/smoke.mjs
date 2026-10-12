@@ -6284,14 +6284,37 @@ section('名册容量与凡人人口（复现用户报告的离线暴涨）');
   const setPop = (n) => { XP.state.population = n; XP.state.immortalTechs = []; return capNow(); };
 
   const c10 = setPop(10);
-  const c100 = setPop(100);
   const c500 = setPop(500);
+  const c1000 = setPop(1000);
+  const c10000 = setPop(10000);
   const cBIG = setPop(999999);
   check('开局（10 凡人）容量是 5', c10 === 5, `cap=${c10}`);
-  check('人口越多容量越大（100 凡人 → 10）', c100 === 10, `cap=${c100}`);
-  check('继续增长（500 凡人 → 30）', c500 === 30, `cap=${c500}`);
-  check('容量单调不减', c10 <= c100 && c100 <= c500, `${c10} ≤ ${c100} ≤ ${c500}`);
+  check('500 凡人还养不起第 6 位（仍是 5）', c500 === 5, `cap=${c500}`);
+  check('1000 凡人可多养 1 位（用户定的比例：1000 人养 1 个炼气修士）',
+    c1000 === 6, `cap=${c1000}`);
+  check('10000 凡人 → 15', c10000 === 15, `cap=${c10000}`);
+  check('容量单调不减', c10 <= c500 && c500 <= c1000 && c1000 <= c10000,
+    `${c10} ≤ ${c500} ≤ ${c1000} ≤ ${c10000}`);
   check('硬上限 300 仍然生效（防超大存档与每帧渲染过重）', cBIG === 300, `cap=${cBIG}`);
+
+  // ★ 【V3】新机制必须接进**玩家真正走的那条路**：容量不能只有测试出口读得到。
+  //   用户原话：「修士的名册容量没有展示吗」。这里断言**界面上真的显示**了。
+  setPop(1000);
+  XP.ui.render();
+  const rosterEl = domP.document.getElementById('roster-count');
+  const rosterTxt = (rosterEl && rosterEl.textContent) || '';
+  check('名册容量显示在修士名册标题上（当前 / 上限）',
+    /\d+\s*\/\s*6\s*位修士/.test(rosterTxt), `「${rosterTxt.trim()}」`);
+  const metricEl = domP.document.getElementById('immortal-metrics');
+  const metricTxt = (metricEl && metricEl.textContent) || '';
+  check('仙途「炼气人口」那一格也显示上限', /\/\s*6/.test(metricTxt),
+    `实际文本「${metricTxt.replace(/\s+/g, ' ').trim()}」`);
+  // 阳性对照：把人口调回 10，上限必须回到 5（证明上面两条是活的读数，不是写死的文案）
+  setPop(10);
+  XP.ui.render();
+  const rosterTxt2 = (domP.document.getElementById('roster-count')?.textContent) || '';
+  check('（阳性对照）人口回落到 10 时，上限跟着回到 5',
+    /\/\s*5\s*位修士/.test(rosterTxt2), `「${rosterTxt2.trim()}」`);
 
   // ★ 端到端复现用户报告：离线 12 小时（结算上限）回来，修士数不许暴涨
   setPop(10);

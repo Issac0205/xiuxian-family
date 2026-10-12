@@ -105,7 +105,10 @@ function createUI({ getState, actions, rng }) {
     immortal: [
       { id: 'secret', label: '秘闻', value: (s, d) => `${fmt(d.secretCount)} / ${fmt(d.secretGoal)}` },
       { id: 'spiritStones', label: '灵石', value: (s, d) => `${fmtStones(d.stones)} 枚` },
-      { id: 'cultivatorCount', label: '炼气人口', value: (s, d) => `${fmt(d.qi)}` },
+      // 【用户实测 2026-10-11】用户问「修士的名册容量没有展示吗」——
+      //   确实没有：原来只显示人数。现在显示「当前 / 上限」，并说明上限怎么来。
+      { id: 'cultivatorCount', label: '炼气人口',
+        value: (s, d) => `${fmt(d.qi)} / ${fmt(cultivatorLimit(s))}` },
       { id: 'morality', label: '道心', value: (s) => {
         const t = moralityTierOf(s);
         return `${t.name} ${moralityOf(s).toFixed(0)}`;
@@ -1228,7 +1231,10 @@ function createUI({ getState, actions, rng }) {
     setImmortal('secrets', `${fmt(d.secretCount)} / ${fmt(d.secretGoal)}`,
       d.marketUnlocked ? 'pos' : 'flat');
     setImmortal('stones', `${fmtStones(d.stones)} 枚`, d.stones > 0 ? 'pos' : 'flat');
-    setImmortal('qi', `${fmt(d.qi)}`, d.qi > 0 ? 'pos' : 'flat');
+    // 【用户实测 2026-10-11】用户问「修士的名册容量没有展示吗」—— 原来只显示人数，
+    //   容量藏在函数里谁也没露出来。现在显示「当前 / 上限」。
+    //   上限 = 5 + 凡人人口/1000（科技按比例放大），见 cultivation.js cultivatorLimit。
+    setImmortal('qi', `${fmt(d.qi)} / ${fmt(cultivatorLimit(s))}`, d.qi > 0 ? 'pos' : 'flat');
     setImmortal('innate', fmt(d.cultivateFx.innate), d.cultivateFx.innate > 0 ? 'pos' : 'flat');
     setImmortal('pills', `${fmt(s.cultivation.pills)}`, 'flat');
 
@@ -1311,7 +1317,9 @@ function createUI({ getState, actions, rng }) {
     set('power-cultivator',formatPower(d.cultivatorPower));
     set('power-guard','+'+formatPower(d.guardPower));
     set('power-chip',d.qi>0?'已有修士':'凡人立族');
-    set('roster-count',`${d.qi} 位修士`);
+    // 【用户实测 2026-10-11】名册容量要显示出来（原来只有「N 位修士」）。
+    //   上限 = 5 + 凡人人口/1000，再乘科技加成（见 cultivation.js cultivatorLimit）。
+    set('roster-count',`${d.qi} / ${cultivatorLimit(state())} 位修士`);
     const people=s.cultivation?.cultivators || [];
     // 计数表由职责表推出来 —— 硬编码的清单在加了「镇守 / 炼丹 / 炼器 / 炼符」之后
     // 就会漏项，界面上直接显示 undefined。测试里有一条专门盯这个。

@@ -477,7 +477,7 @@ function planPill(state, pillId = 'quzhangdan') {
   }
 
   if (state.population < 1) return { ok: false, reason:'族中暂无可祛障的凡人' };
-  if ((state.cultivation.cultivators||[]).length>=cultivatorLimit(state)) return { ok:false,reason:'名册已满（容量随凡人人口增长：每 20 个凡人 +1；仙道「开脉」「化神大道」可扩容）' };
+  if ((state.cultivation.cultivators||[]).length>=cultivatorLimit(state)) return { ok:false,reason:'名册已满（凡人人口每满 1000 才多养 1 位；仙道「开脉」「化神大道」可按比例扩容）' };
   if (state.spiritStones < pill.stoneCost) {
     return { ok: false, reason: `灵石不足，需 ${fmtStones(pill.stoneCost)} 枚` };
   }

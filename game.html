@@ -2807,7 +2807,7 @@ body[data-theme="daotian"] ::-webkit-scrollbar-thumb:hover { background: #3a4c60
           </div>
         </div>
         <div class="panel-body">
-          <div class="metrics" id="immortal-metrics"><div class="metric" title="集齐足量秘闻，才能摸到云深谷坊市"><span class="m-label">秘闻</span><span class="m-value flat" data-role="v">0 / 10</span></div><div class="metric" title="凡人换来的修行货币"><span class="m-label">灵石</span><span class="m-value flat" data-role="v">0 枚</span></div><div class="metric" title="祛障或天生灵根诞生，每位修士独立管理"><span class="m-label">炼气人口</span><span class="m-value flat" data-role="v">0</span></div><div class="metric" title="上限可达炼气九层"><span class="m-label">天生修士</span><span class="m-value flat" data-role="v">0</span></div><div class="metric" title="服下多少枚"><span class="m-label">已服祛障丹</span><span class="m-value flat" data-role="v">0</span></div></div>
+          <div class="metrics" id="immortal-metrics"><div class="metric" title="集齐足量秘闻，才能摸到云深谷坊市"><span class="m-label">秘闻</span><span class="m-value flat" data-role="v">0 / 10</span></div><div class="metric" title="凡人换来的修行货币"><span class="m-label">灵石</span><span class="m-value flat" data-role="v">0 枚</span></div><div class="metric" title="祛障或天生灵根诞生，每位修士独立管理。上限 = 5 + 凡人人口 ÷ 1000（科技按比例放大）"><span class="m-label">炼气人口</span><span class="m-value flat" data-role="v">0</span></div><div class="metric" title="上限可达炼气九层"><span class="m-label">天生修士</span><span class="m-value flat" data-role="v">0</span></div><div class="metric" title="服下多少枚"><span class="m-label">已服祛障丹</span><span class="m-value flat" data-role="v">0</span></div></div>
 
           <div class="pill-box" id="pill-box">
             <div class="pill-info">
@@ -4419,7 +4419,7 @@ const IMMORTAL_TECHS = [
     requires: [],
     effect: { immortalCapMult: 0.50, mineYieldMult: 0.25 },
     desc: '把祛障散出来的那口浊气理顺，替后来者把经脉先开一寸。'
-      + '名册能多挂一百五十人，山里的矿脉也认得出谁是自家人。',
+      + '名册按人口比例多养五成，山里的矿脉也认得出谁是自家人。',
   },
   {
     id: 'yinling',
@@ -4707,7 +4707,7 @@ const IMMORTAL_TECHS = [
     requires: ['yuanying', 'jiexu'],
     effect: { breakBonusFlat: 0.12, immortalCapMult: 0.80 },
     desc: '化神那一关，前人多半死在这里。这一篇把前面几道门槛的得失'
-      + '合在一处讲——名册上能挂的人也多出二百五十。',
+      + '合在一处讲——名册按人口比例多养八成。',
   },
   {
     id: 'jielu',
@@ -7420,8 +7420,10 @@ const CULTIVATOR_LIMIT = 300;            // **硬**上限：防止超大存档�
  * 炼气期只能有五个左右修士这样。然后随着后续发展加多。」
  */
 const CULTIVATOR_BASE_CAP = 5;
-/** 每多少凡人加一个名额。20 = 「五个修士要有一百凡人打底」的反推。 */
-const CULTIVATOR_PER_MORTALS = 20;
+/** 每多少凡人加一个名额。
+ *  【用户实测 2026-10-11】用户定的比例原话：「1000人口能养一个炼气修士这样的容量差不多我觉得」。
+ *  最早写的是 20（太松：1000 人就能养 55 个修士，名册还是失控）。 */
+const CULTIVATOR_PER_MORTALS = 1000;
 const CULTIVATOR_SURNAMES = ['林','顾','沈','陆','苏','谢','秦','周','许','叶','唐','白'];
 const CULTIVATOR_GIVEN = ['清衡','云岚','知微','怀瑾','望舒','玄澈','清越','景行','思远','若虚','静尘','长风'];
 
@@ -13196,7 +13198,7 @@ function planPill(state, pillId = 'quzhangdan') {
   }
 
   if (state.population < 1) return { ok: false, reason:'族中暂无可祛障的凡人' };
-  if ((state.cultivation.cultivators||[]).length>=cultivatorLimit(state)) return { ok:false,reason:'名册已满（容量随凡人人口增长：每 20 个凡人 +1；仙道「开脉」「化神大道」可扩容）' };
+  if ((state.cultivation.cultivators||[]).length>=cultivatorLimit(state)) return { ok:false,reason:'名册已满（凡人人口每满 1000 才多养 1 位；仙道「开脉」「化神大道」可按比例扩容）' };
   if (state.spiritStones < pill.stoneCost) {
     return { ok: false, reason: `灵石不足，需 ${fmtStones(pill.stoneCost)} 枚` };
   }
@@ -17005,7 +17007,7 @@ const RES_POPULATION = [
   makeResource('cultivatorCap', '名册容量', 'population', 'population',
     (s) => cultivatorLimit(s), {
       cap: null, gate: gateFlag('immortalPage'), lockedUi: 'hide',
-      hint: '先参悟仙道「开脉」「化神大道」，名册才会扩容',
+      hint: '5 + 凡人人口/1000（科技按比例放大）：想多养修士，先添丁',
       dev: { give: false },
     }),
   makeResource('innateCount', '天生修士', 'population', 'population',
@@ -18155,7 +18157,10 @@ function createUI({ getState, actions, rng }) {
     immortal: [
       { id: 'secret', label: '秘闻', value: (s, d) => `${fmt(d.secretCount)} / ${fmt(d.secretGoal)}` },
       { id: 'spiritStones', label: '灵石', value: (s, d) => `${fmtStones(d.stones)} 枚` },
-      { id: 'cultivatorCount', label: '炼气人口', value: (s, d) => `${fmt(d.qi)}` },
+      // 【用户实测 2026-10-11】用户问「修士的名册容量没有展示吗」——
+      //   确实没有：原来只显示人数。现在显示「当前 / 上限」，并说明上限怎么来。
+      { id: 'cultivatorCount', label: '炼气人口',
+        value: (s, d) => `${fmt(d.qi)} / ${fmt(cultivatorLimit(s))}` },
       { id: 'morality', label: '道心', value: (s) => {
         const t = moralityTierOf(s);
         return `${t.name} ${moralityOf(s).toFixed(0)}`;
@@ -19278,7 +19283,10 @@ function createUI({ getState, actions, rng }) {
     setImmortal('secrets', `${fmt(d.secretCount)} / ${fmt(d.secretGoal)}`,
       d.marketUnlocked ? 'pos' : 'flat');
     setImmortal('stones', `${fmtStones(d.stones)} 枚`, d.stones > 0 ? 'pos' : 'flat');
-    setImmortal('qi', `${fmt(d.qi)}`, d.qi > 0 ? 'pos' : 'flat');
+    // 【用户实测 2026-10-11】用户问「修士的名册容量没有展示吗」—— 原来只显示人数，
+    //   容量藏在函数里谁也没露出来。现在显示「当前 / 上限」。
+    //   上限 = 5 + 凡人人口/1000（科技按比例放大），见 cultivation.js cultivatorLimit。
+    setImmortal('qi', `${fmt(d.qi)} / ${fmt(cultivatorLimit(s))}`, d.qi > 0 ? 'pos' : 'flat');
     setImmortal('innate', fmt(d.cultivateFx.innate), d.cultivateFx.innate > 0 ? 'pos' : 'flat');
     setImmortal('pills', `${fmt(s.cultivation.pills)}`, 'flat');
 
@@ -19361,7 +19369,9 @@ function createUI({ getState, actions, rng }) {
     set('power-cultivator',formatPower(d.cultivatorPower));
     set('power-guard','+'+formatPower(d.guardPower));
     set('power-chip',d.qi>0?'已有修士':'凡人立族');
-    set('roster-count',`${d.qi} 位修士`);
+    // 【用户实测 2026-10-11】名册容量要显示出来（原来只有「N 位修士」）。
+    //   上限 = 5 + 凡人人口/1000，再乘科技加成（见 cultivation.js cultivatorLimit）。
+    set('roster-count',`${d.qi} / ${cultivatorLimit(state())} 位修士`);
     const people=s.cultivation?.cultivators || [];
     // 计数表由职责表推出来 —— 硬编码的清单在加了「镇守 / 炼丹 / 炼器 / 炼符」之后
     // 就会漏项，界面上直接显示 undefined。测试里有一条专门盯这个。

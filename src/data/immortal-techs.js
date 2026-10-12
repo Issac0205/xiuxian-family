@@ -63,7 +63,7 @@ const IMMORTAL_TECHS = [
     requires: [],
     effect: { immortalCapMult: 0.50, mineYieldMult: 0.25 },
     desc: '把祛障散出来的那口浊气理顺，替后来者把经脉先开一寸。'
-      + '名册能多挂一百五十人，山里的矿脉也认得出谁是自家人。',
+      + '名册按人口比例多养五成，山里的矿脉也认得出谁是自家人。',
   },
   {
     id: 'yinling',
@@ -351,7 +351,7 @@ const IMMORTAL_TECHS = [
     requires: ['yuanying', 'jiexu'],
     effect: { breakBonusFlat: 0.12, immortalCapMult: 0.80 },
     desc: '化神那一关，前人多半死在这里。这一篇把前面几道门槛的得失'
-      + '合在一处讲——名册上能挂的人也多出二百五十。',
+      + '合在一处讲——名册按人口比例多养八成。',
   },
   {
     id: 'jielu',

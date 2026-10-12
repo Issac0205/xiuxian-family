@@ -417,7 +417,7 @@ const RES_POPULATION = [
   makeResource('cultivatorCap', '名册容量', 'population', 'population',
     (s) => cultivatorLimit(s), {
       cap: null, gate: gateFlag('immortalPage'), lockedUi: 'hide',
-      hint: '先参悟仙道「开脉」「化神大道」，名册才会扩容',
+      hint: '5 + 凡人人口/1000（科技按比例放大）：想多养修士，先添丁',
       dev: { give: false },
     }),
   makeResource('innateCount', '天生修士', 'population', 'population',
