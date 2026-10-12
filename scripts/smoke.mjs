@@ -6044,10 +6044,17 @@ section('开发者模式：补满的边界');
   s.techs = ['trade'];
   s.settings.devMode = false;
   devLeave(s);
-  const j1 = JSON.stringify(X.save.serialize(s));
+  /**
+   * 【t6 的 F3】比较前**必须剔掉 `savedAt`** —— 它每次 serialize 都是 `Date.now()`
+   * （src/core/save.js:14），两次序列化只要跨过一个毫秒就会不等。
+   * 实测（监管者的 t6-savedat.mjs）：400 次里有约 1 次随机变红，差异键恒为 savedAt。
+   * 判据与文件里既有的写法一致（见 `k !== 'savedAt'` 那一处）。
+   */
+  const stable = (o) => { const c = { ...o }; delete c.savedAt; return JSON.stringify(c); };
+  const j1 = stable(X.save.serialize(s));
   X.dev.refill(s);
-  const j2 = JSON.stringify(X.save.serialize(s));
-  check('关闭时 devRefill 写入恒 0（序列化前后逐字段相等）', j1 === j2);
+  const j2 = stable(X.save.serialize(s));
+  check('关闭时 devRefill 写入恒 0（序列化前后逐字段相等，已剔 savedAt）', j1 === j2);
   check('关闭时 devRefill 的返回值为 0', X.dev.refill(s) === 0);
 
   // 真的走一次 tick 入口：devMode=false 时那一帧不许补任何东西
