@@ -5548,23 +5548,60 @@ const rv = (id, s = X.state) => X.res.read(id, s);
 {
   // 新开局与「满进度」两种状态：path 都必须返回数字、不抛错
   const fresh = X.save.hydrate({ createdAt: 0 });
-  const full = resState();
-  full.techs = d.techs.map((t) => t.id);
-  full.immortalTechs = d.immortalTechs.map((t) => t.id);
-  full.secrets = Array.from({ length: 20 }, (_, i) => i);
-  full.buildings = Object.fromEntries(Object.keys(full.buildings).map((k) => [k, 2]));
-  full.cultivation.veins = [{ grade: 3, reserve: 100 }];
-  full.cultivation.compass = true;
-  full.cultivation.mineLevel = 1;
-  full.cultivation.pool = 1;
-  full.cultivation.poolBlueprint = true;
-  full.cultivation.world = { reached: ['mosscave'], held: ['valley'], garrison: {}, unrest: {} };
-  full.cultivation.cultivators = [person({ realmIndex: 22 })];
-  full.cultivation.qi = 1;
+  /**
+   * 「满进度」状态：每条门控都打得开的那一份 —— 一定要真的走一遍引擎的正常路径，
+   * 否则 derive() 的派生值（岁入 / 上限 / 战力）会因为容器半空而算不出来，
+   * D4（银两 cap 走 'silverCap'）就是靠这一份状态才抓得出来的。
+   */
+  const full = (() => {
+    const s = resState();
+    s.techs = d.techs.map((t) => t.id);
+    s.immortalTechs = d.immortalTechs.map((t) => t.id);
+    s.secrets = Array.from({ length: 20 }, (_, i) => i);
+    s.buildings = Object.fromEntries(Object.keys(s.buildings).map((k) => [k, 2]));
+    s.cultivation.veins = [{ grade: 3, reserve: 100 }];
+    s.cultivation.compass = true;
+    s.cultivation.mineLevel = 1;
+    s.cultivation.mineWorkers = 3;
+    s.cultivation.pool = 1;
+    s.cultivation.poolBlueprint = true;
+    s.cultivation.world = { reached: ['mosscave'], held: ['valley'], garrison: {}, unrest: {} };
+    s.cultivation.cultivators = [person({ realmIndex: 22 })];
+    s.cultivation.qi = 1;
+    s.cultivation.alchemy.furnace = 3;
+    s.cultivation.forge.level = 3;
+    s.cultivation.runes.bench = 3;
+    return s;
+  })();
 
-  const readAll = (s) => X.res.list().map((r) => { X.res.read(r.id, s); return true; });
-  check('新开局：每条资源都能读出数（无异常）', readAll(fresh).length === X.res.list().length);
-  check('满进度：每条资源都能读出数（无异常）', readAll(full).length === X.res.list().length);
+  /**
+   * 【docs/92 §十五 D5】**直调 `X.res.path()`**。
+   * 不许再走 `X.res.read()` —— 那一层是 `try/catch + ?? 0`，
+   * 「path 引用了不存在的符号」（REALMS）与「path 返回字符串」（realmDashboard）
+   * 都会被它兜成一个 0，于是这类断言**结构上恒真**，怎么改都红不了。
+   * 这里直接调：ReferenceError 就当场炸在断言行上。
+   */
+  const pathAll = (s, tag) => {
+    const bad = [];
+    for (const r of X.res.list()) {
+      const v = X.res.path(r.id, s);          // ← 故意不加 try：坏了就要红
+      if (typeof v === 'string') bad.push(`${r.id}:string(${JSON.stringify(v)})`);
+      else if (typeof v === 'number' ? !Number.isFinite(v) : (v === undefined || v === null)) {
+        bad.push(`${r.id}:${String(v)}`);
+      }
+    }
+    check(`直调 path()：${tag} 每条都返回数字或存货对象（不抛错 / 不是字符串）`,
+      bad.length === 0, bad.slice(0, 8).join(' '));
+  };
+  pathAll(fresh, '新开局');
+  pathAll(full, '满进度');
+  /**
+   * 极旧存档：`hydrate({createdAt:0})` 出来的状态没有 alchemy / forge / runes / world
+   * 这些容器（这正是老存档的形状）。⚠ 不能用字面量 `{ cultivation: {} }` ——
+   * 那样连 `state.buildings` 都没有，`derive()` 自己就先炸了（本轮实测踩过），
+   * 测的就不再是注册表而是 derive 的入参契约。
+   */
+  pathAll(X.save.hydrate({ createdAt: 0 }), '极旧存档');
   check('读数永不 undefined（容器缺失也返回 0）', (() => {
     const empty = { cultivation: {} };
     return X.res.list().every((r) => X.res.read(r.id, empty) !== undefined);
@@ -5579,6 +5616,122 @@ const rv = (id, s = X.state) => X.res.read(id, s);
   check('新开局就有「无事可做」的判据为真（gate 可达）',
     X.res.unlocked('silver', fresh) && X.res.unlocked('building:field', fresh),
     X.res.unlockedIds(fresh).join(','));
+}
+
+{
+  /* ── 【docs/92 §十五 D4】补满必须受**这条资源自己的上限**约束 ──
+   * 反例：`silver` 的 cap 写成字符串 `'silverCap'`，而解析器只认数字/函数
+   * ⇒ 当成无上限 ⇒ 补到 1e12，越过了 3000 的上限，资源条上直接露馅（1e12 / 3000）。 */
+  const full = resState();
+  full.techs = d.techs.map((t) => t.id);
+  full.immortalTechs = d.immortalTechs.map((t) => t.id);
+  full.secrets = Array.from({ length: 20 }, (_, i) => i);
+  full.buildings = Object.fromEntries(Object.keys(full.buildings).map((k) => [k, 3]));
+  full.population = 200;
+  full.cultivation.world = { reached: ['mosscave'], held: ['valley'], garrison: {}, unrest: {} };
+  full.cultivation.cultivators = [person({ realmIndex: 3 })];
+  const giveable = X.res.list().filter((r) => r.kind !== 'pointer' && X.res.canBeGiven(r.id));
+  const overCap = giveable
+    .map((r) => ({ id: r.id, cap: X.res.cap(r.id, full), give: X.res.giveTo(r.id, full) }))
+    .filter((row) => row.cap !== null && row.give > row.cap);
+  check('D4：每条可补满的资源，补满目标 ≤ 它自己的上限', overCap.length === 0,
+    overCap.map((r) => `${r.id}(give ${r.give} > cap ${r.cap})`).join(' '));
+  const silverCap = X.res.cap('silver', full);
+  check('D4-b：银两的 cap 能从字符串形态解析出来（cap:\'silverCap\' → 数字）',
+    Number.isFinite(silverCap) && silverCap > 0,
+    `cap=${silverCap} give=${X.res.giveTo('silver', full)}`);
+  check('D4-c：既有「有上限」也有「无上限」的可补满资源（两种形态都被用到）',
+    giveable.some((r) => X.res.cap(r.id, full) !== null) && giveable.some((r) => X.res.cap(r.id, full) === null),
+    `${giveable.filter((r) => X.res.cap(r.id, full) !== null).length} 条有上限 / ${giveable.filter((r) => X.res.cap(r.id, full) === null).length} 条无上限`);
+}
+
+{
+  /**
+   * 【docs/92 §十五 D5】机械扫描：注册表里 `path` / `cap` / `gate.value` 引用的
+   * 符号都必须**真的存在**。
+   *
+   * 为什么必须有这一条：`REALMS` 这个符号全库只出现在注册表的一行里，
+   * 静态看不出问题、`read()` 的 try/catch 又兜成 0 —— 直到某条补满路径摸到它
+   * 才 ReferenceError。做法：把每个函数的源码文本抽出来，取出标识符，
+   * 再回 `src/**`（按 manifest 逐文件读）查「这个标识符有没有被声明过」。
+   */
+  const allSrc = manifest.map((e) => readFileSync(e.path, 'utf8')).join('\n');
+  const declared = (name) => new RegExp(
+    `(?:function\\s+${name}\\b|(?:const|let|var)\\s+${name}\\b|(?:const|let|var)\\s+[^=;\\n]*\\b${name}\\s*=|\\b${name}\\s*\\)|\\b${name}\\s*:)`)
+    .test(allSrc);
+  /** JS 自带与运行时全局 + 函数形参惯用名 —— 不该被当成「未定义符号」。 */
+  const GLOBALS = new Set(['Math', 'Number', 'String', 'Boolean', 'Array', 'Object', 'JSON', 'Date', 'Set', 'Map',
+    'Infinity', 'NaN', 'undefined', 'isFinite', 'isNaN', 'parseInt', 'parseFloat', 'Error', 'RegExp',
+    'document', 'window', 'globalThis', 'sessionStorage', 'localStorage', 'console', 'performance',
+    // 内建方法名：它们在 String(fn) 里长得像变量，但不是符号引用
+    'indexOf', 'includes', 'slice', 'join', 'filter', 'map', 'find', 'some', 'every', 'reduce', 'keys',
+    'values', 'entries', 'length', 'push', 'split', 'replace', 'match', 'matchAll', 'test', 'toFixed',
+    'floor', 'ceil', 'round', 'abs', 'max', 'min', 'pow', 'sqrt', 'trim', 'charCodeAt', 'fromEntries',
+    'isArray', 'isFinite', 'startsWith', 'endsWith', 'hasOwnProperty', 'toUpperCase', 'toLowerCase',
+    's', 'd', 'state', 'v', 'n', 'x', 'i', 'e', 'r', 'o', 'k', 't', 'w', 'c', 'id', 'key', 'res', 'box', 'def']);
+  const unknown = [];
+  const scanFn = (owner, fn) => {
+    if (typeof fn !== 'function') return;
+    for (const m of String(fn).matchAll(/[A-Za-z_$][A-Za-z0-9_$]*/g)) {
+      const name = m[0];
+      if (GLOBALS.has(name)) continue;
+      if (!/^[A-Z_$]/.test(name) && !/^[a-z]+[A-Z]/.test(name)) continue;   // 只看常量/大写/驼峰
+      if (declared(name)) continue;
+      unknown.push(`${owner}→${name}`);
+    }
+  };
+  for (const r of X.res.list()) {
+    scanFn(`${r.id}.path`, r.path);
+    if (typeof r.cap === 'function') scanFn(`${r.id}.cap`, r.cap);
+  }
+  check('D5：注册表引用的符号全部真实存在（没有 REALMS 这种幽灵符号）',
+    unknown.length === 0, [...new Set(unknown)].slice(0, 8).join(' '));
+  // gate.value 也要落地：canAct 的键得在界面判据里出现过，flag 的键必须是注册表里的 id
+  const badGate = X.res.list().filter((r) => {
+    const g = r.gate;
+    if (g.kind === 'canAct') return !new RegExp(`['"]${g.value}['"]`).test(allSrc);
+    if (g.kind === 'flag') return !X.res.of(g.value);
+    return false;
+  });
+  check('D5-b：gate 的 canAct 键与 flag 键都能落到实处', badGate.length === 0,
+    badGate.map((r) => `${r.id}(${r.gate.kind}:${r.gate.value})`).join(' '));
+  /**
+   * 【D7 的机械闸】三类原料的门控必须与界面**同一条判据**（canAct），
+   * 不能是 held(1) —— `held=0 && crafts>0`（有开炉记录、没占领地）时两条判据会分叉，
+   * 界面把丹房摆出来、注册表却判未解锁。
+   */
+  const matIds = (prefix) => X.res.list().filter((r) => r.id.startsWith(prefix)).map((r) => r.id);
+  const wrongGate = matIds('herb:').concat(matIds('pill:'))
+    .map((id) => [id, X.res.of(id).gate])
+    .filter(([, g]) => !(g.kind === 'canAct' && g.value === 'alchemy'));
+  const wrongOre = matIds('ore:').map((id) => [id, X.res.of(id).gate])
+    .filter(([, g]) => !(g.kind === 'canAct' && g.value === 'forge'));
+  const wrongRune = matIds('runematerial:').map((id) => [id, X.res.of(id).gate])
+    .filter(([, g]) => !(g.kind === 'canAct' && g.value === 'runes'));
+  check('D7：三类原料的 gate 都是界面的 canAct 判据（没有 held 分叉）',
+    wrongGate.length === 0 && wrongOre.length === 0 && wrongRune.length === 0,
+    wrongGate.concat(wrongOre, wrongRune).slice(0, 6).map(([id, g]) => `${id}(${g.kind}:${g.value})`).join(' '));
+  /**
+   * 【D2 的机械闸】`secret`（秘闻）的门控必须是 null、口径必须是 dim ——
+   * 通商页资源条自带这一格；挂上 trade 科技会让「已攒下秘闻但科技被轮回重置」
+   * 的存档里整格凭空消失。同理 `spiritStones` 必须是 hide（未解锁不许出现）。
+   */
+  check('D2：秘闻的门控是 null 且口径 dim（不靠 trade 科技）',
+    X.res.of('secret').gate.kind === 'null' && X.res.of('secret').lockedUi === 'dim',
+    `${X.res.of('secret').gate.kind}/${X.res.of('secret').lockedUi}`);
+  check('D2-b：灵石保持 hide 口径（未解锁不许出现在资源条上）',
+    X.res.of('spiritStones').lockedUi === 'hide' && X.res.of('spiritStones').gate.kind === 'secrets',
+    `${X.res.of('spiritStones').gate.kind}/${X.res.of('spiritStones').lockedUi}`);
+  /**
+   * 【docs/101 §3.2 通则】无门控的资源一律 dim（总是显示），
+   * **不允许**出现「gate:null 却 hide」这种自相矛盾的条目（D2/D7 就是它的两种形状）。
+   * 有门控 + hide 的（页签/仪表/秘闻之外的凭证）照旧允许。
+   */
+  const contradiction = X.res.list()
+    .filter((r) => r.gate.kind === 'null' && r.lockedUi === 'hide' && r.kind !== 'pointer')
+    .map((r) => r.id);
+  check('通则：无门控的资源一律 dim（没有「gate:null 却 hide」的自相矛盾条目）',
+    contradiction.length === 0, contradiction.slice(0, 8).join(' '));
 }
 
 {
@@ -5641,6 +5794,126 @@ const rv = (id, s = X.state) => X.res.read(id, s);
 }
 
 {
+  /* ── 【docs/92 §十五 D1/A4】逐页 × 逐格：资源条的解锁判据**真的接线了** ──
+   * 原来这条只测「当前页资源条的文本」，跑的时候正好停在家业页
+   * ⇒ 通商页的「商队」、仙途页的「灵石」永远测不到（D1 就是这么溜过去的）。
+   * 这里对每一页都建一遍资源条，按**格子**（不是页文本）核对：
+   *   ① 每一格必须带 `data-res`（机械挂点）；
+   *   ② 带注册表 id 的格子，必须与 `X.res.visible()` 一致；
+   *   ③ 反过来也一样 —— 未解锁 + hide 的 id 不许出现。
+   */
+  const pageNames = ['home', 'techs', 'trade', 'immortal', 'study'];
+  const perPage = {};
+  const bad = [];
+  const barShown = (el) => Boolean(el) && !el.classList.contains('is-hidden');
+  /**
+   * ⚠ 不能用「切页 + 渲染」来测：`setPage` 有一条兜底 ——
+   * 当前页被藏了就退回家业页，于是每一页看起来都长家业页的样子
+   * （本轮实测：`trade` / `immortal` 全部渲染出 home 的五格）。
+   * 直接用 `ui.buildPageResForTest(page, state)` **点名**建那一页的资源条。
+   */
+  const cellsOf = (page, snapshot) => {
+    const ret = ui.buildPageResForTest(page, snapshot);
+    return ret.cells.map((c) => ({
+      res: c.res || '',
+      label: c.chip.querySelector('.pres-label')?.textContent || '',
+      shown: barShown(c.chip),
+      cls: c.chip.className,
+    }));
+  };
+  for (const page of pageNames) {
+    const cells = cellsOf(page, X.state);
+    perPage[page] = cells.map((c) => c.res).join(',');
+    for (const cell of cells) {
+      if (!cell.res) { bad.push(`${page}:无 data-res 的格子[${cell.label}]`); continue; }
+      const res = X.res.of(cell.res);
+      if (!res) continue;                        // 已显式声明 resWhen 的例外（商队/答题三格）
+      if (cell.shown !== X.res.visible(cell.res, X.state)) {
+        bad.push(`${page}:${cell.res} 显示=${cell.shown} visible=${X.res.visible(cell.res, X.state)}`);
+      }
+    }
+    // 反向：hide 口径且未解锁的 id 不允许作为格子出现
+    for (const r of X.res.list()) {
+      if (r.lockedUi !== 'hide' || r.kind === 'pointer') continue;
+      if (X.res.visible(r.id, X.state)) continue;
+      if (cells.some((c) => c.res === r.id)) bad.push(`${page}:未解锁的 hide 资源占格 ${r.id}`);
+    }
+  }
+  X.step(0);                                     // 复位：让真实渲染重建当前页资源条
+
+  check('格子级：资源条按可见性建格（逐页 × 逐格，与 X.res.visible 一致）',
+    bad.length === 0, bad.slice(0, 8).join(' '));
+  check('格子级：每一页都有格子，且不是所有页长得一样（换页真的换格）',
+    pageNames.every((p) => perPage[p].length > 0)
+      && new Set(pageNames.map((p) => perPage[p])).size > 1,
+    pageNames.map((p) => `${p}[${perPage[p]}]`).join(' '));
+  /**
+   * 【D1 的可见症状】那一格在列 ⟺ `X.res.visible(id)` 为真。
+   * 通商页的秘闻（口径 dim，恒可见）与仙途页的灵石（口径 hide，未解锁不许出现）
+   * 是两个方向，两个都要对得上 —— 而且**先给一个确定性的状态**，
+   * 不依赖「此刻主状态里有什么」（那是几千条断言留下的噪声）。
+   */
+  const probeState = (() => {
+    const s = resState();
+    s.techs = ['realestate', 'architecture', 'finance', 'expansion', 'trade'];
+    s.secrets = Array.from({ length: 4 }, (_, i) => i);   // 4 < 10 ⇒ 坊市没开
+    s.cultivation.clues = 5;                              // 有线索 ⇒ 仙途页可见
+    s.cultivation.unlocked = true;
+    return s;
+  })();
+  const tradeIds = cellsOf('trade', probeState).map((c) => c.res);
+  check('D1：通商页格子与 X.res.visible 一一对应（秘闻在列当且仅当它可见）',
+    tradeIds.includes('secret') === X.res.visible('secret', probeState),
+    `visible(secret)=${X.res.visible('secret', probeState)} 格子=${tradeIds.join(',')} `
+      + `口径=${X.res.of('secret').lockedUi}`);
+  check('D1-a：通商页此刻确实把秘闻摆出来了（阳性对照，否则上一条测不出东西）',
+    tradeIds.includes('secret') === true, tradeIds.join(','));
+  const immIds = cellsOf('immortal', probeState).map((c) => c.res);
+  check('D1-b：仙途页里灵石的格子与 X.res.visible 一一对应（未解锁不出现）',
+    immIds.includes('spiritStones') === X.res.visible('spiritStones', probeState),
+    `visible(spiritStones)=${X.res.visible('spiritStones', probeState)} 格子=${immIds.join(',')}`);
+  check('D1-c：灵石此刻确实未解锁且不许占格（阳性对照）',
+    X.res.visible('spiritStones', probeState) === false && !immIds.includes('spiritStones'),
+    `visible=${X.res.visible('spiritStones', probeState)} 格子=${immIds.join(',')}`);
+  // 反过来：把秘闻攒够 10 条，灵石那一格必须自己冒出来（不是永久藏住）
+  const litState = (() => {
+    const s = resState();
+    s.techs = ['trade'];
+    s.secrets = Array.from({ length: 10 }, (_, i) => i);
+    s.cultivation.clues = 5;
+    s.cultivation.unlocked = true;
+    return s;
+  })();
+  const litIds = cellsOf('immortal', litState).map((c) => c.res);
+  check('D1-d：攒够 10 条秘闻之后灵石那一格自己出现（藏不是永久藏）',
+    litIds.includes('spiritStones') && X.res.visible('spiritStones', litState) === true,
+    litIds.join(','));
+  X.step(0);
+  /**
+   * 【D3】`.is-hidden` 必须真的有通用 CSS 规则 —— 否则 resHideLocked()
+   * 加上的 class 是个空操作（class 在、computed display 还是 flex）。
+   */
+  check('D3：.is-hidden 有通用 CSS 规则（display:none !important，压得过 .pres-chip 的 flex）',
+    (() => {
+      const css = readFileSync('src/_shell-head.html', 'utf8');
+      return /^\s*\.is-hidden\s*\{[^}]*display:\s*none/m.test(css)
+        && /^\s*\.is-hidden\s*\{[^}]*display:\s*none\s*!important/m.test(css);
+    })(),
+    (readFileSync('src/_shell-head.html', 'utf8').match(/[^\s{}]*\.is-hidden\s*\{[^}]*\}/g) || [])
+      .join(' ').slice(0, 200));
+  const leak = $('page-res')?.querySelector('.pres-chip');
+  if (leak) {
+    // 拿一条**确定未解锁**的资源（灵石：要 10 条秘闻）来试 —— 用已解锁的当然摘不掉
+    const lockedOne = X.res.list().find((r) => r.lockedUi === 'hide' && !X.res.unlocked(r.id, X.state));
+    const hiddenRet = lockedOne ? X.res.hideLocked(lockedOne.id, leak) : null;
+    check('D3-b：resHideLocked 给格子加上的 is-hidden 真的生效（class 在 ∧ shim 认出藏）',
+      lockedOne ? (hiddenRet === true && barShown(leak) === false) : false,
+      `id=${lockedOne && lockedOne.id} ret=${hiddenRet} class=${leak.className}`);
+    leak.classList.remove('is-hidden');
+  }
+}
+
+{
   // 解锁状态经 serialize → hydrate 往返不丢
   const s = resState();
   s.techs = ['realestate', 'architecture', 'finance', 'trade', 'quzhang'];
@@ -5679,9 +5952,16 @@ section('开发者模式：补满的边界');
   s.techs = ['trade', 'quzhang'];
   s.secrets = [0, 1, 2];
   s.spiritStones = 0;
+  /**
+   * 【docs/92 §十五 D4】银两**有上限**（`derive().silverCap`），所以补满是
+   * 「补到自己的上限」而不是「补到 1e12」 —— 这里必须拿 `X.res.cap('silver')`
+   * 当期望值，而不是写死一个大数（写死就变成「越界也算通过」）。
+   */
   devEnter(s);
-  check('devMode=true（已解锁「银两」）时银两被补满',
-    (X.dev.refill(s), rv('silver', s) > 0.9e12), `${rv('silver', s)}`);
+  const silverCapHere = X.res.cap('silver', s);
+  check('devMode=true（已解锁「银两」）时银两被补到自己的上限（≤ silverCap）',
+    (X.dev.refill(s), rv('silver', s) === silverCapHere && silverCapHere > 1000),
+    `silver=${rv('silver', s)} cap=${silverCapHere}`);
   check('未解锁的资源不补：只有 3 条秘闻时灵石纹丝不动',
     rv('spiritStones', s) === 0, `${rv('spiritStones', s)}`);
   check('未解锁的资源不补：线索也没被补（仙途页还没开）',
@@ -5743,7 +6023,9 @@ section('开发者模式：补满的边界');
   X.dev.refill(s);
   check('补满不碰人口 / 境界 / 修为 / 倍率 / 上限（逐字段相等）',
     snap(s) === before, snap(s));
-  check('补满也确实补到了东西（阳性对照）', rv('silver', s) > 0.9e12, `${rv('silver', s)}`);
+  check('补满也确实补到了东西（阳性对照：银两顶到自己的上限）',
+    rv('silver', s) === X.res.cap('silver', s) && rv('silver', s) > 1000,
+    `${rv('silver', s)} / cap ${X.res.cap('silver', s)}`);
   // 容器里没有的条目：不凭空造出来
   const clean = X.save.hydrate({ createdAt: 0 });
   devEnter(clean);
@@ -5775,11 +6057,13 @@ section('开发者模式：补满的边界');
   check('tick 在 devMode=false 时不补资源（真实入口）',
     X.state.silver === silverBefore, `${silverBefore} → ${X.state.silver}`);
 
-  // 阳性对照：开启之后，**同一个 tick 入口**必须把银两封顶
+  // 阳性对照：开启之后，**同一个 tick 入口**必须把银两封到自己的上限（D4）
   devEnter(X.state);   // 只写开关，不写令牌（测试不碰会话盒子）
   X.tick(0);
-  check('tick 在 devMode=true 时补满已解锁资源（阳性对照）',
-    X.state.silver > 0.9e12, `${X.state.silver}`);
+  const silverCapTick = X.res.cap('silver', X.state);
+  check('tick 在 devMode=true 时补满已解锁资源（阳性对照：银两 = 自己的上限）',
+    X.state.silver === silverCapTick && silverCapTick > 1000,
+    `silver=${X.state.silver} cap=${silverCapTick}`);
   devLeave(X.state);
   X.state.silver = silverBefore;
   X.tick(0);
@@ -5829,7 +6113,9 @@ section('开发者模式：口令与四道闸');
   const right = X.dev.submit('3303');
   check('正确口令进入开发者模式', right.ok === true && X.state.settings.devMode === true);
   check('进入后立刻生效（令牌也在）', X.dev.on(X.state) === true);
-  check('进入后已解锁的资源确实被封顶（银两）', rv('silver', X.state) > 0.9e12, `${rv('silver', X.state)}`);
+  check('进入后已解锁的资源确实被封顶（银两 = 自己的上限，D4）',
+    rv('silver', X.state) === X.res.cap('silver', X.state) && rv('silver', X.state) > 1000,
+    `${rv('silver', X.state)} / cap ${X.res.cap('silver', X.state)}`);
   check('写了一条 dev:on 族谱纪事', X.state.log.some((l) => l.key === 'dev:on'));
   const offAgain = X.dev.submit('3303');
   check('再点一次即关闭', offAgain.ok === true && X.state.settings.devMode === false

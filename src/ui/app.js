@@ -70,40 +70,76 @@ function createUI({ getState, actions, rng }) {
    *
    * 凡人数值（银两／人口／岁入）只在「家业」这一页出现，不做全局常驻——
    * 那是凡人模块的数据，不该在仙途页上也杵着。
+   *
+   * 【架构 docs/101 §四 规则 2 / docs/92 §十五 D1】每一项都带**资源 id**，
+   * 渲染时先过 `visibleOf(state, id)`：未解锁 + hide 口径的格子**根本不建**
+   * （不是建了再加 class —— 那会先闪一下，也会让「未解锁不占格子」变成空话）。
+   *
+   * `id` 就是 `RESOURCE_MAP` 的键（data/resources.js 的注册表）：
+   *   · 查得到 → 格子带 `data-res="<id>"`，机械可验；
+   *   · 查不到（状态量、派生量）→ 带 `data-res="<label>"`，**必须**另写 `resWhen`
+   *     说明它靠什么成立，绝不允许「无 id 又能显示」这种第三种形态。
+   * `resWhen` 是**已有页签门控**的显式例外（本页本身就是那个门控开的），
+   * 唯一用到它的是商队：那一格量的是「在途商队」，注册表里对应 `usedCaravans`，
+   * 而它在通商页出现与否只取决于「商队科技已研」——与 `caravanSlots` 无关，
+   * 所以按 id 判可见性会误伤（恒隐藏），这里显式点名。
    */
   const PAGE_RES = {
     home: [
-      ['银两', (s, d) => `${fmt(Math.floor(s.silver))} / ${fmt(d.silverCap)}`],
-      ['人口', (s, d) => `${fmt(s.population, 1)} / ${fmt(d.housingCap)}`],
-      ['岁入', (s, d) => `${fmt(d.silverPerSec * currentSpeed(s), 2)} 两/秒`],
-      ['建筑容量', (s, d) => `${d.usedSlots} / ${d.buildingCap}`],
-      ['战力', (s,d) => fmt(d.totalPower,1)],
+      { id: 'silver', label: '银两', value: (s, d) => `${fmt(Math.floor(s.silver))} / ${fmt(d.silverCap)}` },
+      { id: 'population', label: '人口', value: (s, d) => `${fmt(s.population, 1)} / ${fmt(d.housingCap)}` },
+      { id: 'm_silverPerSec', label: '岁入', value: (s, d) => `${fmt(d.silverPerSec * currentSpeed(s), 2)} 两/秒` },
+      { id: 'buildingCap', label: '建筑容量', value: (s, d) => `${d.usedSlots} / ${d.buildingCap}` },
+      { id: 'm_totalPower', label: '战力', value: (s, d) => fmt(d.totalPower, 1) },
     ],
     techs: [
-      ['银两', (s, d) => `${fmt(Math.floor(s.silver))} / ${fmt(d.silverCap)}`],
+      { id: 'silver', label: '银两', value: (s, d) => `${fmt(Math.floor(s.silver))} / ${fmt(d.silverCap)}` },
       // 【策划 docs/17 门控】原来这里有一行「已研习 N / 总 M」——看到总数就是剧透，已移除。
     ],
     trade: [
-      ['银两', (s, d) => `${fmt(Math.floor(s.silver))} / ${fmt(d.silverCap)}`],
-      ['商队', (s, d) => `${d.usedCaravans} / ${d.caravanSlots}`],
-      ['秘闻', (s, d) => `${fmt(d.secretCount)} / ${fmt(d.secretGoal)}`],
+      { id: 'silver', label: '银两', value: (s, d) => `${fmt(Math.floor(s.silver))} / ${fmt(d.silverCap)}` },
+      { id: 'usedCaravans', label: '商队', value: (s, d) => `${d.usedCaravans} / ${d.caravanSlots}`,
+        resWhen: (s) => techResearched(s, 'trade') },
+      { id: 'secret', label: '秘闻', value: (s, d) => `${fmt(d.secretCount)} / ${fmt(d.secretGoal)}` },
     ],
     immortal: [
-      ['秘闻', (s, d) => `${fmt(d.secretCount)} / ${fmt(d.secretGoal)}`],
-      ['灵石', (s, d) => `${fmtStones(d.stones)} 枚`],
-      ['炼气人口', (s, d) => `${fmt(d.qi)}`],
-      ['道心', (s) => {
+      { id: 'secret', label: '秘闻', value: (s, d) => `${fmt(d.secretCount)} / ${fmt(d.secretGoal)}` },
+      { id: 'spiritStones', label: '灵石', value: (s, d) => `${fmtStones(d.stones)} 枚` },
+      { id: 'cultivatorCount', label: '炼气人口', value: (s, d) => `${fmt(d.qi)}` },
+      { id: 'morality', label: '道心', value: (s) => {
         const t = moralityTierOf(s);
         return `${t.name} ${moralityOf(s).toFixed(0)}`;
-      }],
-      ['家族战力', (s,d) => fmt(d.totalPower,1)],
+      } },
+      { id: 'm_totalPower', label: '家族战力', value: (s, d) => fmt(d.totalPower, 1) },
     ],
     study: [
-      ['答题', (s) => `${fmt(studySummary(s).answered)} 题`],
-      ['正确率', (s) => { const sum=studySummary(s);return sum.answered?fmtPercent(sum.accuracy,0):'—'; }],
-      ['错题', (s) => `${fmt(activeWrongIds(s).length)} 题`],
+      // 答题 / 正确率 / 错题是**内部记账**（stats / wordStats / quiz），
+      // 按 docs/100 §5 一律不带解锁状态 —— 故用 resWhen 显式声明「恒显示」。
+      { id: 'studyAnswered', label: '答题', resWhen: () => true,
+        value: (s) => `${fmt(studySummary(s).answered)} 题` },
+      { id: 'studyAccuracy', label: '正确率', resWhen: () => true,
+        value: (s) => { const sum=studySummary(s);return sum.answered?fmtPercent(sum.accuracy,0):'—'; } },
+      { id: 'studyWrong', label: '错题', resWhen: () => true,
+        value: (s) => `${fmt(activeWrongIds(s).length)} 题` },
     ],
   };
+
+  /** 商队那一格的门控：与 `visiblePages` 里通商页同一个判据。 */
+  function techResearched(s, id) {
+    return Array.isArray(s?.techs) && s.techs.includes(id);
+  }
+
+  /**
+   * 资源条某一格现在该不该出现。
+   * 有 id 就**一律先问注册表**（`visibleOf`）；查不到该 id 的条目才算例外，
+   * 由 `resWhen` 自己表态（没表态就当不可见 —— 宁可少一格，不要漏一格）。
+   */
+  function pageCellVisible(state, cell) {
+    if (typeof cell !== 'object' || cell === null) return false;
+    const res = (typeof RESOURCE_MAP !== 'undefined' && RESOURCE_MAP[cell.id]) || null;
+    if (res) return visibleOf(state, res);
+    return typeof cell.resWhen === 'function' ? cell.resWhen(state) === true : false;
+  }
 
   function panelCollapsed(key) {
     return Boolean(state()?.ui?.collapsed?.[key]);
@@ -630,27 +666,56 @@ function createUI({ getState, actions, rng }) {
       : `凡尘篇 · 第${s.generation}代`;
   }
 
-  function buildPageRes(page) {
+  /**
+   * 【架构 docs/101 §四 规则 2 / docs/92 §十五 D1】资源条建格。
+   *
+   * 每一格先过 `pageCellVisible()`（内部就是注册表的 `visibleOf`）：
+   * 未解锁 + hide 口径的格子**不建元素**，而不是建了再打 `is-hidden`。
+   * 只有 `dim`/`mask` 口径的东西才允许「先灰着占位」。
+   */
+  function buildPageRes(page, state) {
+    // `state` 既可能是状态对象（渲染路径传状态），也可能是取状态的函数（保险起见两种都收）
+    const s = typeof state === 'function' ? state() : (state || getState());
     const host = $('page-res');
     host.innerHTML = '';
     resRefs = [];
 
-    for (const [label, fn] of PAGE_RES[page] || []) {
+    for (const cell of PAGE_RES[page] || []) {
+      if (typeof cell !== 'object' || cell === null) continue;
+      if (!pageCellVisible(s, cell)) continue;
       const chip = document.createElement('span');
       chip.className = 'pres-chip';
-      chip.innerHTML = `<span class="pres-label">${label}</span><span class="pres-value">—</span>`;
+      // 机械可验的挂点：格子认领的是哪一条资源（未接注册表的用 label 占位）
+      chip.dataset.res = cell.id;
+      chip.innerHTML = `<span class="pres-label">${cell.label}</span><span class="pres-value">—</span>`;
       host.appendChild(chip);
-      resRefs.push({ node: chip.querySelector('.pres-value'), fn });
+      resRefs.push({ node: chip.querySelector('.pres-value'), fn: cell.value, res: cell.id, chip });
     }
+    return resRefs.length;
   }
 
   function updatePageRes(s, d) {
     const page = s.ui.page || 'home';
-    if (page !== resPageSig) {
-      resPageSig = page;
-      buildPageRes(page);
+    // 页签或**解锁状态**变了都要重建：开关闭时未解锁的格子必须消失/回来。
+    const sig = `${page}|${unlockSig(s)}`;
+    if (sig !== resPageSig) {
+      resPageSig = sig;
+      buildPageRes(page, s);
     }
     for (const ref of resRefs) ref.node.textContent = ref.fn(s, d);
+  }
+
+  /** 页面资源条的解锁指纹：只关心「哪些格子该在」，与数值无关。 */
+  function unlockSig(s) {
+    let bits = '';
+    for (const page of PAGES) {
+      for (const cell of PAGE_RES[page] || []) {
+        if (typeof cell !== 'object' || cell === null) continue;
+        bits += pageCellVisible(s, cell) ? '1' : '0';
+      }
+      bits += '|';
+    }
+    return bits;
   }
 
   /**
@@ -2131,5 +2196,27 @@ function createUI({ getState, actions, rng }) {
     actions,
     /** 给测试看的：某个面板是否折叠 */
     isPanelCollapsed: panelCollapsed,
+    /**
+     * 【架构 docs/101 §四 规则 2 / docs/92 §十五 D1】给测试看的资源条构建入口。
+     * 测试可以**指定页面**建一次资源条，于是「逐页 × 逐格」的断言不依赖
+     * 「切页成功」这个前置（页签可见性会把切页兜回家业页）。
+     *
+     * ⚠ 它**临时把 #page-res 让给测试用**，建完立刻还原：
+     *   不这么做的话，真实渲染（updatePageRes）会在下一次 tick 里
+     *   按「当前页 + 解锁签名」把测试刚建的那一条覆盖掉，
+     *   于是测出来的其实是家业页的格子（D1 的假绿就是这么来的）。
+     * 传 `restore=false` 可以留在原地观察（调试用）。
+     */
+    buildPageResForTest: (page, snapshot, restore = true) => {
+      const keep = resRefs;
+      const keepSig = resPageSig;
+      resRefs = [];
+      const n = buildPageRes(page, snapshot);
+      const fresh = resRefs;
+      const cells = fresh.map((r) => ({ res: r.res, chip: r.chip }));
+      if (restore) { resRefs = keep; resPageSig = null; }   // 下一次真实渲染自己重建
+      else { resRefs = fresh; resPageSig = keepSig; }
+      return { count: n, ids: cells.map((c) => c.res), cells };
+    },
   };
 }

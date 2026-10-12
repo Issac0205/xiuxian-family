@@ -1038,8 +1038,25 @@ window.__xiuxian = {
     unlocked: (id, s) => unlockOf(s || state, id),
     unlockedIds: (s) => RESOURCES.filter((r) => unlockOf(s || state, r.id)).map((r) => r.id),
     visible: (id, s) => visibleOf(s || state, id),
+    /**
+     * 【架构 docs/101 §2.1 / docs/92 §十五 D5/D6】**直调 path()**，
+     * 不经过 readResourceNumber 的 try/catch + `?? 0` 兜底 ——
+     * 那层兜底会让「path 引用了不存在的符号」「path 返回字符串」永远测不出来。
+     * 断言必须走到这一条，坏掉的 path 才会当场红。
+     */
+    path: (id, s) => {
+      const res = RESOURCE_MAP[id];
+      return res ? res.path(s || state) : undefined;
+    },
+    /** 那条资源能不能被开发者模式补满（kind 语义 + 逐项豁免）。 */
     canBeGiven: (id) => resourceCanBeGiven(RESOURCE_MAP[id]),
+    /** 那条资源的补满目标（有上限 = 上限，无上限 = DEV_ABUNDANCE）。 */
     giveTo: (id, s) => devGiveTo(s || state, id),
+    /** 那条资源此刻的上限（三种 cap 形态统一解析后的数字 / null）。 */
+    cap: (id, s) => {
+      const res = RESOURCE_MAP[id];
+      return res ? resCapOf(res, s || state) : null;
+    },
     lockedUi: (id, s) => {
       const res = RESOURCE_MAP[id];
       return res ? (unlockOf(s || state, res) ? 'shown' : res.lockedUi) : null;

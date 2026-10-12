@@ -676,6 +676,17 @@ body {
   .log-list { max-height: 300px; min-height: 0; }
 }
 
+/* ───────────────────────── 通用：藏一格 ───────────────────────── */
+
+/* 【架构 docs/101 §四 规则 1 / docs/92 §十五 D3】`.is-hidden` 的**通用规则**。
+   原因：这个类被三处「藏起来」共用（科技线 / 开发者徽标 / 资源条的未解锁格），
+   但过去只在 .tech-list / .tech / .tech-group / .dev-badge 上按选择器分别定义过 ——
+   于是 src/systems/resources.js 的 resHideLocked() 给任意宿主加 `is-hidden`
+   在真实浏览器里是个**空操作**（class 加上去了，computed display 还是 flex）。
+   `!important` 是必须的：资源条格子的 .pres-chip 自带 display:flex，
+   同优先级下后者赢，只写 `.is-hidden{display:none}` 依然按不动它。 */
+.is-hidden { display: none !important; }
+
 /* ───────────────────────── 格物（科技） ───────────────────────── */
 
 .tech-list { padding: 4px 0 8px; }
@@ -1535,7 +1546,11 @@ body[data-theme="inkwash"] .rite-overlay { background:rgba(40,36,30,.45); }
   background:rgba(217,180,94,.16); color:var(--gold-soft);
   font-size:11px; letter-spacing:1px;
 }
-.dev-badge.is-hidden { display:none; }
+/* ⚠ 这条必须也带 `!important`：`display:inline-flex` 会以**内联样式**落到元素上
+   （见 src/ui/app.js 的 syncDevMode），而内联样式优先于任何非 important 的选择器。
+   只写 `display:none` 的话，徽标在**开了内联样式的那条路径**上藏不住
+   —— t4 的 edge 夹具（真浏览器 + 内联样式）就是这么判它「关了还看得见」的。 */
+.dev-badge.is-hidden { display:none !important; }
 
 @media (max-width:720px) {
   .settings-toggle { margin-left:auto; }

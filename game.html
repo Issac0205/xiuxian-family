@@ -676,6 +676,17 @@ body {
   .log-list { max-height: 300px; min-height: 0; }
 }
 
+/* ───────────────────────── 通用：藏一格 ───────────────────────── */
+
+/* 【架构 docs/101 §四 规则 1 / docs/92 §十五 D3】`.is-hidden` 的**通用规则**。
+   原因：这个类被三处「藏起来」共用（科技线 / 开发者徽标 / 资源条的未解锁格），
+   但过去只在 .tech-list / .tech / .tech-group / .dev-badge 上按选择器分别定义过 ——
+   于是 src/systems/resources.js 的 resHideLocked() 给任意宿主加 `is-hidden`
+   在真实浏览器里是个**空操作**（class 加上去了，computed display 还是 flex）。
+   `!important` 是必须的：资源条格子的 .pres-chip 自带 display:flex，
+   同优先级下后者赢，只写 `.is-hidden{display:none}` 依然按不动它。 */
+.is-hidden { display: none !important; }
+
 /* ───────────────────────── 格物（科技） ───────────────────────── */
 
 .tech-list { padding: 4px 0 8px; }
@@ -1535,7 +1546,11 @@ body[data-theme="inkwash"] .rite-overlay { background:rgba(40,36,30,.45); }
   background:rgba(217,180,94,.16); color:var(--gold-soft);
   font-size:11px; letter-spacing:1px;
 }
-.dev-badge.is-hidden { display:none; }
+/* ⚠ 这条必须也带 `!important`：`display:inline-flex` 会以**内联样式**落到元素上
+   （见 src/ui/app.js 的 syncDevMode），而内联样式优先于任何非 important 的选择器。
+   只写 `display:none` 的话，徽标在**开了内联样式的那条路径**上藏不住
+   —— t4 的 edge 夹具（真浏览器 + 内联样式）就是这么判它「关了还看得见」的。 */
+.dev-badge.is-hidden { display:none !important; }
 
 @media (max-width:720px) {
   .settings-toggle { margin-left:auto; }
@@ -16626,7 +16641,11 @@ function makeResource(id, name, kind, group, path, o = {}) {
     path,
     /** 每秒产出（无产出型为 null）。只作说明与测试核对，不参与结算。 */
     rate: o.rate === undefined ? null : o.rate,
-    /** 上限（无限为 null；可以是数字，也可以是 () => number）。 */
+    /**
+     * 【架构 docs/101 §5.1.1】上限（无限为 null）。三种形态：
+     *   数字 / `(s) => number` / **derive() 的键名字符串**（如 `silverCap`）。
+     * 第三种是**已接受的扩展**，理由见 resCapOf 的注释（不在注册表里抄公式）。
+     */
     cap: o.cap === undefined ? null : o.cap,
     /** 解锁判据（派生，见 systems/resources.js 的 unlockOf）。 */
     gate: o.gate || { kind: 'null' },
@@ -16688,12 +16707,37 @@ function resAlchemy(s) { return resAt(s, 'cultivation', 'alchemy') || {}; }
 function resForge(s) { return resAt(s, 'cultivation', 'forge') || {}; }
 function resRunes(s) { return resAt(s, 'cultivation', 'runes') || {}; }
 
-/** 取上限的数值（cap 允许是数字或函数）。 */
+/**
+ * 取上限的数值。
+ *
+ * 【架构 docs/101 §5.1.1】cap 允许**三种形态**（t4 的 D4 落点）：
+ *   ① `null`                 —— 没有上限（补满目标 = DEV_ABUNDANCE）
+ *   ② 数字 / `(s) => number` —— 直接就是上限
+ *   ③ **字符串**              —— `derive(state)` 的**键名**（如 `silverCap`）
+ *
+ * ⚠ 第 ③ 种是为了不在注册表里再抄一遍公式（银两上限由 derive().silverCap 算出）。
+ *   **漏掉这一种就是 D4**：Number.isFinite(silverCap 那个字符串) 为假 → 当成无上限
+ *   → 银两被补到 1e12，越过了自己 3000 的上限（资源条上直接露馅）。
+ * ⚠ 字符串键名在 derive() 里不是数字时抛错，而不是静默返回 null：
+ *   静默 = 又补出一个越界的非法值，宁可当场红。
+ */
 function resCapOf(res, state) {
   const cap = res ? res.cap : null;
   if (cap === null || cap === undefined) return null;
-  const v = typeof cap === 'function' ? cap(state) : cap;
-  return Number.isFinite(v) ? v : null;
+  if (typeof cap === 'number') return Number.isFinite(cap) ? cap : null;
+  if (typeof cap === 'string') {
+    const d = derive(state || {});
+    const v = d ? d[cap] : undefined;
+    if (!Number.isFinite(v)) {
+      throw new Error('资源「' + res.id + '」的 cap 指向 derive().' + cap + '，但那不是数字（' + v + '）');
+    }
+    return v;
+  }
+  if (typeof cap === 'function') {
+    const v = cap(state);
+    return Number.isFinite(v) ? v : null;
+  }
+  return null;
 }
 
 /* ═══════════════ 门控判据的构造器 ═══════════════ */
@@ -16719,8 +16763,18 @@ const gateSecrets = (n) => ({ kind: 'secrets', value: n });
 const gateRealm   = (n) => ({ kind: 'realm', value: n });
 const gateHeld    = (n) => ({ kind: 'held', value: n });
 const gateFlag    = (id) => ({ kind: 'flag', value: id });
+/** 【架构 docs/101 §6.2】复用界面那一份「有事可做」判据（immortalBlockVisible）。 */
+const gateCanAct  = (key) => ({ kind: 'canAct', value: key });
 
 /* ═══════════════ 一、货币（C） ═══════════════ */
+
+/**
+ * 【架构 docs/101 §6.5】首页顶部那五格境界仪表的**顺序**（与
+ * `systems/progression.js` 的 `realmDashboardKey()` 返回值一一对应）。
+ * 注册表只用它把「现在该露哪一格」归一成 1..5 的数字，
+ * **不复制**那份 switch —— 名单仍只有 realmDashboardKey() 一份真相源。
+ */
+const DASHBOARD_CELL_ORDER = ['qi', 'foundation', 'core', 'nascent', 'tribulation'];
 
 /**
  * 银两：**属于「资源」大类**，不是孤立字段（用户原话：银两属于资源大类）。
@@ -16729,7 +16783,7 @@ const gateFlag    = (id) => ({ kind: 'flag', value: id });
 const RES_CURRENCY = [
   makeResource('silver', '银两', 'currency', 'currency', (s) => resNum(resAt(s, 'silver')), {
     rate: 'silverPerSec', cap: 'silverCap', gate: gateNull(),
-    lockedUi: 'hide', hint: '开局即有：族人每秒产银，钱庄与库房抬高上限',
+    lockedUi: 'dim', hint: '开局即有：族人每秒产银，钱庄与库房抬高上限',
     note: '上限见 core/formulas.js derive()：BASE.silverCap + 钱庄×BANK_CAPACITY，再乘库房倍率。',
   }),
   makeResource('spiritStones', '灵石', 'currency', 'currency', (s) => resNum(resAt(s, 'spiritStones')), {
@@ -16738,8 +16792,12 @@ const RES_CURRENCY = [
     note: '平价兑率：MARKET_EXCHANGE_BASE_SILVER → BASE_STONES×(1+tradeStoneMult)。',
   }),
   makeResource('secret', '秘闻', 'currency', 'currency', (s) => resCount(s, 'secrets'), {
-    rate: 'secretPerSec', cap: null, gate: gateTech('trade'),
-    lockedUi: 'hide', hint: '遣商队与外族往来，才有秘闻带回家族',
+    // 【架构 docs/101 §6.1 + t4 的 D2】秘闻是「累计凭证」：门控写 null、口径 dim。
+    //   通商页资源条自带这一格（secretGoal 就是坊市门槛），给它是本地信息，
+    //   不需要前置条件 —— 写 gateTech(trade) 会让「已攒下秘闻但科技被轮回重置」
+    //   的存档里这一格凭空消失。
+    rate: 'secretPerSec', cap: null, gate: gateNull(),
+    lockedUi: 'dim', hint: '遣商队与外族往来，才有秘闻带回家族',
     note: '⚠ **同名不同物**：本项是「累计发现的秘闻」（凭证，只增不减，'
       + 's.secrets 存的是 SECRETS 下标数组），**不是** cultivation.clues。'
       + '历史上两者被混过一次，所以改为独立 id：secret（秘闻凭证）/ clue（线索）。'
@@ -16747,7 +16805,7 @@ const RES_CURRENCY = [
   }),
   makeResource('secretUsed', '已费秘闻', 'currency', 'currency', (s) => resNum(resAt(s, 'secretsUsed')), {
     cap: null, gate: gateSecrets(SECRET_UNLOCK),
-    lockedUi: 'hide', hint: '坊市里每解锁一件商品，要花 1 条秘闻',
+    lockedUi: 'dim', hint: '坊市里每解锁一件商品，要花 1 条秘闻',
     note: '只记账用，不参与任何门控（门控读累计 secret）。**绝不能补**：它必须恒 ≤ 累计数。',
   }),
   makeResource('clue', '线索', 'currency', 'currency', (s) => resNum(resAt(s, 'cultivation', 'clues')), {
@@ -16776,16 +16834,26 @@ const RES_CURRENCY = [
  *   符文    RUNE_MATERIALS     → cultivation.runes.materials[id]
  *   符箓    RUNE_ITEMS         → cultivation.runes.items[id]（{n,expiresAt}，有保质期）
  */
-const RES_MAT_GATE = gateHeld(1);
-const RES_MAT_HINT = '先打通地图商路、占下一块有产出的领地';
+/**
+ * 三条生产线的门控 —— 与界面**逐个对齐**（docs/101 §6.2 / t4 的 D7）：
+ *   药材 / 丹药 → `canAct:alchemy`，矿料 → `canAct:forge`，符文材料 → `canAct:runes`。
+ *
+ * ⚠ 为什么不能用 held(1)：界面露不露丹房走的是 immortalBlockVisible()
+ *   （held>0 || crafts>0），而「有开炉记录但一块领地都没占」是真会出现的状态。
+ *   那时界面把丹房摆出来了，注册表却判这些原料「未解锁」—— 两条判据分叉
+ *   （§2.3 明确要求「不可能分叉」）。canAct 就是复用界面那一份判据。
+ */
+const RES_MAT_HINT_ALCHEMY = '先占下一块领地，或先开炉炼过一炉：丹房是药材与丹药的家';
+const RES_MAT_HINT_FORGE = '先占下一块领地，或先铸过一件器：器房是矿料与法器的家';
+const RES_MAT_HINT_RUNES = '先占下一块领地，或先画过一张符：符房是符文材料的家';
 
 /** 药材（4）。 */
 const RES_HERBS = ALCHEMY_HERBS.map((h) => makeResource(
   `herb:${h.id}`, h.name, 'material', 'herb',
   (s) => resNum(resAt(resAlchemy(s), 'herbs', h.id)),
   {
-    rate: 'herbPerSec', cap: null, gate: RES_MAT_GATE, lockedUi: 'hide',
-    hint: RES_MAT_HINT,
+    rate: 'herbPerSec', cap: null, gate: gateCanAct('alchemy'), lockedUi: 'dim',
+    hint: RES_MAT_HINT_ALCHEMY,
     note: `产地：地图节点「${h.node}」，需已占领且镇守足够。`,
   },
 ));
@@ -16795,9 +16863,13 @@ const RES_PILLS = ALCHEMY_RECIPES.filter((r) => r.id !== 'quzhang').map((r) => m
   `pill:${r.id}`, r.name, 'material', 'pill',
   (s) => resNum(resAt(resAlchemy(s), 'pills', r.id)),
   {
-    cap: null, gate: gateFlag('alchemyBlock'), lockedUi: 'hide',
-    hint: '先占下一块领地（或有开炉记录），丹房才会露出来',
-    note: r.requiresImmortalTech ? `另需仙道科技「${r.requiresImmortalTech}」。` : '',
+    // 【架构 docs/101 §九 A3 / t4 的 D9】rate 只有两种写法：
+    //   要么是 derive() 里某个每秒速率，要么是 null —— 而 null 必须在 note 里
+    //   说清**为什么没有产率**，否则读者分不清「漏填」和「本来就没有」。
+    rate: null, cap: null, gate: gateCanAct('alchemy'), lockedUi: 'dim',
+    hint: RES_MAT_HINT_ALCHEMY,
+    note: '一次性产出（无持续产率）：一炉一炉炼出来，不是每秒产出的东西。'
+      + (r.requiresImmortalTech ? `另需仙道科技「${r.requiresImmortalTech}」。` : ''),
   },
 ));
 
@@ -16806,8 +16878,8 @@ const RES_ORES = FORGE_ORES.map((o) => makeResource(
   `ore:${o.id}`, o.name, 'material', 'ore',
   (s) => resNum(resAt(resForge(s), 'ores', o.id)),
   {
-    rate: 'orePerSec', cap: null, gate: RES_MAT_GATE, lockedUi: 'hide',
-    hint: RES_MAT_HINT,
+    rate: 'orePerSec', cap: null, gate: gateCanAct('forge'), lockedUi: 'dim',
+    hint: RES_MAT_HINT_FORGE,
     note: `产地：地图节点「${o.node}」。与药材同源不同料（刻意不互抢）。`,
   },
 ));
@@ -16819,7 +16891,8 @@ const RES_FORGE_ITEMS = FORGE_ITEMS.map((it) => makeResource(
   {
     cap: null, gate: gateFlag('forgeBlock'), lockedUi: 'hide',
     hint: '先占下一块领地（或有铸器记录），器房才会露出来',
-    note: `部位「${it.slot}」· 耐久上限 FORGE_DURABILITY_MAX。`
+    note: '一次性产出（无持续产率）：铸一件算一件，不是每秒产出的东西。'
+      + `部位「${it.slot}」· 耐久上限 FORGE_DURABILITY_MAX。`
       + '存货是对象而非纯数字，注册表只读、不碰 durability 以外的语义。',
   },
 ));
@@ -16829,8 +16902,8 @@ const RES_RUNE_MATERIALS = RUNE_MATERIALS.map((m) => makeResource(
   `runematerial:${m.id}`, m.name, 'material', 'runematerial',
   (s) => resNum(resAt(resRunes(s), 'materials', m.id)),
   {
-    rate: 'runeMaterialPerSec', cap: null, gate: RES_MAT_GATE, lockedUi: 'hide',
-    hint: RES_MAT_HINT,
+    rate: 'runeMaterialPerSec', cap: null, gate: gateCanAct('runes'), lockedUi: 'dim',
+    hint: RES_MAT_HINT_RUNES,
     note: `产地：地图节点「${m.node}」。`,
   },
 ));
@@ -16842,7 +16915,8 @@ const RES_RUNES = RUNE_ITEMS.map((r) => makeResource(
   {
     cap: null, gate: gateFlag('runesBlock'), lockedUi: 'hide',
     hint: '先占下一块领地（或有画符记录），符房才会露出来',
-    note: `保质期 RUNE_SHELF_HOURS=${RUNE_SHELF_HOURS} 游戏小时`
+    note: '一次性产出（无持续产率）：画一张算一张，不是每秒产出的东西。'
+      + `保质期 RUNE_SHELF_HOURS=${RUNE_SHELF_HOURS} 游戏小时`
       + '（dev 补满只加数量，不刷新已存那一张的 expiresAt）。',
   },
 ));
@@ -16862,7 +16936,8 @@ const RES_MISC_MATERIALS = [
     {
       cap: null, gate: gateFlag('humanPillBlock'), lockedUi: 'hide',
       hint: '主修血煞一脉才有「献祭凡人」这条路，别的人看不见',
-      note: '门控复用 systems/progression.js 的 immortalBlockVisible(state,"humanPill")。',
+      note: '一次性产出（无持续产率）：献祭一次得一枚，不是每秒产出的东西。'
+        + '门控复用 systems/progression.js 的 immortalBlockVisible(state,"humanPill")。',
     }),
 ];
 
@@ -16875,13 +16950,13 @@ const RES_MISC_MATERIALS = [
  */
 const RES_POPULATION = [
   makeResource('population', '凡人人口', 'population', 'population', (s) => resNum(resAt(s, 'population')), {
-    rate: 'netPerSec', cap: 'housingCap', gate: gateNull(), lockedUi: 'hide',
+    rate: 'netPerSec', cap: 'housingCap', gate: gateNull(), lockedUi: 'dim',
     hint: '开局即有：田地抬出生率，房产抬容纳量', uiLabel: '人口',
     dev: { give: false },
   }),
   makeResource('housingCap', '家族容纳量', 'population', 'population',
     (s) => derive(s).housingCap, {
-      cap: null, gate: gateNull(), lockedUi: 'hide', hint: '每栋房产都让家族多养人',
+      cap: null, gate: gateNull(), lockedUi: 'dim', hint: '每栋房产都让家族多养人',
       dev: { give: false },
       note: '派生值（derive().housingCap），不是 state 字段。',
     }),
@@ -16954,11 +17029,11 @@ const RES_BUILDINGS = BUILDINGS.map((b) => makeResource(
 
 const RES_PROGRESS = [
   makeResource('buildingCap', '建筑容量', 'progress', 'progress', (s) => derive(s).buildingCap, {
-    cap: null, gate: gateNull(), lockedUi: 'hide', hint: '地基与地产决定能盖几座',
+    cap: null, gate: gateNull(), lockedUi: 'dim', hint: '地基与地产决定能盖几座',
     dev: { give: false },
   }),
   makeResource('techCount', '已研习科技', 'progress', 'progress', (s) => resCount(s, 'techs'), {
-    cap: () => Object.keys(TECH_MAP).length, gate: gateNull(), lockedUi: 'hide',
+    cap: () => Object.keys(TECH_MAP).length, gate: gateNull(), lockedUi: 'dim',
     hint: '格物页每研习一项，后一项才会露出来',
     dev: { give: false },
     note: '刻意**不显示总数**（看到总数就是剧透，见 ui/app.js 的 PAGE_RES 注释）。',
@@ -16971,16 +17046,27 @@ const RES_PROGRESS = [
     }),
   makeResource('highestRealmIndex', '最高境界', 'progress', 'progress',
     (s) => highestRealmIndex(s), {
-      cap: () => REALMS.length - 1, gate: gateFlag('immortalPage'), lockedUi: 'hide',
+      // 【架构 docs/101 §2.3 / t4 的 D5】境界档位的真名是 REALM_MAX_INDEX
+      //   （data/realms.js:500 = realmCursorEnd），**没有** REALMS 这个符号。
+      //   原来写 REALMS.length 会 ReferenceError —— 今天不炸只因本项 dev.give=false，
+      //   一旦 §2.3 第二步（可见性函数读注册表）落地就是开机崩。
+      cap: REALM_MAX_INDEX, gate: gateFlag('immortalPage'), lockedUi: 'hide',
       hint: '族中修为最高的那一位，决定了首页顶部那一格仪表',
       dev: { give: false },
       note: '⚠ 绝不补满：realmIndex=∞ 会越出 realms 的 26 档表（docs/101 §3.3）。',
     }),
+  // 【架构 docs/101 §九 A1 / t4 的 D6】原来 path 返回字符串（''/'qi'/'foundation'…）
+  //   ⇒ `X.res.read` 兜成 0，这一行永远是 0（注册表里的**死行**）。
+  //   改成**数字**：当前该露的是第几格仪表（0 = 凡人期没有仪表）。
+  //   字符串键仍留在 systems/progression.js 的 realmDashboardKey()（界面在用），
+  //   这里不复制它的名单，只把它归一成序号 —— 少一处「同一规则写两遍」。
   makeResource('realmDashboard', '境界仪表格', 'progress', 'progress',
-    (s) => realmDashboardKey(s) || '', {
-      cap: null, gate: gateFlag('immortalPage'), lockedUi: 'hide',
+    (s) => DASHBOARD_CELL_ORDER.indexOf(realmDashboardKey(s)) + 1, {
+      cap: DASHBOARD_CELL_ORDER.length, gate: gateFlag('immortalPage'), lockedUi: 'hide',
       hint: '凡人时期没有仪表；有了修士，首页顶部才随境界换表',
       dev: { give: false },
+      note: `1..${DASHBOARD_CELL_ORDER.length} 依次对应 ${DASHBOARD_CELL_ORDER.join(' / ')}；`
+        + '0 = 凡人期，没有仪表。仪表该不该出现仍由 dashboardVisible() 判。',
     }),
   makeResource('alchemyFurnace', '丹炉等级', 'progress', 'progress',
     (s) => resNum(resAt(resAlchemy(s), 'furnace')) || 1, {
@@ -17043,7 +17129,7 @@ const RES_PROGRESS = [
     }),
   makeResource('milestoneCount', '人口里程碑', 'progress', 'progress',
     (s) => resCount(s, 'milestones'), {
-      cap: () => POP_MILESTONES.length, gate: gateNull(), lockedUi: 'hide',
+      cap: () => POP_MILESTONES.length, gate: gateNull(), lockedUi: 'dim',
       hint: '每突破一档人口，族谱上会记一笔',
       dev: { give: false },
     }),
@@ -17129,7 +17215,7 @@ const RES_PROGRESS = [
  */
 function resModifier(id, name, path, hint, o = {}) {
   return makeResource(id, name, 'modifier', 'modifier', path, {
-    cap: null, gate: gateNull(), lockedUi: 'hide', hint,
+    cap: null, gate: gateNull(), lockedUi: 'dim', hint,
     uiLabel: o.uiLabel, note: o.note || '',
     dev: { give: false },
   });
@@ -17166,8 +17252,12 @@ const RES_MODIFIERS = [
  *     不是「已解锁资源无限」这个需求。
  */
 function resFlag(id, name, path, hint, gate = gateNull(), note = '') {
+  // 【架构 docs/101 §3.2】口径按门控定：无门控的（gateNull）一律 dim（总是显示），
+  // 有门控的才 hide（藏）。写死 'hide' 会让「gate:null 却不显示」这种自相矛盾
+  // 的条目混进注册表 —— 那正是 t4 的 D2/D7 的形状。
+  const g = gate || gateNull();
   return makeResource(id, name, 'flag', 'flag', path, {
-    cap: 1, gate, lockedUi: 'hide', hint, dev: { give: false }, note,
+    cap: 1, gate: g, lockedUi: g.kind === 'null' ? 'dim' : 'hide', hint, dev: { give: false }, note,
   });
 }
 
@@ -17229,7 +17319,7 @@ function resCyclePageOpen(s) {
  */
 const RES_INDEX = [
   makeResource('stateIndex', '状态索引', 'pointer', 'index', (s) => (s ? 1 : 0), {
-    cap: 1, gate: gateNull(), lockedUi: 'hide',
+    cap: 1, gate: gateNull(), lockedUi: 'dim',
     hint: '这不是一条资源，是给注册表与测试看的总目录',
     note: '顶层可见量清单：`silver` 与 `spiritStones` 是货币大类；'
       + '`population` 是人口大类；`secrets`（累计秘闻）与 `cultivation.clues`（可消耗线索）'
@@ -17995,40 +18085,76 @@ function createUI({ getState, actions, rng }) {
    *
    * 凡人数值（银两／人口／岁入）只在「家业」这一页出现，不做全局常驻——
    * 那是凡人模块的数据，不该在仙途页上也杵着。
+   *
+   * 【架构 docs/101 §四 规则 2 / docs/92 §十五 D1】每一项都带**资源 id**，
+   * 渲染时先过 `visibleOf(state, id)`：未解锁 + hide 口径的格子**根本不建**
+   * （不是建了再加 class —— 那会先闪一下，也会让「未解锁不占格子」变成空话）。
+   *
+   * `id` 就是 `RESOURCE_MAP` 的键（data/resources.js 的注册表）：
+   *   · 查得到 → 格子带 `data-res="<id>"`，机械可验；
+   *   · 查不到（状态量、派生量）→ 带 `data-res="<label>"`，**必须**另写 `resWhen`
+   *     说明它靠什么成立，绝不允许「无 id 又能显示」这种第三种形态。
+   * `resWhen` 是**已有页签门控**的显式例外（本页本身就是那个门控开的），
+   * 唯一用到它的是商队：那一格量的是「在途商队」，注册表里对应 `usedCaravans`，
+   * 而它在通商页出现与否只取决于「商队科技已研」——与 `caravanSlots` 无关，
+   * 所以按 id 判可见性会误伤（恒隐藏），这里显式点名。
    */
   const PAGE_RES = {
     home: [
-      ['银两', (s, d) => `${fmt(Math.floor(s.silver))} / ${fmt(d.silverCap)}`],
-      ['人口', (s, d) => `${fmt(s.population, 1)} / ${fmt(d.housingCap)}`],
-      ['岁入', (s, d) => `${fmt(d.silverPerSec * currentSpeed(s), 2)} 两/秒`],
-      ['建筑容量', (s, d) => `${d.usedSlots} / ${d.buildingCap}`],
-      ['战力', (s,d) => fmt(d.totalPower,1)],
+      { id: 'silver', label: '银两', value: (s, d) => `${fmt(Math.floor(s.silver))} / ${fmt(d.silverCap)}` },
+      { id: 'population', label: '人口', value: (s, d) => `${fmt(s.population, 1)} / ${fmt(d.housingCap)}` },
+      { id: 'm_silverPerSec', label: '岁入', value: (s, d) => `${fmt(d.silverPerSec * currentSpeed(s), 2)} 两/秒` },
+      { id: 'buildingCap', label: '建筑容量', value: (s, d) => `${d.usedSlots} / ${d.buildingCap}` },
+      { id: 'm_totalPower', label: '战力', value: (s, d) => fmt(d.totalPower, 1) },
     ],
     techs: [
-      ['银两', (s, d) => `${fmt(Math.floor(s.silver))} / ${fmt(d.silverCap)}`],
+      { id: 'silver', label: '银两', value: (s, d) => `${fmt(Math.floor(s.silver))} / ${fmt(d.silverCap)}` },
       // 【策划 docs/17 门控】原来这里有一行「已研习 N / 总 M」——看到总数就是剧透，已移除。
     ],
     trade: [
-      ['银两', (s, d) => `${fmt(Math.floor(s.silver))} / ${fmt(d.silverCap)}`],
-      ['商队', (s, d) => `${d.usedCaravans} / ${d.caravanSlots}`],
-      ['秘闻', (s, d) => `${fmt(d.secretCount)} / ${fmt(d.secretGoal)}`],
+      { id: 'silver', label: '银两', value: (s, d) => `${fmt(Math.floor(s.silver))} / ${fmt(d.silverCap)}` },
+      { id: 'usedCaravans', label: '商队', value: (s, d) => `${d.usedCaravans} / ${d.caravanSlots}`,
+        resWhen: (s) => techResearched(s, 'trade') },
+      { id: 'secret', label: '秘闻', value: (s, d) => `${fmt(d.secretCount)} / ${fmt(d.secretGoal)}` },
     ],
     immortal: [
-      ['秘闻', (s, d) => `${fmt(d.secretCount)} / ${fmt(d.secretGoal)}`],
-      ['灵石', (s, d) => `${fmtStones(d.stones)} 枚`],
-      ['炼气人口', (s, d) => `${fmt(d.qi)}`],
-      ['道心', (s) => {
+      { id: 'secret', label: '秘闻', value: (s, d) => `${fmt(d.secretCount)} / ${fmt(d.secretGoal)}` },
+      { id: 'spiritStones', label: '灵石', value: (s, d) => `${fmtStones(d.stones)} 枚` },
+      { id: 'cultivatorCount', label: '炼气人口', value: (s, d) => `${fmt(d.qi)}` },
+      { id: 'morality', label: '道心', value: (s) => {
         const t = moralityTierOf(s);
         return `${t.name} ${moralityOf(s).toFixed(0)}`;
-      }],
-      ['家族战力', (s,d) => fmt(d.totalPower,1)],
+      } },
+      { id: 'm_totalPower', label: '家族战力', value: (s, d) => fmt(d.totalPower, 1) },
     ],
     study: [
-      ['答题', (s) => `${fmt(studySummary(s).answered)} 题`],
-      ['正确率', (s) => { const sum=studySummary(s);return sum.answered?fmtPercent(sum.accuracy,0):'—'; }],
-      ['错题', (s) => `${fmt(activeWrongIds(s).length)} 题`],
+      // 答题 / 正确率 / 错题是**内部记账**（stats / wordStats / quiz），
+      // 按 docs/100 §5 一律不带解锁状态 —— 故用 resWhen 显式声明「恒显示」。
+      { id: 'studyAnswered', label: '答题', resWhen: () => true,
+        value: (s) => `${fmt(studySummary(s).answered)} 题` },
+      { id: 'studyAccuracy', label: '正确率', resWhen: () => true,
+        value: (s) => { const sum=studySummary(s);return sum.answered?fmtPercent(sum.accuracy,0):'—'; } },
+      { id: 'studyWrong', label: '错题', resWhen: () => true,
+        value: (s) => `${fmt(activeWrongIds(s).length)} 题` },
     ],
   };
+
+  /** 商队那一格的门控：与 `visiblePages` 里通商页同一个判据。 */
+  function techResearched(s, id) {
+    return Array.isArray(s?.techs) && s.techs.includes(id);
+  }
+
+  /**
+   * 资源条某一格现在该不该出现。
+   * 有 id 就**一律先问注册表**（`visibleOf`）；查不到该 id 的条目才算例外，
+   * 由 `resWhen` 自己表态（没表态就当不可见 —— 宁可少一格，不要漏一格）。
+   */
+  function pageCellVisible(state, cell) {
+    if (typeof cell !== 'object' || cell === null) return false;
+    const res = (typeof RESOURCE_MAP !== 'undefined' && RESOURCE_MAP[cell.id]) || null;
+    if (res) return visibleOf(state, res);
+    return typeof cell.resWhen === 'function' ? cell.resWhen(state) === true : false;
+  }
 
   function panelCollapsed(key) {
     return Boolean(state()?.ui?.collapsed?.[key]);
@@ -18555,27 +18681,56 @@ function createUI({ getState, actions, rng }) {
       : `凡尘篇 · 第${s.generation}代`;
   }
 
-  function buildPageRes(page) {
+  /**
+   * 【架构 docs/101 §四 规则 2 / docs/92 §十五 D1】资源条建格。
+   *
+   * 每一格先过 `pageCellVisible()`（内部就是注册表的 `visibleOf`）：
+   * 未解锁 + hide 口径的格子**不建元素**，而不是建了再打 `is-hidden`。
+   * 只有 `dim`/`mask` 口径的东西才允许「先灰着占位」。
+   */
+  function buildPageRes(page, state) {
+    // `state` 既可能是状态对象（渲染路径传状态），也可能是取状态的函数（保险起见两种都收）
+    const s = typeof state === 'function' ? state() : (state || getState());
     const host = $('page-res');
     host.innerHTML = '';
     resRefs = [];
 
-    for (const [label, fn] of PAGE_RES[page] || []) {
+    for (const cell of PAGE_RES[page] || []) {
+      if (typeof cell !== 'object' || cell === null) continue;
+      if (!pageCellVisible(s, cell)) continue;
       const chip = document.createElement('span');
       chip.className = 'pres-chip';
-      chip.innerHTML = `<span class="pres-label">${label}</span><span class="pres-value">—</span>`;
+      // 机械可验的挂点：格子认领的是哪一条资源（未接注册表的用 label 占位）
+      chip.dataset.res = cell.id;
+      chip.innerHTML = `<span class="pres-label">${cell.label}</span><span class="pres-value">—</span>`;
       host.appendChild(chip);
-      resRefs.push({ node: chip.querySelector('.pres-value'), fn });
+      resRefs.push({ node: chip.querySelector('.pres-value'), fn: cell.value, res: cell.id, chip });
     }
+    return resRefs.length;
   }
 
   function updatePageRes(s, d) {
     const page = s.ui.page || 'home';
-    if (page !== resPageSig) {
-      resPageSig = page;
-      buildPageRes(page);
+    // 页签或**解锁状态**变了都要重建：开关闭时未解锁的格子必须消失/回来。
+    const sig = `${page}|${unlockSig(s)}`;
+    if (sig !== resPageSig) {
+      resPageSig = sig;
+      buildPageRes(page, s);
     }
     for (const ref of resRefs) ref.node.textContent = ref.fn(s, d);
+  }
+
+  /** 页面资源条的解锁指纹：只关心「哪些格子该在」，与数值无关。 */
+  function unlockSig(s) {
+    let bits = '';
+    for (const page of PAGES) {
+      for (const cell of PAGE_RES[page] || []) {
+        if (typeof cell !== 'object' || cell === null) continue;
+        bits += pageCellVisible(s, cell) ? '1' : '0';
+      }
+      bits += '|';
+    }
+    return bits;
   }
 
   /**
@@ -20056,6 +20211,28 @@ function createUI({ getState, actions, rng }) {
     actions,
     /** 给测试看的：某个面板是否折叠 */
     isPanelCollapsed: panelCollapsed,
+    /**
+     * 【架构 docs/101 §四 规则 2 / docs/92 §十五 D1】给测试看的资源条构建入口。
+     * 测试可以**指定页面**建一次资源条，于是「逐页 × 逐格」的断言不依赖
+     * 「切页成功」这个前置（页签可见性会把切页兜回家业页）。
+     *
+     * ⚠ 它**临时把 #page-res 让给测试用**，建完立刻还原：
+     *   不这么做的话，真实渲染（updatePageRes）会在下一次 tick 里
+     *   按「当前页 + 解锁签名」把测试刚建的那一条覆盖掉，
+     *   于是测出来的其实是家业页的格子（D1 的假绿就是这么来的）。
+     * 传 `restore=false` 可以留在原地观察（调试用）。
+     */
+    buildPageResForTest: (page, snapshot, restore = true) => {
+      const keep = resRefs;
+      const keepSig = resPageSig;
+      resRefs = [];
+      const n = buildPageRes(page, snapshot);
+      const fresh = resRefs;
+      const cells = fresh.map((r) => ({ res: r.res, chip: r.chip }));
+      if (restore) { resRefs = keep; resPageSig = null; }   // 下一次真实渲染自己重建
+      else { resRefs = fresh; resPageSig = keepSig; }
+      return { count: n, ids: cells.map((c) => c.res), cells };
+    },
   };
 }
 
@@ -21100,8 +21277,25 @@ window.__xiuxian = {
     unlocked: (id, s) => unlockOf(s || state, id),
     unlockedIds: (s) => RESOURCES.filter((r) => unlockOf(s || state, r.id)).map((r) => r.id),
     visible: (id, s) => visibleOf(s || state, id),
+    /**
+     * 【架构 docs/101 §2.1 / docs/92 §十五 D5/D6】**直调 path()**，
+     * 不经过 readResourceNumber 的 try/catch + `?? 0` 兜底 ——
+     * 那层兜底会让「path 引用了不存在的符号」「path 返回字符串」永远测不出来。
+     * 断言必须走到这一条，坏掉的 path 才会当场红。
+     */
+    path: (id, s) => {
+      const res = RESOURCE_MAP[id];
+      return res ? res.path(s || state) : undefined;
+    },
+    /** 那条资源能不能被开发者模式补满（kind 语义 + 逐项豁免）。 */
     canBeGiven: (id) => resourceCanBeGiven(RESOURCE_MAP[id]),
+    /** 那条资源的补满目标（有上限 = 上限，无上限 = DEV_ABUNDANCE）。 */
     giveTo: (id, s) => devGiveTo(s || state, id),
+    /** 那条资源此刻的上限（三种 cap 形态统一解析后的数字 / null）。 */
+    cap: (id, s) => {
+      const res = RESOURCE_MAP[id];
+      return res ? resCapOf(res, s || state) : null;
+    },
     lockedUi: (id, s) => {
       const res = RESOURCE_MAP[id];
       return res ? (unlockOf(s || state, res) ? 'shown' : res.lockedUi) : null;
