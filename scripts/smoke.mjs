@@ -6197,5 +6197,82 @@ section('魔数收敛（S1）');
       readFileSync('src/core/save.js', 'utf8')));
 }
 
+/* ══════════════════════ 清空重开：项目的第一条「真实点击」断言 ══════════════════════ */
+
+section('清空重开（真实点击，走事件委托链）');
+// 【用户实测 2026-10-11】用户报「删除存档按钮失效」。
+// 旧实现第一行是 `if (!window.confirm(...)) return;` —— 对话框被浏览器拦掉时
+// confirm() 返回 false，函数第一行就 return，按钮按下去毫无反应。
+// 现在改成两步点击（不依赖对话框）。这里用**真实点击**走一遍派发链：
+// 项目此前一条点击测试都没有（见 dom-shim.mjs 里 confirm 那段注释）。
+{
+  const domR = installDOM(html);
+  new Function(code)();
+  const XR = globalThis.window.__xiuxian;
+  const rbtn = domR.document.querySelector('[data-action="reset"]');
+
+  check('清空重开按钮存在于 DOM', Boolean(rbtn));
+  check('初始文案是「清空重开」', (rbtn?.textContent || '').trim() === '清空重开',
+    `「${(rbtn?.textContent || '').trim()}」`);
+
+  // 阳性对照：同一个 click 通道点「立即存档」必须真的走到 actions.save。
+  // 若这条不成立，下面的点击断言也会假绿（通道本身是坏的）。
+  let saveCalled = 0;
+  const origSave = XR.ui.actions.save;
+  XR.ui.actions.save = () => { saveCalled += 1; };
+  domR.click(domR.document.querySelector('[data-action="save"]'));
+  XR.ui.actions.save = origSave;
+  check('（阳性对照）点击通道确实能走到 actions.save', saveCalled === 1, `called=${saveCalled}`);
+
+  XR.state.population = 4242;
+  domR.click(rbtn);
+  check('第一次点击只待命、不清空（两步确认）', XR.state.population === 4242,
+    `population=${XR.state.population}`);
+  check('待命时按钮文案已改', /再点一次/.test(rbtn?.textContent || ''),
+    `「${(rbtn?.textContent || '').trim()}」`);
+
+  domR.click(rbtn);
+  check('第二次点击真的清空重开', XR.state.population === 10,
+    `population=${XR.state.population}（createState 默认 10）`);
+  check('重开后按钮文案复原', (rbtn?.textContent || '').trim() === '清空重开',
+    `「${(rbtn?.textContent || '').trim()}」`);
+}
+
+/* ══════════════════════ 名册容量挂在凡人人口上 ══════════════════════ */
+
+section('名册容量与凡人人口（复现用户报告的离线暴涨）');
+// 【用户实测 2026-10-11】用户报「下线回来多出非常多修士」，并要求
+// 「修士总数上限与凡人人口相关，炼气期只能有五个左右，随发展加多」。
+// 旧口径是恒定 300 + 科技，与人口无关 ⇒ 离线两万步能刷出几百个修士。
+{
+  const domP = installDOM(html);
+  new Function(code)();
+  const XP = globalThis.window.__xiuxian;
+  // 容量走生产出口（既有断言也是这么读的：X.cityEconomy().immortalCap）
+  const capNow = () => XP.cityEconomy().immortalCap;
+  const setPop = (n) => { XP.state.population = n; XP.state.immortalTechs = []; return capNow(); };
+
+  const c10 = setPop(10);
+  const c100 = setPop(100);
+  const c500 = setPop(500);
+  const cBIG = setPop(999999);
+  check('开局（10 凡人）容量是 5', c10 === 5, `cap=${c10}`);
+  check('人口越多容量越大（100 凡人 → 10）', c100 === 10, `cap=${c100}`);
+  check('继续增长（500 凡人 → 30）', c500 === 30, `cap=${c500}`);
+  check('容量单调不减', c10 <= c100 && c100 <= c500, `${c10} ≤ ${c100} ≤ ${c500}`);
+  check('硬上限 300 仍然生效（防超大存档与每帧渲染过重）', cBIG === 300, `cap=${cBIG}`);
+
+  // ★ 端到端复现用户报告：离线 12 小时（结算上限）回来，修士数不许暴涨
+  setPop(10);
+  XP.state.cultivation.cultivators = [];
+  XP.state.cultivation.nextId = 1;
+  const rep = XP.offline(12 * 3600);
+  const n = (XP.state.cultivation.cultivators || []).length;
+  const capAfter = capNow();
+  check('离线 12 小时回来，修士数不超过容量', n <= capAfter, `${n} 人 / 容量 ${capAfter}`);
+  check('（阳性对照）离线确实推进了世界，不是「什么都没跑」',
+    Boolean(rep) && rep.seconds > 0, `seconds=${rep && rep.seconds}`);
+}
+
 console.log(failed === 0 ? '\n全部通过 ✓\n' : `\n${failed} 项未通过 ✗\n`);
 process.exit(failed ? 1 : 0);

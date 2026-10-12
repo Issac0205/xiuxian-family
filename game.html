@@ -7405,7 +7405,15 @@ function sectReferralReward(person) {
  * 区块：修士规则：修为增长、战力加成、名册修补
  * 原属 src/data/cultivation.js 第 220–326 行
  * ──────────────────────────────────────────────────────────────── */
-const CULTIVATOR_LIMIT = 300;            // 防止超大存档和每帧渲染过重
+const CULTIVATOR_LIMIT = 300;            // **硬**上限：防止超大存档和每帧渲染过重
+/**
+ * 【用户实测 2026-10-11】炼气期的名额基数 —— 开局只带得起五个修士。
+ * 用户原话：「我想了想应该限制修士总数，修士的总数上限应该与凡人人口总数相关，
+ * 炼气期只能有五个左右修士这样。然后随着后续发展加多。」
+ */
+const CULTIVATOR_BASE_CAP = 5;
+/** 每多少凡人加一个名额。20 = 「五个修士要有一百凡人打底」的反推。 */
+const CULTIVATOR_PER_MORTALS = 20;
 const CULTIVATOR_SURNAMES = ['林','顾','沈','陆','苏','谢','秦','周','许','叶','唐','白'];
 const CULTIVATOR_GIVEN = ['清衡','云岚','知微','怀瑾','望舒','玄澈','清越','景行','思远','若虚','静尘','长风'];
 
@@ -7421,14 +7429,28 @@ function cultivateLevelCap(person) { return rootLevelCap(person); }
 /**
  * 名册容量。
  *
- * 基础 CULTIVATOR_LIMIT，仙道科技再加 immortalCapFlat。
- * 之所以要有这层：名册容量是**玩家唯一能靠科技推高的「人数上限」**，
- * 而修士数又同时决定领地镇守、材料产出与全局战力，
- * 所以「开脉」「化神大道」这类科技给的是**产能**，不是数值贴纸。
+ * 【用户实测 2026-10-11】名册容量**必须挂在凡人人口上**。
+ *
+ * 旧口径是「恒定 300 + 仙道科技」—— 与人口无关。后果是**可复现的**：
+ * 离线结算在 12 小时上限内要跑两万步（见 engine.js runOffline 的
+ * capped / OFFLINE_MAX_STEPS），每一步都可能新增修士，于是玩家下线一趟回来
+ * 直接看到「一下子多了两百个修士」。用户报告过两次：第一次当成「离线收益过多」
+ * 去修收益，这次才定到根因 —— **上限本身与人口无关**，所以收益怎么削都堵不住。
+ *
+ * 新口径：**5（炼气期起步）+ 每 20 凡人 +1，再夹到硬上限 300**，科技照旧加名额。
+ * 自平衡：addCultivator 每收一人扣 1 凡人（cultivation.js 约 324 行），
+ * 所以人口掉下去名额也跟着掉，不会出现「修士越生越多、凡人一个不剩」。
+ * 起点人口 10 ⇒ 容量 5，正是用户要的「炼气期只有五个左右」。
+ *
+ * 科技那一层仍然有意义：名册容量是**玩家唯一能靠科技推高的「人数上限」**，
+ * 而修士数又同时决定领地镇守、材料产出与全局战力。
  */
 function cultivatorLimit(state) {
   const fx = state && state.immortalTechs ? techEffects(state) : null;
-  return CULTIVATOR_LIMIT + Math.max(0, Math.round(fx ? fx.immortalCapFlat : 0));
+  const pop = Math.max(0, Math.floor(Number(state && state.population) || 0));
+  const fromPop = Math.floor(pop / CULTIVATOR_PER_MORTALS);
+  const tech = Math.max(0, Math.round(fx ? fx.immortalCapFlat : 0));
+  return Math.min(CULTIVATOR_LIMIT, CULTIVATOR_BASE_CAP + fromPop + tech);
 }
 
 /** 从 index 升到 index+1 需要多少修为（转发 data/realms.js 的曲线）。 */
@@ -13161,7 +13183,7 @@ function planPill(state, pillId = 'quzhangdan') {
   }
 
   if (state.population < 1) return { ok: false, reason:'族中暂无可祛障的凡人' };
-  if ((state.cultivation.cultivators||[]).length>=cultivatorLimit(state)) return { ok:false,reason:'名册已达上限（仙道「开脉」「化神大道」可扩容）' };
+  if ((state.cultivation.cultivators||[]).length>=cultivatorLimit(state)) return { ok:false,reason:'名册已满（容量随凡人人口增长：每 20 个凡人 +1；仙道「开脉」「化神大道」可扩容）' };
   if (state.spiritStones < pill.stoneCost) {
     return { ok: false, reason: `灵石不足，需 ${fmtStones(pill.stoneCost)} 枚` };
   }
@@ -20540,9 +20562,43 @@ ui = createUI({
     },
 
     reset() {
-      if (!window.confirm('确定重开？当前世家进度与背单词记录都将清空，无法找回。）')) return;
+      // ══════════════════════════════════════════════════════════════
+      // 【用户实测 2026-10-11】用户报「删除存档按钮失效了」。
+      //
+      // 旧版第一行是 `if (!window.confirm(...)) return;`。真实浏览器里
+      // 「阻止此页面创建更多对话框」会让 confirm() **直接返回 false**，
+      // 于是函数第一行就 return —— 玩家按下去**一点反应都没有**，体感就是坏的。
+      // （无头/自动化环境同理，测试里也永远走不到后面。）
+      //
+      // 改成**两步点击**：第一次点只是待命（5 秒内有效），第二次点才真清空。
+      // 不依赖任何对话框，且这条路径可以被**真实点击**测到 —— 项目此前
+      // 一条点击测试都没有（见 scripts/dom-shim.mjs 里 confirm 那段注释）。
+      // ══════════════════════════════════════════════════════════════
+      const ARMED_MS = 5000;
+      const LABEL = '清空重开';
+      const now = Date.now();
+      const armedAt = Number(ui.actions._resetArmedAt) || 0;
+      if (!armedAt || now - armedAt > ARMED_MS) {
+        ui.actions._resetArmedAt = now;
+        const b0 = document.querySelector('[data-action="reset"]');
+        if (b0) b0.textContent = '再点一次确认清空';
+        ui.toast(`再点一次「确认清空」即重开世家（${ARMED_MS / 1000} 秒内有效）`, 'warn', 4000);
+        setTimeout(() => {
+          if (Number(ui.actions._resetArmedAt) === now) {
+            ui.actions._resetArmedAt = 0;
+            const b = document.querySelector('[data-action="reset"]');
+            if (b) b.textContent = LABEL;
+          }
+        }, ARMED_MS + 200);
+        return;
+      }
+      ui.actions._resetArmedAt = 0;
+      const btn = document.querySelector('[data-action="reset"]');
+      if (btn) btn.textContent = LABEL;
       clearSave();
       state = createState();
+      // 立刻写回新档：不留「旧档还能被读回来」的窗口（关掉页面再开也是新世家）。
+      writeSave(state);
       ui.quiz.reset();
       ui.syncBuyMode();
       ui.syncDifficulty();
@@ -20552,7 +20608,7 @@ ui = createUI({
       ui.syncPage();
       ui.syncHideDone();
       ui.render();
-      ui.toast('世家重立，自凡尘再起', 'ok', 2200);
+      ui.toast('旧档已清空，世家重立，自凡尘再起', 'ok', 2600);
     },
 
     setBuyMode(mode) {

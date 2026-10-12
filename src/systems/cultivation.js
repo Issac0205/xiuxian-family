@@ -3,7 +3,15 @@
  * 区块：修士规则：修为增长、战力加成、名册修补
  * 原属 src/data/cultivation.js 第 220–326 行
  * ──────────────────────────────────────────────────────────────── */
-const CULTIVATOR_LIMIT = 300;            // 防止超大存档和每帧渲染过重
+const CULTIVATOR_LIMIT = 300;            // **硬**上限：防止超大存档和每帧渲染过重
+/**
+ * 【用户实测 2026-10-11】炼气期的名额基数 —— 开局只带得起五个修士。
+ * 用户原话：「我想了想应该限制修士总数，修士的总数上限应该与凡人人口总数相关，
+ * 炼气期只能有五个左右修士这样。然后随着后续发展加多。」
+ */
+const CULTIVATOR_BASE_CAP = 5;
+/** 每多少凡人加一个名额。20 = 「五个修士要有一百凡人打底」的反推。 */
+const CULTIVATOR_PER_MORTALS = 20;
 const CULTIVATOR_SURNAMES = ['林','顾','沈','陆','苏','谢','秦','周','许','叶','唐','白'];
 const CULTIVATOR_GIVEN = ['清衡','云岚','知微','怀瑾','望舒','玄澈','清越','景行','思远','若虚','静尘','长风'];
 
@@ -19,14 +27,28 @@ function cultivateLevelCap(person) { return rootLevelCap(person); }
 /**
  * 名册容量。
  *
- * 基础 CULTIVATOR_LIMIT，仙道科技再加 immortalCapFlat。
- * 之所以要有这层：名册容量是**玩家唯一能靠科技推高的「人数上限」**，
- * 而修士数又同时决定领地镇守、材料产出与全局战力，
- * 所以「开脉」「化神大道」这类科技给的是**产能**，不是数值贴纸。
+ * 【用户实测 2026-10-11】名册容量**必须挂在凡人人口上**。
+ *
+ * 旧口径是「恒定 300 + 仙道科技」—— 与人口无关。后果是**可复现的**：
+ * 离线结算在 12 小时上限内要跑两万步（见 engine.js runOffline 的
+ * capped / OFFLINE_MAX_STEPS），每一步都可能新增修士，于是玩家下线一趟回来
+ * 直接看到「一下子多了两百个修士」。用户报告过两次：第一次当成「离线收益过多」
+ * 去修收益，这次才定到根因 —— **上限本身与人口无关**，所以收益怎么削都堵不住。
+ *
+ * 新口径：**5（炼气期起步）+ 每 20 凡人 +1，再夹到硬上限 300**，科技照旧加名额。
+ * 自平衡：addCultivator 每收一人扣 1 凡人（cultivation.js 约 324 行），
+ * 所以人口掉下去名额也跟着掉，不会出现「修士越生越多、凡人一个不剩」。
+ * 起点人口 10 ⇒ 容量 5，正是用户要的「炼气期只有五个左右」。
+ *
+ * 科技那一层仍然有意义：名册容量是**玩家唯一能靠科技推高的「人数上限」**，
+ * 而修士数又同时决定领地镇守、材料产出与全局战力。
  */
 function cultivatorLimit(state) {
   const fx = state && state.immortalTechs ? techEffects(state) : null;
-  return CULTIVATOR_LIMIT + Math.max(0, Math.round(fx ? fx.immortalCapFlat : 0));
+  const pop = Math.max(0, Math.floor(Number(state && state.population) || 0));
+  const fromPop = Math.floor(pop / CULTIVATOR_PER_MORTALS);
+  const tech = Math.max(0, Math.round(fx ? fx.immortalCapFlat : 0));
+  return Math.min(CULTIVATOR_LIMIT, CULTIVATOR_BASE_CAP + fromPop + tech);
 }
 
 /** 从 index 升到 index+1 需要多少修为（转发 data/realms.js 的曲线）。 */

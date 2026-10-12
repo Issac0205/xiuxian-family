@@ -301,9 +301,43 @@ ui = createUI({
     },
 
     reset() {
-      if (!window.confirm('确定重开？当前世家进度与背单词记录都将清空，无法找回。）')) return;
+      // ══════════════════════════════════════════════════════════════
+      // 【用户实测 2026-10-11】用户报「删除存档按钮失效了」。
+      //
+      // 旧版第一行是 `if (!window.confirm(...)) return;`。真实浏览器里
+      // 「阻止此页面创建更多对话框」会让 confirm() **直接返回 false**，
+      // 于是函数第一行就 return —— 玩家按下去**一点反应都没有**，体感就是坏的。
+      // （无头/自动化环境同理，测试里也永远走不到后面。）
+      //
+      // 改成**两步点击**：第一次点只是待命（5 秒内有效），第二次点才真清空。
+      // 不依赖任何对话框，且这条路径可以被**真实点击**测到 —— 项目此前
+      // 一条点击测试都没有（见 scripts/dom-shim.mjs 里 confirm 那段注释）。
+      // ══════════════════════════════════════════════════════════════
+      const ARMED_MS = 5000;
+      const LABEL = '清空重开';
+      const now = Date.now();
+      const armedAt = Number(ui.actions._resetArmedAt) || 0;
+      if (!armedAt || now - armedAt > ARMED_MS) {
+        ui.actions._resetArmedAt = now;
+        const b0 = document.querySelector('[data-action="reset"]');
+        if (b0) b0.textContent = '再点一次确认清空';
+        ui.toast(`再点一次「确认清空」即重开世家（${ARMED_MS / 1000} 秒内有效）`, 'warn', 4000);
+        setTimeout(() => {
+          if (Number(ui.actions._resetArmedAt) === now) {
+            ui.actions._resetArmedAt = 0;
+            const b = document.querySelector('[data-action="reset"]');
+            if (b) b.textContent = LABEL;
+          }
+        }, ARMED_MS + 200);
+        return;
+      }
+      ui.actions._resetArmedAt = 0;
+      const btn = document.querySelector('[data-action="reset"]');
+      if (btn) btn.textContent = LABEL;
       clearSave();
       state = createState();
+      // 立刻写回新档：不留「旧档还能被读回来」的窗口（关掉页面再开也是新世家）。
+      writeSave(state);
       ui.quiz.reset();
       ui.syncBuyMode();
       ui.syncDifficulty();
@@ -313,7 +347,7 @@ ui = createUI({
       ui.syncPage();
       ui.syncHideDone();
       ui.render();
-      ui.toast('世家重立，自凡尘再起', 'ok', 2200);
+      ui.toast('旧档已清空，世家重立，自凡尘再起', 'ok', 2600);
     },
 
     setBuyMode(mode) {
