@@ -2105,6 +2105,9 @@ function createUI({ getState, actions, rng }) {
   buildStudy();
   buildImmortal();
   buildRoutes();
+  // 【用户实测 2026-10-11】坊市（剿城开市）那块住在通商页的 #market-extra，
+  //   由 main.js 的 renderMarketBlock() 填充。挂在这里是因为这条路径每次渲染都走。
+  renderMarketBlock();
   bindEvents();
   syncBuyMode();
   syncDifficulty();

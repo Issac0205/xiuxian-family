@@ -1120,6 +1120,48 @@ window.__xiuxian = {
 };
 
 /* ────────────── 新版仙途展示与操作 ────────────── */
+/**
+ * 仙途页里每一块的折叠头。
+ *
+ * ⚠ 用**函数声明**而不是 `const` 箭头函数：`const` 有 TDZ，而坊市那块现在
+ *   住在通商页、由 `renderMarketBlock()` 在别处调用 —— 万一某条渲染路径跑在
+ *   本区块执行之前，`const` 版会直接抛 ReferenceError（本项目已经栽过一次 TDZ）。
+ *
+ * 折叠状态存在 ui.collapsed[key]，与其它面板共用同一套 syncCollapsed。
+ * visible=false 时加 hidden —— 用属性而不是不渲染，免得闭合标签对不上。
+ */
+function blk(key, title, visible = true) {
+  const open = !state.ui.collapsed[key];
+  return `<div class="immortal-block${open ? '' : ' is-collapsed'}" data-panel="${key}"${visible ? '' : ' hidden'}>`
+    + `<div class="immortal-block-head"><h3>${title}</h3>`
+    + `<button class="panel-toggle" type="button" data-toggle="${key}" title="折叠 / 展开" aria-expanded="${open}">▾</button></div>`;
+}
+
+/**
+ * 坊市（剿城开市）那一块 —— **住在通商页**。
+ *
+ * 【用户实测 2026-10-11】原来它渲染在**仙途**页的 `renderImmortalExpansion()` 里。
+ * 用户原话：「所有坊市交易内容放在通商栏中，防止通商栏目过于贫瘠而修仙栏目过于多」。
+ * ⇒ 搬到通商页的 `#market-extra`（就在「云深谷坊市」那个 `#market` 正下方）。
+ *
+ * ⚠ 顺带修掉一个真实的嵌套 bug：原来那块用 `blk()` 开了
+ *   `<div class="immortal-block">` 却**没有闭合**，仙途页后面每一块都被嵌进了它里面
+ *   （浏览器会自动补闭合，所以只在 DOM 结构上错、肉眼看不出）。这里补上收尾 `</div>`。
+ */
+function renderMarketBlock() {
+  const host = document.getElementById('market-extra');
+  if (!host) return;
+  const mk = marketOverview(state);
+  const held = heldCities(state);
+  const avail = secretsAvailable(state);
+  const q = marketSellQuote(state, 1);
+  host.innerHTML = `${blk('market', '🏪 坊市与通商 · 剿城开市')}<p>秘闻既是钥匙也是货币：集齐 ${SECRET_UNLOCK} 条可进云深谷；<b>坊市里每件商品要花 1 条秘闻解锁</b>（解锁永久、秘闻一去不回）。<b>打下一座势力城，就多开一座坊市</b>，新坊市卖别处没有的货。</p>
+<div class="immortal-statline"><span>已占城池 ${held} 座</span><span>秘闻 可用 ${avail} / 累计 ${state.secrets.length}（已花 ${state.secretsUsed || 0}）</span><span>已解锁 ${(state.marketUnlocks || []).length} 件</span></div>
+<div class="immortal-mini">${mk.map((m) => `<div class="immortal-mini-row${m.open ? '' : ' is-locked'}"><div><b>${m.name}</b><small>${m.open ? m.desc : `<span class="map-warn">${m.reason}</span>`}${m.goods.length === 0 ? ' · <b>暂未进货</b>：框架留白，等真正像坊市货的东西（不卖无意义的兑换品）' : ''}</small></div></div>`).join('')}</div>
+<div class="immortal-mini">${mk.flatMap((m) => m.goods.map((g) => `<div class="immortal-mini-row${m.open && g.unlocked ? '' : ' is-locked'}"><div><b>${g.name}</b><span class="map-tier">${m.name}</span><small>${g.desc} · 售 ${g.price} 灵石 · ${g.unlocked ? '已解锁' : `需 ${g.unlockSecrets} 条秘闻解锁`}</small></div>${g.unlocked ? `<button class="btn" data-immortal-action="market-buy" data-good="${g.id}" ${g.canBuy ? '' : 'disabled'}>买入</button>` : `<button class="btn" data-immortal-action="market-unlock" data-good="${g.id}" ${g.canUnlock ? '' : 'disabled'}>解锁</button>`}</div>`)).join('')}</div>
+<div class="immortal-actions"><button class="btn" data-immortal-action="market-sell" ${q.ok ? '' : 'disabled'}>灵石 → 银两 · 1 枚换 ${q.silver} 两（折价 20%）</button></div></div>`;
+}
+
 function renderImmortalExpansion(){
  const el=document.getElementById('immortal-expansion');if(!el)return;
  const c=state.cultivation;repairCultivation(state);
@@ -1132,21 +1174,9 @@ function renderImmortalExpansion(){
  const mainManual=c.equippedManual?CULTIVATION_MANUAL_MAP[c.equippedManual]:null;
  const assistManual=c.assistManual?CULTIVATION_MANUAL_MAP[c.assistManual]:null;
 
- /* 仙途页的每个分块都是可折叠的。
-    折叠状态存在 ui.collapsed[key]，与其它面板共用同一套 syncCollapsed。
-    visible=false 时加 hidden —— 用属性而不是不渲染，免得闭合标签对不上。 */
- const blk = (key, title, visible = true) => {
-   const open = !state.ui.collapsed[key];
-   return `<div class="immortal-block${open ? '' : ' is-collapsed'}" data-panel="${key}"${visible ? '' : ' hidden'}>`
-     + `<div class="immortal-block-head"><h3>${title}</h3>`
-     + `<button class="panel-toggle" type="button" data-toggle="${key}" title="折叠 / 展开" aria-expanded="${open}">▾</button></div>`;
- };
+ /* 仙途页共用一个 blk()（定义在 renderImmortalExpansion 之前，函数声明、无 TDZ）。
+    坊市那块已经搬到通商页，由 renderMarketBlock() 填充。 */
  el.innerHTML=`
-${blk('market','🏪 坊市与通商 · 剿城开市')}${(()=>{const mk=marketOverview(state);const held=heldCities(state);const avail=secretsAvailable(state);const q=marketSellQuote(state,1);return `<p>秘闻既是钥匙也是货币：集齐 ${SECRET_UNLOCK} 条可进云深谷；<b>坊市里每件商品要花 1 条秘闻解锁</b>（解锁永久、秘闻一去不回）。<b>打下一座势力城，就多开一座坊市</b>，新坊市卖别处没有的货。</p>
-<div class="immortal-statline"><span>已占城池 ${held} 座</span><span>秘闻 可用 ${avail} / 累计 ${state.secrets.length}（已花 ${state.secretsUsed||0}）</span><span>已解锁 ${(state.marketUnlocks||[]).length} 件</span></div>
-<div class="immortal-mini">${mk.map(m=>`<div class="immortal-mini-row${m.open?'':' is-locked'}"><div><b>${m.name}</b><small>${m.open?m.desc:`<span class="map-warn">${m.reason}</span>`}</small></div></div>`).join('')}</div>
-<div class="immortal-mini">${mk.flatMap(m=>m.goods.map(g=>`<div class="immortal-mini-row${m.open&&g.unlocked?'':' is-locked'}"><div><b>${g.name}</b><span class="map-tier">${m.name}</span><small>${g.desc} · 售 ${g.price} 灵石 · ${g.unlocked?'已解锁':`需 ${g.unlockSecrets} 条秘闻解锁`}</small></div>${g.unlocked?`<button class="btn" data-immortal-action="market-buy" data-good="${g.id}" ${g.canBuy?'':'disabled'}>买入</button>`:`<button class="btn" data-immortal-action="market-unlock" data-good="${g.id}" ${g.canUnlock?'':'disabled'}>解锁</button>`}</div>`)).join('')}</div>
-<div class="immortal-actions"><button class="btn" data-immortal-action="market-sell" ${q.ok?'':'disabled'}>灵石 → 银两 · 1 枚换 ${q.silver} 两（折价 20%）</button></div>`;})()}
 ${blk('pool','🌿 灵池 · 后天祛障')}<p>在坊市花 1 条秘闻解锁「灵池蓝图」后即可购得。灵池每秒消耗灵石，使凡人有机会后天祛障，初始天赋为1。无灵石时自动停运。</p>
 <div class="immortal-statline"><span>灵池 ${c.pool}/${POOL_MAX} 座</span><span>灵石消耗 ${(c.pool*POOL_STONE_PER_SEC).toFixed(5)}/秒</span><span>蓝图 ${c.poolBlueprint?'已得':'未得'}</span></div>
 <div class="immortal-actions"><button class="btn" data-immortal-action="pool-blueprint" ${c.poolBlueprint||!goodUnlocked(state,'poolblueprint')?'disabled':''}>坊市购蓝图 · 2灵石</button><button class="btn" data-immortal-action="pool-build" ${!c.poolBlueprint?'disabled':''}>营造灵池 · 3灵石+5万银两</button></div></div>

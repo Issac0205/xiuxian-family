@@ -20,7 +20,7 @@ const MORTAL_EFFECT_KEYS = [
  * 仙道侧有一部分进 cultivationEffects()（镇守、洞天、冲关）。
  */
 const IMMORTAL_EFFECT_KEYS = [
-  'immortalCapFlat', 'innateBirthMult', 'mineDeathMult', 'mineYieldMult',
+  'immortalCapMult', 'innateBirthMult', 'mineDeathMult', 'mineYieldMult',
   'territoryYieldMult', 'territoryHoldMult', 'garrisonCapFlat',
   'exploreSurviveBonus', 'breakBonusFlat', 'tradeStoneMult',
   'cityMaterialMult', 'runeBenchFree', 'alchemyRateBonus', 'trainMult',
@@ -505,7 +505,8 @@ function derive(state) {
     cityRunePerSec,
 
     immortalTechs: (state.immortalTechs || []).slice(),
-    immortalCapBonus: fx.immortalCapFlat,
+    // 【用户实测】名册容量加成是**乘数**（人口给底，科技放大），不再是「+N 人」。
+    immortalCapBonus: fx.immortalCapMult,
 
     inflation,
     estateDiscount,

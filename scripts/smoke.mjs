@@ -353,12 +353,43 @@ check('（阳性对照）总数泄露检测确实有效',
     return need.every((v) => v === false) && gate.every((r) => /打下|势力城/.test(r));
   })(), '新坊市在没占城时就该关着，并说明「须先打下 N 座势力城」');
 
-  check('每座坊市都有自己的商品（新坊市卖新商品）', (() => {
+  // 【用户实测 2026-10-11】用户判定「线索袋 / 银两袋 / 线索匣」三件商品
+  //   「完全是不对的」，口径是：「暂时不卖别的东西，想到再卖，先要有这个框架，
+  //   但是不要卖无意义的东西」。
+  //   ⇒ 三件已删，1/2/3 城的坊市**暂时空置**（框架留着，等真正像坊市货的东西）。
+  //   所以这里不再要求「每座坊市都有货」（那条旧断言忠实地守着一个已不成立的设计），
+  //   改为守两条真正的不变量：
+  //     ① 商品 id 不许跨坊市重复（否则「新坊市卖新商品」不成立）
+  //     ② 云深谷必须**始终有货** —— 它是零征伐玩家唯一能进的坊市，空了主线就断
+  check('坊市商品：id 不许跨坊市重复，且云深谷始终有货', (() => {
     const ids = ['yunshen', 'qingmu', 'heishi', 'wanxiang'];
     const sets = ids.map((m) => X.market.goodsOf(m).map((g) => g.id));
-    return sets.every((a) => a.length > 0)
-      && new Set(sets.flat()).size === sets.flat().length;
-  })(), '商品不许跨坊市重复，否则「新坊市卖新商品」不成立');
+    const flat = sets.flat();
+    return new Set(flat).size === flat.length && sets[0].length > 0;
+  })(), '云深谷必须始终有货（零征伐玩家的起步线）；其余坊市允许暂时空置等新货');
+
+  check('（反向断言）被判定无意义的三件商品不得复活', (() => {
+    const flat = ['yunshen', 'qingmu', 'heishi', 'wanxiang']
+      .flatMap((m) => X.market.goodsOf(m).map((g) => g.id));
+    return !flat.includes('cluebag') && !flat.includes('silverbundle') && !flat.includes('cluecase');
+  })(), '线索袋/银两袋/线索匣：银两袋与「灵石→银两」兑换重复；线索袋/匣是拿灵石买消耗品');
+
+  // 【用户实测 2026-10-11】用户选择「炼丹完全脱离科技线」：
+  //   炼气期只要占下一块领地就能炼丹，科技只负责给加成。
+  //   用源码机械检查：筑基丹这条**不能**出现科技前置（祛障丹同理）。
+  {
+    const alg = readFileSync('src/data/alchemy.js', 'utf8');
+    const recipeBlock = (id) => {
+      const i = alg.indexOf(`id: '${id}'`);
+      return i < 0 ? '' : alg.slice(i, i + 260);
+    };
+    check('炼丹脱离科技线：筑基丹的配方里没有 requiresImmortalTech',
+      recipeBlock('zhuji').includes('materials') && !recipeBlock('zhuji').includes('requiresImmortalTech'));
+    check('炼丹脱离科技线：祛障丹的配方里没有 requiresImmortalTech',
+      recipeBlock('quzhang').includes('materials') && !recipeBlock('quzhang').includes('requiresImmortalTech'));
+    check('（反向断言）确实存在靠科技解锁的丹方，证明上面两条不是恒真',
+      recipeBlock('jiuzhuandan').includes('requiresImmortalTech'));
+  }
 
   restore();
 })();

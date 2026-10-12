@@ -45,24 +45,19 @@ const MARKET_GOODS = [
     desc: '凭蓝图即可营造灵池 —— 后天祛障的第二条路。',
     effect: { kind: 'pool-blueprint' },
   },
-  {
-    id: 'cluebag', market: 'qingmu', name: '线索袋', currency: 'stones', price: 1,
-    unlockSecrets: MARKET_UNLOCK_SECRETS,
-    desc: '一份来历不明的线索，可用于参悟与冲关。',
-    effect: { kind: 'clue', n: 1 },
-  },
-  {
-    id: 'silverbundle', market: 'heishi', name: '银两袋', currency: 'stones', price: 1,
-    unlockSecrets: MARKET_UNLOCK_SECRETS,
-    desc: '一万两白银。灵石换银两的正规入口比私下兑划算。',
-    effect: { kind: 'silver', n: 10000 },
-  },
-  {
-    id: 'cluecase', market: 'wanxiang', name: '线索匣', currency: 'stones', price: 2,
-    unlockSecrets: MARKET_UNLOCK_SECRETS,
-    desc: '三份线索装一匣，比零买省事。',
-    effect: { kind: 'clue', n: 3 },
-  },
+  // ══════════════════════════════════════════════════════════════════
+  // 【用户实测 2026-10-11】这里原本还有三件商品：线索袋 / 银两袋 / 线索匣。
+  //   用户判定「完全是不对的」，并给了口径：
+  //     「暂时不卖别的东西，想到再卖，先要有这个框架，但是不要卖无意义的东西」
+  //   为什么它们无意义（记下来，免得以后又想加）：
+  //     · 银两袋 —— 与已有的「灵石 → 银两」兑换**功能重复**，等于同一条边卖两次。
+  //     · 线索袋 / 线索匣 —— 把「拿灵石买消耗品」当商品，可替代自家探索与参悟，
+  //       而且同一件事拆成两档（1 条 / 3 条）纯属凑数。
+  //   ⇒ 三件商品已删。**框架保留**：MARKET_GOODS 表、秘闻解锁、按 id 记账的
+  //     marketUnlocks、以及 effect 的四种 kind（pill / pool-blueprint / clue /
+  //     silver）都还在原地 —— 以后想到真正像「坊市货」的东西，往表里加一条即可。
+  // ⚠ 老存档里可能还记着这三个 id，读取端必须容忍未知 id（见 systems/markets.js）。
+  // ══════════════════════════════════════════════════════════════════
 ];
 
 /**

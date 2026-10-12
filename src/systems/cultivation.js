@@ -47,8 +47,13 @@ function cultivatorLimit(state) {
   const fx = state && state.immortalTechs ? techEffects(state) : null;
   const pop = Math.max(0, Math.floor(Number(state && state.population) || 0));
   const fromPop = Math.floor(pop / CULTIVATOR_PER_MORTALS);
-  const tech = Math.max(0, Math.round(fx ? fx.immortalCapFlat : 0));
-  return Math.min(CULTIVATOR_LIMIT, CULTIVATOR_BASE_CAP + fromPop + tech);
+  const base = CULTIVATOR_BASE_CAP + fromPop;
+  // 【用户实测 2026-10-11】科技**只能放大**人口给的名额，不能另开一份。
+  //   旧版是 `immortalCapFlat`（开脉直接 +150 人 ⇒ 5 → 155），名册于是与人口脱钩，
+  //   离线一趟照样能刷出上百个修士 —— 那正是用户报的问题。
+  //   现在：容量 = (5 + 人口/20) × (1 + 科技加成)，**人口永远是那个底**。
+  const mult = 1 + Math.max(0, Number(fx && fx.immortalCapMult) || 0);
+  return Math.min(CULTIVATOR_LIMIT, Math.floor(base * mult));
 }
 
 /** 从 index 升到 index+1 需要多少修为（转发 data/realms.js 的曲线）。 */

@@ -684,7 +684,7 @@ const RES_MODIFIERS = [
   resModifier('m_tradeStoneMult', '兑率杠杆', (s) => derive(s).fx.tradeStoneMult, '城里的科技越像样，银钱越值灵石'),
   resModifier('m_incomeMult', '岁入倍率', (s) => derive(s).fx.incomeMult, '科技与法宝带来的产出加成'),
   resModifier('m_cityMaterialMult', '作坊倍率', (s) => derive(s).cityMaterialMult, '灵田、悬壶、灵脉感应抬起来的产出加成'),
-  resModifier('m_immortalCapFlat', '名册加成', (s) => derive(s).fx.immortalCapFlat, '仙道科技给名册加的容量'),
+  resModifier('m_immortalCapMult', '名册加成', (s) => derive(s).fx.immortalCapMult, '仙道科技给名册容量的**乘数**加成（人口是底，科技只能放大）'),
   resModifier('m_secretChance', '秘闻概率', (s) => derive(s).fx.secretChance, '商路带随机缘，这一项把它抬起来'),
 ];
 

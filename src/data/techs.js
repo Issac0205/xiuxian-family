@@ -301,7 +301,7 @@ const EFFECT_LABELS = {
   vaultMult: (v) => `银两上限 ${signedPct(v)}`,
 
   /* ── 仙道侧 ── */
-  immortalCapFlat: (v) => `名册容量 ${signedAbs(v)} 人`,
+  immortalCapMult: (v) => `名册容量 +${Math.round(v * 100)}%（随凡人人口放大）`,
   innateBirthMult: (v) => `天生灵根诞生率 ${signedPct(v)}`,
   mineDeathMult: (v) => `矿工死亡 ${signedPct(v)}`,
   mineYieldMult: (v) => `灵脉矿场出石 ${signedPct(v)}`,

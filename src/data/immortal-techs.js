@@ -21,7 +21,10 @@
  *
  * effect 支持的键（全部在 core/formulas.js 的 techEffects / cultivationEffects
  * 里真实结算，并在 EFFECT_LABELS 里登记，否则界面上显示不出来）：
- *   immortalCapFlat    名册容量 +N（仙道是「能养多少人」，不是「炼多快」）
+ *   immortalCapMult    名册容量 ×(1+N)（**只能放大人口给的名额，不能另开一份**）
+ *                      ⚠ 这里原本是 `immortalCapFlat`（直接 +150 人）。那等于给名册
+ *                      开了一份与凡人人口无关的额度，玩家报的「离线回来修士暴涨」
+ *                      就是它放出来的 —— 详见 systems/cultivation.js cultivatorLimit()。
  *   innateBirthMult    凡人生育中诞生天生灵根的倍率
  *   mineDeathMult      灵脉矿场矿工死亡倍率
  *   mineYieldMult      灵脉矿场出石倍率
@@ -58,7 +61,7 @@ const IMMORTAL_TECHS = [
     cost: 3000,
     stones: 12,
     requires: [],
-    effect: { immortalCapFlat: 150, mineYieldMult: 0.25 },
+    effect: { immortalCapMult: 0.50, mineYieldMult: 0.25 },
     desc: '把祛障散出来的那口浊气理顺，替后来者把经脉先开一寸。'
       + '名册能多挂一百五十人，山里的矿脉也认得出谁是自家人。',
   },
@@ -97,7 +100,7 @@ const IMMORTAL_TECHS = [
     cost: 12000,
     stones: 45,
     requires: ['kaimai', 'lingtian'],
-    effect: { breakBonusFlat: 0.06, immortalCapFlat: 100 },
+    effect: { breakBonusFlat: 0.06, immortalCapMult: 0.35 },
     desc: '把炼气九层冲关的那一步讲明白，写成册子发给全族。'
       + '此后冲关不再是各人摸黑，成功率高出一截。'
       + '——册子里头一半讲的是「药从哪来」，所以它要灵田先立起来。',
@@ -128,15 +131,19 @@ const IMMORTAL_TECHS = [
   },
   {
     id: 'danfang',
-    name: '丹药房',
+    name: '药圃联营',
     icon: '炉',
     tier: 2,
     cost: 21000,
     stones: 85,
     requires: ['lingtian', 'lingxu'],
     effect: { cityMaterialMult: 0.70, alchemyRateBonus: 0.05 },
+    // 【用户实测 2026-10-11】原来叫「丹药房」，读起来像「研习了它才能开丹房」——
+    //   那是错的：**炼丹完全不需要任何科技**（占下一块领地就开炉，见 data/alchemy.js
+    //   的丹方表，只有凝丹丸/九转丹才带科技前置）。用户的选择就是「炼丹完全脱离科技线」，
+    //   所以这里改成纯粹的**产线加成**，名字也不再暗示解锁。
     desc: '把药圃、丹炉、库房排到一条线上：采下来就入炉，出炉就上架。'
-      + '城里的作坊从此不是各自为政，而是一条线。',
+      + '（炼丹本身不需要任何科技 —— 占下一块领地就能开炉；这一条只让产线更顺、成功率更高。）',
   },
 
   /* ══════════════ 三 · 结丹 ══════════════ */
@@ -292,7 +299,7 @@ const IMMORTAL_TECHS = [
     cost: 92000,
     stones: 520,
     requires: ['jindan', 'dongfu'],
-    effect: { breakBonusFlat: 0.10, immortalCapFlat: 150, trainMult: 0.20 },
+    effect: { breakBonusFlat: 0.10, immortalCapMult: 0.50, trainMult: 0.20 },
     desc: '元婴出窍，从此不惧一城一地的得失。'
       + '这篇道书传给全族，闭关的效率也就跟着上了一层。',
   },
@@ -342,7 +349,7 @@ const IMMORTAL_TECHS = [
     cost: 165000,
     stones: 1050,
     requires: ['yuanying', 'jiexu'],
-    effect: { breakBonusFlat: 0.12, immortalCapFlat: 250 },
+    effect: { breakBonusFlat: 0.12, immortalCapMult: 0.80 },
     desc: '化神那一关，前人多半死在这里。这一篇把前面几道门槛的得失'
       + '合在一处讲——名册上能挂的人也多出二百五十。',
   },
