@@ -6393,5 +6393,74 @@ section('事件总线：系统之间互不知道');
     })(), '为假就说明「一处改了另一处没改」');
 }
 
+/* ══════════════════════ 存档版本与迁移（凡人篇 I0） ══════════════════════ */
+
+section('存档版本与迁移');
+// 【凡人篇 I0】用户要求「以后更新内容不能老玩家全部丢档」。
+// 先把迁移机制建起来，并守住一条最容易被忽略的危险：
+//   读到的存档比游戏版本**新**时，绝不能当成「没有存档」——
+//   main.js 是 `readSave() || createState()`，那会当场开新档并覆盖玩家的新档。
+{
+  const domM = installDOM(html);
+  new Function(code)();
+  const XM = globalThis.window.__xiuxian;
+  const saveX = XM.save;
+  check('SAVE_VERSION 已升到 2', saveX.version === 2, `version=${saveX.version}`);
+
+  // ① v1 档 → v2：tradeRuns 必须被复制成 expeditionRuns
+  const v1 = saveX.serialize(XM.state);
+  v1.version = 1;
+  v1.tradeRuns = 7;
+  delete v1.expeditionRuns;
+  const m1 = saveX.migrate(v1);
+  check('v1 档能迁移到 v2', m1.ok === true && m1.from === 1 && m1.to === 2, `ok=${m1.ok} ${m1.from}→${m1.to}`);
+  check('v1 的 tradeRuns 被复制成 expeditionRuns', m1.raw.expeditionRuns === 7, `expeditionRuns=${m1.raw.expeditionRuns}`);
+  check('迁移不动 tradeRuns（I1 才接手删商队）', m1.raw.tradeRuns === 7, `tradeRuns=${m1.raw.tradeRuns}`);
+
+  // ② 端到端：v1 真档 → 迁移 → 还原，进度一项不丢
+  const v1Real = saveX.serialize(XM.state);
+  v1Real.version = 1;
+  v1Real.population = 4321;
+  v1Real.silver = 98765;
+  v1Real.secrets = [0, 1, 2];
+  v1Real.tradeRuns = 9;
+  delete v1Real.expeditionRuns;
+  const mig = saveX.migrate(v1Real);
+  const back = saveX.hydrate(mig.raw);
+  check('v1 真档迁移后进度不丢（人口 / 银两 / 秘闻）',
+    back.population === 4321 && back.silver === 98765 && back.secrets.length === 3,
+    `人口 ${back.population} 银两 ${back.silver} 秘闻 ${back.secrets.length}`);
+  check('迁移后次数落到 expeditionRuns', back.expeditionRuns === 9, `expeditionRuns=${back.expeditionRuns}`);
+
+  // ③ 已经是 v2 的档：迁移必须恒等（不许把 expeditionRuns 又覆盖回 tradeRuns）
+  const v2 = saveX.serialize(XM.state);
+  v2.expeditionRuns = 3;
+  v2.tradeRuns = 99;
+  const m2 = saveX.migrate(v2);
+  check('v2 档再过一次迁移是恒等（expeditionRuns 不被 tradeRuns 覆盖）',
+    m2.raw.expeditionRuns === 3, `expeditionRuns=${m2.raw.expeditionRuns}`);
+
+  // ④ ⚠ 最关键：比游戏更新的存档必须被**拒绝**，不许静默当当前版本读
+  const mFuture = saveX.migrate({ version: 99, population: 5 });
+  check('比当前版本新的存档被拒绝（不假装能读）', mFuture.ok === false, `ok=${mFuture.ok}`);
+  check('拒绝时给出可读的理由（含版本号）',
+    typeof mFuture.reason === 'string' && mFuture.reason.includes('99'), `「${mFuture.reason}」`);
+
+  // ⑤ 结构性：新顶层字段必须进 serialize 白名单（否则刷新即丢）
+  check('serialize 写出了 expeditionRuns（白名单没漏）',
+    Object.prototype.hasOwnProperty.call(saveX.serialize(XM.state), 'expeditionRuns'));
+
+  // ⑥ 真实往返：写盘 → 重新加载页面 → 新字段仍在
+  {
+    const store2 = domM.store;
+    XM.state.expeditionRuns = 11;
+    XM.actions.save();
+    installDOM(html, { store: store2 });
+    new Function(code)();
+    const after = globalThis.window.__xiuxian.state.expeditionRuns;
+    check('刷新页面后 expeditionRuns 仍在（真往返）', after === 11, `expeditionRuns=${after}`);
+  }
+}
+
 console.log(failed === 0 ? '\n全部通过 ✓\n' : `\n${failed} 项未通过 ✗\n`);
 process.exit(failed ? 1 : 0);

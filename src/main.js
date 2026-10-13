@@ -1,6 +1,14 @@
 /* ─────────────────────── 载入与离线结算─────────────────────── */
 
 let state = readSave() || createState();
+// 【凡人篇 I0】读档时若发现「存档比游戏版本新」，界面上必须说清楚 ——
+// 否则玩家看到的只是「进度没了」，而原档其实已被备份、并未删除。
+// 用 setTimeout 推迟：此刻 ui 还没建好（它在后面的区块里）。
+if (lastLoadIssue) {
+  setTimeout(() => {
+    ui.toast(`${lastLoadIssue}：已备份原档并开新档。请更新游戏后继续用原档。`, 'warn', 12000);
+  }, 500);
+}
 const isFresh = state.stats.playSeconds === 0 && state.log.length === 0;
 
 /**
@@ -1049,6 +1057,12 @@ window.__xiuxian = {
      *   缺参数时才回落到当前状态（既有调用点的语义不变）。
      */
     serialize: (s) => serialize(s || state),
+    /** 【凡人篇 I0】迁移与还原：测试要能直接拿一个 v1 档验证整条迁移链。 */
+    migrate: (raw) => migrateSave(raw),
+    hydrate: (raw) => hydrate(raw),
+    version: SAVE_VERSION,
+    /** 上次读档发现的问题（存档比游戏新）——启动提示用。 */
+    get lastIssue() { return lastLoadIssue; },
     hydrate: (raw) => hydrate(raw),
     /** 走一遍真实的「写出 → JSON → 读回」，返回读回后的状态。 */
     roundTrip: (s) => hydrate(JSON.parse(JSON.stringify(serialize(s || state)))),

@@ -3330,9 +3330,23 @@ const STONE_DECIMALS = 1;
 /** 人口里程碑，用于族谱纪事播报。 */
 const POP_MILESTONES = [50, 100, 200, 400, 800, 1600, 3200, 6400, 12800];
 
-/** 存档键名与版本。 */
+/** 存档键名与版本。
+ *
+ *  ⚠ `SAVE_KEY` 里的 `/v1` 是**历史名字，永远不要改** —— 换键等于玩家进度
+ *    直接读不到（不是丢失，是「看起来像新游戏」，见 scripts/savecompat.mjs 第 ② 条）。
+ *    版本演进一律靠 `SAVE_VERSION`，不靠键名。
+ *
+ *  ⚠ `SAVE_VERSION` 现在是 **2**：凡人篇重构 I0 把「商队归来的次数」
+ *    复制成了「寻仙探索的次数」（迁移链见 core/save.js 的 SAVE_MIGRATIONS）。
+ */
 const SAVE_KEY = 'xiuxian-family/save/v1';
-const SAVE_VERSION = 1;
+const SAVE_VERSION = 2;
+/**
+ * 【凡人篇 I0】当存档版本**比当前游戏新**时，把原档整份备份到这个键。
+ * 为什么不直接丢弃：玩家可能把游戏文件回退到旧版却还开着新档；
+ * 旧代码不认识新字段，随手一存就会把不认识的字段静默抹掉 —— 备份是唯一的后悔药。
+ */
+const SAVE_KEY_NEWER_BACKUP = 'xiuxian-family/save/newer-backup';
 const THEME_KEY = 'xiuxian-family/theme/v1';
 const THEMES = {
   classic: { name: '原风格' },
@@ -3994,6 +4008,12 @@ function createState(now = Date.now()) {
      */
     caravans: [],
     tradeRuns: 0,
+    /**
+     * 【凡人篇重构 I0】寻仙探索的次数。
+     * v1→v2 迁移时由 `tradeRuns` 复制而来；I1 真正删掉商队之后，它就是唯一口径。
+     * 先复制、后删代码，是为了不让「改字段名」和「删系统」两件事挤在同一步里。
+     */
+    expeditionRuns: 0,
 
     /** 已播报过的人口里程碑。 */
     milestones: [],
@@ -16206,6 +16226,8 @@ function serialize(state) {
     clock: state.clock,
     caravans: state.caravans,
     tradeRuns: state.tradeRuns,
+    // 【凡人篇 I0】寻仙探索次数。**顶层字段，加进来才行**（白名单漏一个就刷新即丢）。
+    expeditionRuns: state.expeditionRuns,
     milestones: state.milestones,
     stats: state.stats,
     settings: state.settings,
@@ -16241,6 +16263,9 @@ function hydrate(raw) {
   fresh.silver = Math.max(0, num(raw.silver, fresh.silver));
   fresh.population = Math.max(0, num(raw.population, fresh.population));
   fresh.tradeRuns = Math.max(0, num(raw.tradeRuns, 0));
+  // 【凡人篇 I0】探索次数。旧档（v1）由 migrateV1toV2 从 tradeRuns 复制过来，
+  //   所以这里读到的已经是迁移后的值。
+  fresh.expeditionRuns = Math.max(0, num(raw.expeditionRuns, fresh.expeditionRuns));
 
   for (const def of BUILDINGS) {
     const v = raw.buildings?.[def.id];
@@ -16699,7 +16724,22 @@ function load() {
   try {
     const raw = JSON.parse(text);
     if (!raw || typeof raw !== 'object') return null;
-    return hydrate(raw);
+    // 【凡人篇 I0】迁移在 hydrate **之前** —— hydrate 读的是迁移之后的字段。
+    const mig = migrateSave(raw);
+    if (!mig.ok) {
+      // ⚠ 这里绝不能只 `return null`：调用方是 `readSave() || createState()`，
+      //   返回 null ⇒ 当场开新档 ⇒ 第一次自动存档就把玩家**更新的存档覆盖掉**。
+      //   所以先把原档整份备份到另一个键，再返回 null，并留下可见提示。
+      lastLoadIssue = mig.reason;
+      try {
+        localStorage.setItem(SAVE_KEY_NEWER_BACKUP, text);
+        console.warn(`[存档] ${mig.reason}；原档已备份到 ${SAVE_KEY_NEWER_BACKUP}，未被删除。`);
+      } catch (err) {
+        console.warn('[存档] 备份更新的存档失败（本地存储不可用）', err);
+      }
+      return null;
+    }
+    return hydrate(mig.raw);
   } catch (err) {
     console.warn('[存档] 解析失败，将重新开局', err);
     return null;
@@ -16714,6 +16754,68 @@ function clear() {
     console.warn('[存档] 清除失败', err);
   }
 }
+/* ══════════════ 存档版本与迁移（架构轮 2 / 凡人篇 I0） ══════════════ */
+
+/**
+ * 上次读档时发现的问题（现在只有一种：存档比游戏版本新）。
+ * 由 main.js 在启动后提示给玩家 —— 静默保住数据是不够的，玩家得知道为什么「进度看着没了」。
+ */
+let lastLoadIssue = null;
+
+/**
+ * 迁移链。键 = **源**版本，值 = 把该版本存档就地升到「键 + 1」的函数。
+ *
+ * ⚠ 迁移只做「字段搬运与归一化」，**不许做业务判断**：它拿不到运行中的 state，
+ *   也不该补算任何数值。缺字段一律由 hydrate 的默认值兜底。
+ * ⚠ 迁移是**一次性**的，读档路径是**每次**的。兼容分支只许写在这里 ——
+ *   写成 `hydrate` 里的 `?? raw.旧字段`，那个分支就再也没人敢删（本项目见过太多次）。
+ */
+const SAVE_MIGRATIONS = {
+  1: migrateV1toV2,
+};
+
+/**
+ * v1 → v2：凡人篇重构第一步。把「商队归来次数」复制成「寻仙探索次数」。
+ * `tradeRuns` **保留**到 I1 真正删掉商队为止 —— 让「改字段名」与「删系统」
+ * 分开两步，任何一步出问题都能单独回退。
+ */
+function migrateV1toV2(raw) {
+  if (raw.expeditionRuns === undefined && raw.tradeRuns !== undefined) {
+    raw.expeditionRuns = raw.tradeRuns;
+  }
+  return raw;
+}
+
+/**
+ * 把任意版本的存档升到 `SAVE_VERSION`。
+ *
+ * ⚠ **比当前版本新的存档必须拒绝**：玩家把游戏文件回退到旧版却还开着新档时，
+ *   旧代码不认识新字段，下一次存档就会把不认识的字段**静默抹掉**。
+ *   宁可明确地说「这个存档比当前版本新」，也不要假装能读。
+ *   ⚠ 调用方**不许直接把它当成「没有存档」**：main.js 是
+ *   `readSave() || createState()`，返回 null 会当场开新档并覆盖玩家的新档 ——
+ *   所以 load() 会先把原档整份备份，再返回 null。
+ *
+ * @returns {{ok:boolean, raw:object, reason?:string, from:number, to:number}}
+ */
+function migrateSave(raw) {
+  const to = SAVE_VERSION;
+  const from = Math.max(0, Math.floor(num(raw && raw.version, 0)));
+  if (from > to) {
+    return {
+      ok: false, raw, from, to,
+      reason: `存档版本 ${from} 比当前游戏版本 ${to} 新`,
+    };
+  }
+  let cur = raw;
+  for (let v = from; v < to; v += 1) {
+    const step = SAVE_MIGRATIONS[v];
+    if (step) cur = step(cur);
+  }
+  cur.version = to;
+  return { ok: true, raw: cur, from, to };
+}
+
 const writeSave = save;
 const readSave = load;
 const clearSave = clear;
@@ -20447,6 +20549,14 @@ function createUI({ getState, actions, rng }) {
 /* ─────────────────────── 载入与离线结算─────────────────────── */
 
 let state = readSave() || createState();
+// 【凡人篇 I0】读档时若发现「存档比游戏版本新」，界面上必须说清楚 ——
+// 否则玩家看到的只是「进度没了」，而原档其实已被备份、并未删除。
+// 用 setTimeout 推迟：此刻 ui 还没建好（它在后面的区块里）。
+if (lastLoadIssue) {
+  setTimeout(() => {
+    ui.toast(`${lastLoadIssue}：已备份原档并开新档。请更新游戏后继续用原档。`, 'warn', 12000);
+  }, 500);
+}
 const isFresh = state.stats.playSeconds === 0 && state.log.length === 0;
 
 /**
@@ -21495,6 +21605,12 @@ window.__xiuxian = {
      *   缺参数时才回落到当前状态（既有调用点的语义不变）。
      */
     serialize: (s) => serialize(s || state),
+    /** 【凡人篇 I0】迁移与还原：测试要能直接拿一个 v1 档验证整条迁移链。 */
+    migrate: (raw) => migrateSave(raw),
+    hydrate: (raw) => hydrate(raw),
+    version: SAVE_VERSION,
+    /** 上次读档发现的问题（存档比游戏新）——启动提示用。 */
+    get lastIssue() { return lastLoadIssue; },
     hydrate: (raw) => hydrate(raw),
     /** 走一遍真实的「写出 → JSON → 读回」，返回读回后的状态。 */
     roundTrip: (s) => hydrate(JSON.parse(JSON.stringify(serialize(s || state)))),

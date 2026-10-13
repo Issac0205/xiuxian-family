@@ -219,9 +219,23 @@ const STONE_DECIMALS = 1;
 /** 人口里程碑，用于族谱纪事播报。 */
 const POP_MILESTONES = [50, 100, 200, 400, 800, 1600, 3200, 6400, 12800];
 
-/** 存档键名与版本。 */
+/** 存档键名与版本。
+ *
+ *  ⚠ `SAVE_KEY` 里的 `/v1` 是**历史名字，永远不要改** —— 换键等于玩家进度
+ *    直接读不到（不是丢失，是「看起来像新游戏」，见 scripts/savecompat.mjs 第 ② 条）。
+ *    版本演进一律靠 `SAVE_VERSION`，不靠键名。
+ *
+ *  ⚠ `SAVE_VERSION` 现在是 **2**：凡人篇重构 I0 把「商队归来的次数」
+ *    复制成了「寻仙探索的次数」（迁移链见 core/save.js 的 SAVE_MIGRATIONS）。
+ */
 const SAVE_KEY = 'xiuxian-family/save/v1';
-const SAVE_VERSION = 1;
+const SAVE_VERSION = 2;
+/**
+ * 【凡人篇 I0】当存档版本**比当前游戏新**时，把原档整份备份到这个键。
+ * 为什么不直接丢弃：玩家可能把游戏文件回退到旧版却还开着新档；
+ * 旧代码不认识新字段，随手一存就会把不认识的字段静默抹掉 —— 备份是唯一的后悔药。
+ */
+const SAVE_KEY_NEWER_BACKUP = 'xiuxian-family/save/newer-backup';
 const THEME_KEY = 'xiuxian-family/theme/v1';
 const THEMES = {
   classic: { name: '原风格' },

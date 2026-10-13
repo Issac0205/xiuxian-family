@@ -63,6 +63,12 @@ function createState(now = Date.now()) {
      */
     caravans: [],
     tradeRuns: 0,
+    /**
+     * 【凡人篇重构 I0】寻仙探索的次数。
+     * v1→v2 迁移时由 `tradeRuns` 复制而来；I1 真正删掉商队之后，它就是唯一口径。
+     * 先复制、后删代码，是为了不让「改字段名」和「删系统」两件事挤在同一步里。
+     */
+    expeditionRuns: 0,
 
     /** 已播报过的人口里程碑。 */
     milestones: [],
