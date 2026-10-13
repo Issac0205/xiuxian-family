@@ -810,10 +810,30 @@ window.__xiuxian = {
     /** 【软锁回归】兑换是否还能继续（不限笔数）——测试用来钉住「灵石来源不设上限」。*/
     exchangePlan: (n) => planExchange(state, n),
     unlocked: () => [...(state.marketUnlocks || [])],
+    /** 【凡人篇 I2】分段：门槛读**累计**秘闻，段只增不减。*/
+    segmentsOf: (marketId) => marketSegmentsOf(marketId || 'yunshen')
+      .map((s) => ({ ...s, revealed: segmentRevealed(state, s) })),
+    segmentOf: (goodId) => {
+      const s = segmentOfGood(goodId);
+      return s ? { ...s, revealed: segmentRevealed(state, s) } : null;
+    },
+    segmentRevealed: (segId) => segmentRevealed(state, marketSegmentOf('yunshen', segId)),
+    total: () => secretTotal(state),
+    /** 一件商品的计价与门槛（界面、测试共用）。*/
+    priceOf: (goodId) => {
+      const g = marketGoodOf(goodId);
+      if (!g) return null;
+      return {
+        currency: goodCurrency(g), price: Number(g.price) || 0,
+        text: goodPriceText(g), unlockSecrets: goodUnlockCost(g),
+      };
+    },
   },
   /** 各数据表。调试与测试。—。也方便在控制台里直接核对数值—*/
   data: {
     buildings: BUILDINGS, techs: TECHS, map: MAP_NODES,
+    /** 【凡人篇 I2】坊市表与分段表：测试用来钉住「三座城的 held 通道没被动过」。 */
+    markets: MARKETS, marketSegments: MARKET_SEGMENTS, marketGoods: MARKET_GOODS,
     /** 【凡人篇 I1】寻仙探索的地点表（原 TRADE_ROUTES 的替代）。 */
     expeditions: EXPEDITIONS,
     /** 秘闻文本池：`secrets.length` 是硬顶，测试要拿它核「池空仍产线索」。 */
@@ -1209,10 +1229,31 @@ function renderMarketBlock() {
   const held = heldCities(state);
   const avail = secretsAvailable(state);
   const q = marketSellQuote(state, 1);
-  host.innerHTML = `${blk('market', '🏪 坊市与通商 · 剿城开市')}<p>秘闻既是钥匙也是货币：集齐 ${SECRET_UNLOCK} 条可进云深谷；<b>坊市里每件商品要花 1 条秘闻解锁</b>（解锁永久、秘闻一去不回）。<b>打下一座势力城，就多开一座坊市</b>，新坊市卖别处没有的货。</p>
-<div class="immortal-statline"><span>已占城池 ${held} 座</span><span>秘闻 可用 ${avail} / 累计 ${state.secrets.length}（已花 ${state.secretsUsed || 0}）</span><span>已解锁 ${(state.marketUnlocks || []).length} 件</span></div>
-<div class="immortal-mini">${mk.map((m) => `<div class="immortal-mini-row${m.open ? '' : ' is-locked'}"><div><b>${m.name}</b><small>${m.open ? m.desc : `<span class="map-warn">${m.reason}</span>`}${m.goods.length === 0 ? ' · <b>暂未进货</b>：框架留白，等真正像坊市货的东西（不卖无意义的兑换品）' : ''}</small></div></div>`).join('')}</div>
-<div class="immortal-mini">${mk.flatMap((m) => m.goods.map((g) => `<div class="immortal-mini-row${m.open && g.unlocked ? '' : ' is-locked'}"><div><b>${g.name}</b><span class="map-tier">${m.name}</span><small>${g.desc} · 售 ${g.price} 灵石 · ${g.unlocked ? '已解锁' : `需 ${g.unlockSecrets} 条秘闻解锁`}</small></div>${g.unlocked ? `<button class="btn" data-immortal-action="market-buy" data-good="${g.id}" ${g.canBuy ? '' : 'disabled'}>买入</button>` : `<button class="btn" data-immortal-action="market-unlock" data-good="${g.id}" ${g.canUnlock ? '' : 'disabled'}>解锁</button>`}</div>`)).join('')}</div>
+  const tradeOpen = secretTotal(state) >= CULTIVATOR_MARKET.requiresSecrets;
+  /** 【I2】分段那一行：**没到的段也画出来**，灰着 + 写明「需 N 条秘闻」。 */
+  const segRow = (m, s, i) => `<div class="immortal-mini-row${s.revealed ? '' : ' is-locked'}" data-segment="${s.id}"><div><b>${s.name}</b><span class="map-tier">${m.name} · 第 ${i + 1} 进</span><small>${s.desc}${s.id === 'hidden' ? ` · 灵石交易${tradeOpen ? '已开' : '未开'}` : ''} · ${s.revealed ? '<span class="map-ok">已显现</span>' : `<span class="map-warn">${s.needText}</span>`}</small></div></div>`;
+  /** 一件货（段没显现时照画，只是灰着）。 */
+  const goodRow = (m, g) => {
+    const usable = m.open && g.revealed && g.unlocked;
+    const stateText = !g.revealed
+      ? `<span class="map-warn">${g.needText}</span>`
+      : (g.unlocked
+        ? (g.unlockSecrets > 0 ? '已解锁' : '免秘闻')
+        : `需 ${g.unlockSecrets} 条秘闻解锁`);
+    return `<div class="immortal-mini-row${usable ? '' : ' is-locked'}" data-good-row="${g.id}">`
+      + `<div><b>${g.name}</b><span class="map-tier">${g.segmentName ? g.segmentName : m.name}</span>`
+      + `<small>${g.desc} · 售 ${g.priceText} · ${stateText}</small></div>`
+      + (g.unlocked
+        ? `<button class="btn" data-immortal-action="market-buy" data-good="${g.id}" ${g.canBuy ? '' : 'disabled'} title="${g.buyReason || ''}">买入</button>`
+        : `<button class="btn" data-immortal-action="market-unlock" data-good="${g.id}" ${g.canUnlock ? '' : 'disabled'}>解锁</button>`)
+      + '</div>';
+  };
+  const cityRows = mk.filter((m) => m.segments.length === 0);
+  host.innerHTML = `${blk('market', '🏪 江南坊市 · 分段显现')}<p>秘闻既是钥匙也是货币：江南坊市按<b>累计</b>秘闻分六段显现（花掉的秘闻只记账，<b>不会把已经显现的段关回去</b>）；没到的段也摆在下面，灰着写明还差几条。<b>免秘闻的那一段只收银两</b> —— 灵石要到「隐藏坊市」那一段（累计 ${CULTIVATOR_MARKET.requiresSecrets} 条）才换得动。<b>打下一座势力城，就多开一座坊市</b>，新坊市卖别处没有的货。</p>
+<div class="immortal-statline"><span>已占城池 ${held} 座</span><span>秘闻 可用 ${avail} / 累计 ${secretTotal(state)}（已花 ${state.secretsUsed || 0}）</span><span>已解锁 ${(state.marketUnlocks || []).length} 件</span><span>灵石交易 ${tradeOpen ? '已开' : `未开（需 ${CULTIVATOR_MARKET.requiresSecrets} 条）`}</span></div>
+<div class="immortal-mini">${mk.filter((m) => m.segments.length > 0).flatMap((m) => m.segments.flatMap((s, i) => [segRow(m, s, i), ...s.goods.map((g) => goodRow(m, g))])).join('')}</div>
+<div class="immortal-mini">${cityRows.map((m) => `<div class="immortal-mini-row${m.open ? '' : ' is-locked'}"><div><b>${m.name}</b><small>${m.open ? m.desc : `<span class="map-warn">${m.reason}</span>`}${m.goods.length === 0 ? ' · <b>暂未进货</b>：框架留白，等真正像坊市货的东西（不卖无意义的兑换品）' : ''}</small></div></div>`).join('')}</div>
+${cityRows.flatMap((m) => m.goods.map((g) => goodRow(m, g))).join('')}
 <div class="immortal-actions"><button class="btn" data-immortal-action="market-sell" ${q.ok ? '' : 'disabled'}>灵石 → 银两 · 1 枚换 ${q.silver} 两（折价 20%）</button></div></div>`;
 }
 
@@ -1231,7 +1272,7 @@ function renderImmortalExpansion(){
  /* 仙途页共用一个 blk()（定义在 renderImmortalExpansion 之前，函数声明、无 TDZ）。
     坊市那块已经搬到通商页，由 renderMarketBlock() 填充。 */
  el.innerHTML=`
-${blk('pool','🌿 灵池 · 后天祛障')}<p>在坊市花 1 条秘闻解锁「灵池蓝图」后即可购得。灵池每秒消耗灵石，使凡人有机会后天祛障，初始天赋为1。无灵石时自动停运。</p>
+${blk('pool','🌿 灵池 · 后天祛障')}<p>江南坊市最后一段（「灵矿灵池」，累计 18 条秘闻）花 1 条秘闻解锁「灵池蓝图」后即可购得。灵池每秒消耗灵石，使凡人有机会后天祛障，初始天赋为1。无灵石时自动停运。</p>
 <div class="immortal-statline"><span>灵池 ${c.pool}/${POOL_MAX} 座</span><span>灵石消耗 ${(c.pool*POOL_STONE_PER_SEC).toFixed(5)}/秒</span><span>蓝图 ${c.poolBlueprint?'已得':'未得'}</span></div>
 <div class="immortal-actions"><button class="btn" data-immortal-action="pool-blueprint" ${c.poolBlueprint||!goodUnlocked(state,'poolblueprint')?'disabled':''}>坊市购蓝图 · 2灵石</button><button class="btn" data-immortal-action="pool-build" ${!c.poolBlueprint?'disabled':''}>营造灵池 · 3灵石+5万银两</button></div></div>
 ${blk('mine','⛏️ 寻龙探脉 · 灵石矿场')}<p>秘闻≥15后研习寻龙尺，耗费灵石勘探不同品阶与储量的灵脉。矿场将持续产出灵石，并因危险作业额外损失凡人人口。</p>

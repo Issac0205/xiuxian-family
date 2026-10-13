@@ -189,6 +189,58 @@ try {
     add('探索页文案已改口径（不再出现「商队」）',
       bodyText.indexOf('商队') < 0 ? null : '页面上还留着「商队」字样');
   }
+
+  // ── ⑦ 【凡人篇 I2】江南坊市分段显现：**开局 0 条秘闻**时，
+  //   第一段那件银两货必须看得见、也真的买得动（灵石一粒都没有）。
+  //   与 ⑥ 同一条思路：不查「元素在不在」，查「按下按钮之后状态变没变」。
+  {
+    const s = X.state;
+    s.secrets = [];                 // 开局：累计 0 条秘闻
+    s.secretsUsed = 0;
+    s.marketUnlocks = [];
+    s.silver = 5000;                // 银两够买第一段（银两靠人口产出，跟秘闻无关）
+    s.spiritStones = 0;             // 一粒灵石都没有 —— 这一段不许依赖灵石
+    s.population = 10;
+    s.techs = Array.from(new Set((s.techs || []).concat(['trade', 'quzhang'])));
+    s.settings.quizMode = 'off';
+    if (X.actions.setPage) X.actions.setPage('trade');
+    X.ui.render();
+
+    const host = document.getElementById('market-extra');
+    add('坊市：通商页的坊市容器可见', vis(host));
+
+    const row = host ? host.querySelector('[data-good-row="quzhangdan"]') : null;
+    add('坊市：0 秘闻时第一段的银两货（祛障丹）真的看得见', row ? vis(row) : '找不到那一行');
+    add('坊市：它没有灰着（is-locked）—— 第一段本来就该能买',
+      row && !row.classList.contains('is-locked') ? null : '行还带着 is-locked（0 秘闻买不动）');
+
+    const buyBtn = row ? row.querySelector('[data-immortal-action="market-buy"]') : null;
+    const unlockBtn = row ? row.querySelector('[data-immortal-action="market-unlock"]') : null;
+    add('坊市：第一段给的是「买入」按钮（不是「解锁」）',
+      buyBtn && !unlockBtn ? null : '第一段还要先点解锁 —— 免秘闻那一段不该再要秘闻');
+    add('坊市：买入按钮可点（不是 disabled）',
+      buyBtn ? (buyBtn.disabled ? '按钮 disabled —— 界面没认出银两够' : null) : '按钮不存在');
+
+    const before = {
+      pills: Number(s.cultivation && s.cultivation.pills) || 0,
+      silver: Number(s.silver) || 0,
+      stones: Number(s.spiritStones) || 0,
+    };
+    if (buyBtn && !buyBtn.disabled) buyBtn.click();
+    const afterPills = Number(s.cultivation && s.cultivation.pills) || 0;
+    add('坊市：点一下真的买到了（祛障丹 ' + before.pills + ' → ' + afterPills + '）',
+      afterPills === before.pills + 1 ? null : '点了没反应');
+    add('坊市：扣的是银两（' + before.silver + ' → ' + s.silver + '），灵石纹丝不动（' + s.spiritStones + '）',
+      Number(s.silver) < before.silver && Number(s.spiritStones) === before.stones ? null : '计价货币不对');
+
+    // 没到的第二段（10 条）必须**仍然摆着**、灰着、并写明「需 10 条秘闻」
+    const seg = host ? host.querySelector('[data-segment="hidden"]') : null;
+    add('坊市：没到的第二段仍然摆在页面上（不许整段隐藏）', seg ? vis(seg) : '第二段整段不见了');
+    const segText = seg ? (seg.textContent || '') : '';
+    add('坊市：第二段写着「需 10 条秘闻」',
+      segText.indexOf('需 10 条秘闻') >= 0 ? null : '文案是：' + segText.slice(0, 90));
+    add('坊市：第二段灰着（is-locked）', seg && seg.classList.contains('is-locked') ? null : '没灰');
+  }
 } catch (e) {
   out.error = String((e && e.stack) || e);
 }

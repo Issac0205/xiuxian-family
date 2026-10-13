@@ -287,54 +287,116 @@ check('（阳性对照）总数泄露检测确实有效',
   const backup = {
     secrets: [...(s.secrets || [])], used: s.secretsUsed,
     unlocks: [...(s.marketUnlocks || [])], stones: s.spiritStones, silver: s.silver,
+    population: s.population, manuals: [...((s.cultivation && s.cultivation.manuals) || [])],
+    pills: s.cultivation ? s.cultivation.pills : undefined,
   };
   const restore = () => {
     s.secrets = backup.secrets; s.secretsUsed = backup.used;
     s.marketUnlocks = backup.unlocks; s.spiritStones = backup.stones; s.silver = backup.silver;
+    s.population = backup.population;
+    if (s.cultivation) {
+      s.cultivation.manuals = backup.manuals;
+      if (backup.pills !== undefined) s.cultivation.pills = backup.pills;
+    }
   };
   const seed = (n) => { s.secrets = Array.from({ length: n }, (_, i) => i); s.secretsUsed = 0; s.marketUnlocks = []; };
+  // 祛障丹走旧字段 `cultivation.pills`（见 systems/alchemy.js 的 pillCount）
+  const pillCountForSmoke = () => Number(s.cultivation?.pills) || 0;
 
-  check('坊市门槛读的是「累计秘闻」，与已花掉多少无关', (() => {
-    seed(10);
-    const before = X.market.open('yunshen');
-    X.market.unlock('quzhangdan');            // 花掉 1 条
-    const after = X.market.open('yunshen');
-    return before === true && after === true && s.secrets.length === 10;
-  })(), '花费若被写进 secrets（而不是 secretsUsed），这里会红 —— 那就成了「花秘闻反而关掉已开的门」');
+  // 【凡人篇 I2】六段分段表：门槛一律是**累计**秘闻（state.secrets.length）
+  const SEG_NEED = [['shiji', 0], ['hidden', 10], ['gongfa', 12], ['zhenqi', 14], ['pozhang', 16], ['lingkuang', 18]];
+  check('江南坊市分六段显现，门槛是 0/10/12/14/16/18（读累计秘闻）', (() => {
+    const segs = X.market.segmentsOf('yunshen');
+    return segs.length === 6
+      && SEG_NEED.every(([id, n], i) => segs[i] && segs[i].id === id && segs[i].needSecrets === n);
+  })(), X.market.segmentsOf('yunshen').map((g) => `${g.id}:${g.needSecrets}`).join(' '));
 
-  check('解锁商品真的消耗秘闻（累计不变、可用减少）', (() => {
-    seed(10);
+  check('0 秘闻：第一段已显现，后面五段都还没显现', (() => {
+    seed(0);
+    const r = SEG_NEED.map(([id]) => X.market.segmentRevealed(id));
+    return r[0] === true && r.slice(1).every((v) => v === false);
+  })(), '段的起点若不是 0，零秘闻的玩家就进不了市集');
+
+  check('0 秘闻能买第一段：免秘闻 + 只收银两（不花灵石、不花秘闻）', (() => {
+    seed(0);
+    s.silver = 5000; s.spiritStones = 0.5;
+    const p0 = pillCountForSmoke();
+    const before = { silver: s.silver, stones: s.spiritStones, used: X.market.used() };
+    const r = X.market.buy('quzhangdan');
+    return r.ok === true && pillCountForSmoke() === p0 + 1
+      && s.silver === before.silver - 2000 && s.spiritStones === before.stones
+      && X.market.used() === before.used && s.secrets.length === 0;
+  })(), '免秘闻那一段若还要灵石、或还要先花秘闻解锁，这条会红 —— 那是「一步都迈不出去」的循环门');
+
+  check('9 秘闻：第二段仍锁着（理由点名「需 12 条秘闻」的那一段还没到）', (() => {
+    seed(9);
+    s.spiritStones = 99;
+    const r = X.market.unlock('lianqi_gongfa');
+    const seg = X.market.segmentOf('lianqi_gongfa');
+    return X.market.segmentRevealed('hidden') === false
+      && r.ok === false && /12 条秘闻/.test(String(r.reason))
+      && seg && seg.needSecrets === 12 && seg.revealed === false;
+  })(), '段门槛若读「可用秘闻」、或写成整门 10 条，这条会红');
+
+  check('12 秘闻：第三段开了，解锁**真的消耗** secretsUsed（累计一条不少）', (() => {
+    seed(12);
     const a0 = X.market.available();
-    const r = X.market.unlock('quzhangdan');
-    return r.ok === true && X.market.available() === a0 - 1
-      && X.market.used() === 1 && s.secrets.length === 10;
+    const r = X.market.unlock('lianqi_gongfa');
+    return X.market.segmentRevealed('gongfa') === true
+      && r.ok === true && X.market.available() === a0 - 1
+      && X.market.used() === 1 && s.secrets.length === 12;
   })(), '若解锁不扣（或扣在 secrets 上），这条会红');
 
   check('同一条目不能重复花秘闻解锁', (() => {
-    seed(10);
-    X.market.unlock('quzhangdan');
-    const again = X.market.unlock('quzhangdan');
+    seed(12);
+    X.market.unlock('lianqi_gongfa');
+    const again = X.market.unlock('lianqi_gongfa');
     return again.ok === false && X.market.used() === 1;
   })(), '重复解锁若能成功，秘闻会被白白吃掉');
 
-  check('未解锁的商品买不到（且点名要先花秘闻）', (() => {
-    seed(10);
+  check('花掉秘闻之后，已经显现的段一条都不回退（读累计、不读可用）', (() => {
+    seed(12);
+    const before = SEG_NEED.map(([id]) => X.market.segmentRevealed(id));
+    s.spiritStones = 99; s.cultivation.manuals = [];
+    X.market.unlock('lianqi_gongfa');                              // 花掉 1 条
+    const after = SEG_NEED.map(([id]) => X.market.segmentRevealed(id));
+    const bought = X.market.buy('lianqi_gongfa').ok === true;      // 花完仍然买得到
+    return JSON.stringify(before) === JSON.stringify(after)
+      && after[0] === true && after[1] === true && after[2] === true
+      && X.market.used() === 1 && s.secretsUsed === 1 && bought === true;
+  })(), '若段门槛写成「可用秘闻」，花完秘闻这一段会自己关回去 —— 这条会红');
+
+  check('招募流民：银两换人口，人口真的 +3', (() => {
+    seed(0);
+    s.silver = 5000; s.population = 10;
+    const r = X.market.buy('liumin');
+    return r.ok === true && s.population === 13 && s.silver === 5000 - 1500;
+  })(), '若人口没加、或加的不是表面上的那个数，这条会红');
+
+  check('未解锁的商品买不到（没花秘闻时点名要先花秘闻）', (() => {
+    seed(12);
     s.spiritStones = 999;
-    const r = X.market.buy('quzhangdan');
+    const r = X.market.buy('lianqi_gongfa');
     return r.ok === false && /秘闻/.test(String(r.reason));
   })());
 
-  // 祛障丹走旧字段 `cultivation.pills`（见 systems/alchemy.js 的 pillCount）
-  const pillCountForSmoke = () => Number(s.cultivation?.pills) || 0;
-  check('解锁后才买得到，且扣灵石、到手 1 枚祛障丹', (() => {
-    seed(10);
-    s.spiritStones = 999;
-    const p0 = pillCountForSmoke();
-    X.market.unlock('quzhangdan');
-    const r = X.market.buy('quzhangdan');
-    return r.ok === true && X.market.available() === 9
-      && pillCountForSmoke() === p0 + 1 && s.spiritStones === 998;
+  check('解锁后才买得到，且扣灵石、到手一本《吐纳真诀》', (() => {
+    seed(12);
+    s.spiritStones = 999; s.cultivation.manuals = [];
+    X.market.unlock('lianqi_gongfa');
+    const r = X.market.buy('lianqi_gongfa');
+    return r.ok === true && X.market.available() === 11
+      && (s.cultivation.manuals || []).includes('breath') && s.spiritStones === 996;
   })(), '若买入不生效或价格不对，这条会红');
+
+  check('三座城坊市的 held 通道一个字没动（剿城开市属于炼气期）', (() => {
+    const raw = Object.fromEntries(X.data.markets.map((m) => [m.id, [m.requiresSecrets, m.requiresHeld]]));
+    seed(20);
+    return raw.yunshen[1] === 0
+      && raw.qingmu[1] === 1 && raw.heishi[1] === 2 && raw.wanxiang[1] === 3
+      && raw.qingmu[0] === 0 && raw.heishi[0] === 0 && raw.wanxiang[0] === 0
+      && ['qingmu', 'heishi', 'wanxiang'].every((id) => X.market.open(id) === false);
+  })(), '三座城的 requiresHeld 若是 0 或被改成秘闻门槛，这条会红');
 
   // 反套利：卖出价 = 买入价 × 0.8 ⇒ 任一回路严格亏 20%，且与笔数、科技都无关
   check('反套利：灵石→银两 严格亏 20%，且与笔数无关', (() => {
@@ -345,6 +407,12 @@ check('（阳性对照）总数泄露检测确实有效',
     return q0.silver <= cost * 0.8 + 1 && q0.silver < cost
       && round(1) && round(3) && round(11);
   })(), '若卖出价 ≥ 买入价，就能无限套利；这条会红');
+
+  check('老 id 一个没改（老存档按 id 记着解锁状态）', (() => {
+    const ids = X.data.marketGoods.map((g) => g.id);
+    return ids.includes('quzhangdan') && ids.includes('poolblueprint')
+      && X.data.markets.map((m) => m.id).join(',') === 'yunshen,qingmu,heishi,wanxiang';
+  })(), '改 id = 老存档里的解锁记录静默消失（savecompat 的基线里没有 markets.js，只能在这里守）');
 
   check('剿城开市：新坊市需要占据更多势力城', (() => {
     seed(10);
@@ -413,20 +481,18 @@ check('灵石来源不设总量上限：兑过极多笔之后仍可继续兑', (
   return okNow === true;
 })(), '若上限还在（哪怕 9999 笔后封顶），这条会红 —— 那正是用户报的「彻底卡死」');
 
-check('软锁复现链：丹药耗尽后仍能靠银两重新换到灵石', (() => {
+check('软锁复现链：丹药耗尽后仍走得通（灵石换得动 · 祛障丹已改银两直购）', (() => {
   const s = gateState();
   const backup = { st: s.spiritStones, sv: s.silver, pills: s.cultivation?.pills, sec: [...(s.secrets || [])], used: s.secretsUsed };
   s.secrets = Array.from({ length: 10 }, (_, i) => i); s.secretsUsed = 0;
   s.spiritStones = 0; s.silver = 1e6;
-  // 走真实路径：先换灵石 → 再买祛障丹（这一步不再依赖任何「剩余额度」）
-  // 平价为 0.5 石/笔，所以换 2 笔才有 1 枚丹的钱
+  // 走真实路径：① 灵石那条边仍然通（不设总量上限）；
+  //   ② 【凡人篇 I2】祛障丹改成银两计价之后，买丹**一粒灵石都不用** ——
+  //      它比原来更不容易卡死（原来是「换灵石 → 买丹」两步，现在只剩一步）。
   const ex = X.market.exchangePlan(2);
-  let bought = false;
-  if (ex.ok) {
-    s.spiritStones += 1;
-    X.market.unlock('quzhangdan');
-    bought = X.market.buy('quzhangdan').ok === true;
-  }
+  const p0 = Number(s.cultivation?.pills) || 0;
+  const buy = X.market.buy('quzhangdan');
+  const bought = buy.ok === true && (Number(s.cultivation?.pills) || 0) === p0 + 1 && s.spiritStones === 0;
   if (backup.pills !== undefined && s.cultivation) s.cultivation.pills = backup.pills;
   s.spiritStones = backup.st; s.silver = backup.sv; s.secrets = backup.sec; s.secretsUsed = backup.used;
   return ex.ok === true && bought === true;
@@ -5893,7 +5959,7 @@ const rv = (id, s = X.state) => X.res.read(id, s);
   const probeState = (() => {
     const s = resState();
     s.techs = ['realestate', 'architecture', 'finance', 'expansion', 'trade'];
-    s.secrets = Array.from({ length: 4 }, (_, i) => i);   // 4 < 10 ⇒ 坊市没开
+    s.secrets = Array.from({ length: 4 }, (_, i) => i);   // 4 < 10 ⇒ 灵石还没解锁（灵石交易要 10 条）
     s.cultivation.clues = 5;                              // 有线索 ⇒ 仙途页可见
     s.cultivation.unlocked = true;
     return s;
@@ -6004,7 +6070,7 @@ section('开发者模式：补满的边界');
   check('未解锁的资源不补：线索也没被补（仙途页还没开）',
     rv('cluePool', s) === 0 && X.res.canBeGiven('cluePool') === false, `${rv('cluePool', s)}`);
 
-  s.secrets = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];   // 集齐 10 条 → 坊市开
+  s.secrets = [0, 1, 2, 3, 4, 5, 6, 7, 8, 9];   // 集齐 10 条 → 灵石交易开
   X.dev.refill(s);
   check('补满后凑够秘闻：灵石跟着被补满', rv('spiritStones', s) > 0.9e12, `${rv('spiritStones', s)}`);
   check('秘闻是「累计凭证」：补满只补到池子抽干为止，不会凭空造下标',

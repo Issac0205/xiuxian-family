@@ -1233,6 +1233,14 @@ function createUI({ getState, actions, rng }) {
         : can
           ? `兑换 ${fmtStones(q.stones)} 灵石`
           : `需 ${fmt(q.silver)} 银两`;
+
+    /**
+     * 【凡人篇 I2】坊市那块（通商页的 `#market-extra`）原来**只在初始化时渲染一次**：
+     * 买一件货、解锁一个条目之后界面是死的（点了没反应，行还是灰的），
+     * 要刷新页面才更新。`render()` 每次都会走到这里，所以把它挂在这条路径上
+     * —— 分段显现（未到的段灰着 + 「需 N 条秘闻」）必须随状态实时变。
+     */
+    renderMarketBlock();
   }
 
   function updateImmortal(s, d) {
@@ -2122,7 +2130,9 @@ function createUI({ getState, actions, rng }) {
   buildImmortal();
   buildRoutes();
   // 【用户实测 2026-10-11】坊市（剿城开市）那块住在通商页的 #market-extra，
-  //   由 main.js 的 renderMarketBlock() 填充。挂在这里是因为这条路径每次渲染都走。
+  //   由 main.js 的 renderMarketBlock() 填充。
+  // 【凡人篇 I2】它现在挂在 `updateMarket()`（每次 render 都走）上，这里只补首帧，
+  //   免得「买完界面不动」那种死屏。
   renderMarketBlock();
   bindEvents();
   syncBuyMode();
