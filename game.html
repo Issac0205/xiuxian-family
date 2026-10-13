@@ -3533,6 +3533,10 @@ const GAME_EVENTS = {
   PILL_CRAFTED: 'PILL_CRAFTED',
   /** 炼废一炉丹。payload: {state,recipeId,name,rate} */
   PILL_CRAFT_FAILED: 'PILL_CRAFT_FAILED',
+  /** 族人出门探索。payload: {state,id,name,people,now} */
+  EXPEDITION_SENT: 'EXPEDITION_SENT',
+  /** 探索队归来。payload: {state,id,name,sent,survivors,lost,silver,overflow,secret,now} */
+  EXPEDITION_RETURNED: 'EXPEDITION_RETURNED',
 };
 
 /** 事件名 → 订阅者数组。 */
@@ -3642,6 +3646,20 @@ on(GAME_EVENTS.CULTIVATOR_JOINED, (e) => {
       ? `天降灵根！${e.name}生而通灵，成为家族第 ${e.qi} 位炼气修士。`
       : `${e.name}祛障成功，成为家族第 ${e.qi} 位炼气修士。`,
     'cultivate', null, e.now);
+});
+
+/**
+ * 【凡人篇 I1】探索队归来。
+ * 文案由「商队归来，得银 N 两」改成「人回来了」—— 派出的是族人，先报生死再报钱。
+ * 秘闻不在这里写：它由 `grantSecret` 自己播报（且要优先），与旧版一致。
+ */
+on(GAME_EVENTS.EXPEDITION_RETURNED, (e) => {
+  if (!e || !e.state) return;
+  const parts = [`「${e.name}」的人回来了：${e.survivors} / ${e.sent} 人`];
+  if (e.lost > 0) parts.push(`折损 ${e.lost} 人`);
+  parts.push(`带回银 ${fmt(e.silver)} 两`);
+  if (e.overflow > 0.5) parts.push(`库房已满，溢出 ${fmt(e.overflow)} 两`);
+  pushLog(e.state, parts.join('，'), 'trade', null, e.now);
 });
 
 /* ══════════ src/core/format.js ══════════ */
@@ -5078,6 +5096,97 @@ const MARKETS = [
     desc: '三城在握者，才有资格上万象楼。',
   },
 ];
+
+/* ══════════ src/data/expeditions.js ══════════ */
+
+/* ────────────────────────────────────────────────────────────────
+ * 区块：寻仙探索（数据表）
+ * 【凡人篇重构 I1 / 《凡人篇重构需求文档 v1.0》四、取消商队系统】
+ *
+ * 原来凡人侧只有一条「凡人商路」：交本钱 → 等 25 秒 → 领银两，
+ * 外加 1% 的秘闻。用户判定「本质是挂机领奖励，与修仙世界观不符合」。
+ *
+ * 改成**派遣族人出门打探**：派出去的人这段时间不在族中，
+ * 回来时带回秘闻（凡人接触仙道的唯一桥梁）、银两与见闻。
+ *
+ * 三条设计约定（改这张表前先读）：
+ *   1. **银两是净支出**：cost 扣掉、silver 只回一部分 ⇒ 探索是秘闻的**代价**，
+ *      不是印钞机。银两的正经来源始终是「人口 → 产业」（见 core/formulas.js）。
+ *      否则「探索」会盖过整条经济线，变成唯一的最优解。
+ *   2. **秘闻是主收益**，且**没有总量上限**（全局规则 S1：唯一来源不许封顶）。
+ *      产出速率对齐原商路的量级（原为 0.01 × 科技加成），
+ *      不能因为改了名字就把 10/15/20 三道门（坊市 / 寻龙尺 / 抽干池）变松或变卡。
+ *   3. **风险只折损人**：派出 people 人，成功率之外的部分按 risk 折损（不返还）。
+ *      风险递增 ⇒ 收益递增，但低风险那条永远能跑（不许出现「高风险跑不动就卡死」）。
+ *
+ * ⚠ id 一旦发布不许改名或删除（老存档的 expeditions 里按 id 记账），
+ *   口径与 scripts/savecompat.mjs 第 ① 条一致。
+ * ──────────────────────────────────────────────────────────────── */
+
+/**
+ * 探索地点。
+ *   people     派出的人数（**从人口里扣**，回来时只返还存活的那部分）
+ *   cost       本钱（银两，扣掉不返）
+ *   silver     回来时带回的银两（**低于 cost** ⇒ 净支出）
+ *   duration   全程多少「游戏秒」（按游戏秒记账，改倍速会自然跟着走）
+ *   risk       折损率：派出去的人有这么多比例回不来
+ *   secretChance 带回一条秘闻的基础概率（科技的 secretChance 加在这上面）
+ */
+const EXPEDITIONS = [
+  {
+    id: 'qingshan',
+    name: '青山访闻',
+    icon: '闻',
+    tier: 1,
+    desc: '族人往青山一带走村串镇，听山民闲谈、记茶棚闲话。路熟人多，最稳妥的一条。',
+    people: 5,
+    cost: 200,
+    silver: 150,
+    duration: 30,
+    risk: 0.02,
+    secretChance: 0.02,
+    finds: '民间传闻、旧档残页',
+  },
+  {
+    id: 'guji',
+    name: '古迹探查',
+    icon: '古',
+    tier: 2,
+    desc: '循着废观、断碑与旧县志里的地名翻找前朝遗迹。费钱费人，但翻得出真东西。',
+    people: 12,
+    cost: 800,
+    silver: 620,
+    duration: 90,
+    risk: 0.06,
+    secretChance: 0.07,
+    finds: '古籍、修士遗迹线索',
+  },
+  {
+    id: 'shenshan',
+    name: '深山寻踪',
+    icon: '踪',
+    tier: 3,
+    desc: '往人迹不到的深山里寻访踪迹。山里有不该有的东西，去的人未必都回得来。',
+    people: 25,
+    cost: 2000,
+    silver: 1600,
+    duration: 240,
+    risk: 0.12,
+    secretChance: 0.18,
+    finds: '修士踪迹、洞府消息、灵物线索',
+  },
+];
+
+const EXPEDITION_MAP = Object.fromEntries(EXPEDITIONS.map((e) => [e.id, e]));
+
+/** 一趟探索跑完，人数还剩多少（风险折损后的存活人数）。 */
+function expeditionSurvivors(def, rng = Math.random) {
+  const lost = def.people * def.risk;
+  // 折损按概率取整：小数部分按概率进位，保证「期望 = people × risk」
+  const whole = Math.floor(lost);
+  const frac = lost - whole;
+  return Math.max(0, def.people - whole - (rng() < frac ? 1 : 0));
+}
 
 /* ══════════ src/core/formulas.js ══════════ */
 /* ────────────────────────── 科技 ────────────────────────── */
@@ -12895,6 +13004,227 @@ function marketOverview(state) {
       };
     }),
   }));
+}
+
+/* ══════════ src/systems/expeditions.js ══════════ */
+
+/* ────────────────────────────────────────────────────────────────
+ * 区块：寻仙探索（规则）
+ * 【凡人篇重构 I1 / docs/104-凡人篇重构.md】
+ * 职责：派遣族人出门 → 按游戏秒计时 → 归来结算（人口返还 / 秘闻 / 银两 / 折损）。
+ * 依赖：data/expeditions.js（地点表）、core/formulas.js（名额与收益）、
+ *       core/engine.js（pushLog 与 grantSecret）、core/eventBus.js（广播归来）
+ *
+ * ⚠ 时间按**游戏秒**记账，不存绝对时间戳 —— 中途改倍速时，剩余时间与进度条
+ *   会自然跟着变，不必回头重算。这条口径是从原「商队」原样继承的（它是对的）。
+ * ⚠ 与 systems/exploration.js（仙道侧的洞天/征伐）**是两码事，名字必须区分**：
+ *   那边要修士、灵石、线索；这边只要凡人人口与银两。
+ *   data/map.js 记过一次同名覆盖事故（浏览器 ES module 里直接抛重名，界面成空壳
+ *   而冒烟测试照样全绿），所以这里一律用 expedition* 前缀。
+ * ──────────────────────────────────────────────────────────────── */
+
+/** 一趟探索要跑多少「游戏秒」。
+ *  ⚠ 这里**故意不做任何加速**：地点表里的 duration 就是最终值。
+ *   （原商队有一层 routeSeconds 乘科技，那是「商路越快越赚」；
+ *     探索的收益是秘闻，加速会直接把 10/15/20 三道门变松 —— 要调就调 duration。） */
+function expeditionSeconds(state, def) {
+  return Math.max(1, Math.round(def.duration));
+}
+
+/** 计算派遣一支探索队的代价；不改动状态。 */
+function planExpedition(state, id) {
+  const def = EXPEDITION_MAP[id];
+  if (!def) return { ok: false, reason: '并无此地' };
+
+  const d = derive(state);
+  if (!d.expeditionUnlocked) return { ok: false, reason: '尚未建立驿馆' };
+  if (d.freeExpeditions <= 0) return { ok: false, reason: '驿馆已满，族人尚未归来' };
+  if (state.silver < def.cost) {
+    return { ok: false, reason: `需备盘缠 ${fmt(def.cost)} 两` };
+  }
+  // ⚠ 不许把人派空：至少留 1 个凡人在族中，否则人口再也长不回来（死局）。
+  if (state.population - def.people < 1) {
+    return { ok: false, reason: `需留 1 人在族中：要派 ${def.people} 人，现有 ${Math.floor(state.population)}` };
+  }
+
+  const seconds = expeditionSeconds(state, def);
+  return {
+    ok: true,
+    kind: 'expedition',
+    id: def.id,
+    name: def.name,
+    cost: def.cost,
+    people: def.people,
+    currency: 'silver',
+    seconds,
+    label: `遣 ${def.people} 人往「${def.name}」`,
+  };
+}
+
+/** 兑现一次派遣。 */
+function commitExpedition(state, id, now = Date.now()) {
+  const plan = planExpedition(state, id);
+  if (!plan.ok) return plan;
+  const def = EXPEDITION_MAP[id];
+
+  state.silver -= def.cost;
+  state.population = Math.max(0, state.population - def.people);
+  state.expeditions.push({
+    id: def.id,
+    startedAt: now,
+    remaining: plan.seconds,  // 还需多少「游戏秒」
+    total: plan.seconds,      // 全程「游戏秒」，用于算进度
+    people: def.people,       // 派出去的人数（归来时按风险折损）
+    invested: def.cost,
+  });
+
+  pushLog(
+    state,
+    `${def.people} 人往「${def.name}」去了，带去盘缠 ${fmt(def.cost)} 两，约 ${fmtDuration(plan.seconds)} 后回来。`,
+    'trade',
+    null,
+    now,
+  );
+  emitEvent(GAME_EVENTS.EXPEDITION_SENT, { state, id: def.id, name: def.name, people: def.people, now });
+
+  return { ok: true, seconds: plan.seconds, cost: def.cost, people: def.people };
+}
+
+/** 一站式派遣（不含答题，供测试与内部使用）。 */
+function startExpedition(state, id, now = Date.now()) {
+  return commitExpedition(state, id, now);
+}
+
+/* ────────────────────── 批量派遣：全部 / 一半 ────────────────────── */
+
+/** 这一批能派几队（同时受名额、银两、人口三重限制）。 */
+function expeditionFleetSize(state, d, def, fleet = 'all') {
+  const bySilver = Math.floor(state.silver / def.cost);
+  const byPeople = Math.floor(Math.max(0, state.population - 1) / def.people);
+  const capacity = Math.min(d.freeExpeditions, bySilver, byPeople);
+  if (capacity <= 0) return 0;
+  if (fleet === 'half') return Math.max(1, Math.ceil(capacity / 2));
+  return capacity;
+}
+
+/** 询价：批量派遣。整批算一个 plan ⇒ 整批只出一道题。 */
+function planExpeditionFleet(state, id, fleet = 'all') {
+  const def = EXPEDITION_MAP[id];
+  if (!def) return { ok: false, reason: '并无此地' };
+
+  const d = derive(state);
+  if (!d.expeditionUnlocked) return { ok: false, reason: '尚未建立驿馆' };
+  if (d.freeExpeditions <= 0) return { ok: false, reason: '驿馆已满，族人尚未归来' };
+
+  const n = expeditionFleetSize(state, d, def, fleet);
+  if (n <= 0) {
+    return { ok: false, reason: `银两或人手不足：每队需盘缠 ${fmt(def.cost)} 两、${def.people} 人` };
+  }
+
+  return {
+    ok: true,
+    kind: 'expeditionFleet',
+    id: def.id,
+    name: def.name,
+    count: n,
+    cost: def.cost * n,
+    people: def.people * n,
+    currency: 'silver',
+    seconds: expeditionSeconds(state, def),
+    label: n > 1 ? `遣 ${n} 队（共 ${def.people * n} 人）往「${def.name}」` : planExpedition(state, id).label,
+  };
+}
+
+/** 兑现一次批量派遣。整批共用一条纪事，不刷屏。 */
+function commitExpeditionFleet(state, id, count, now = Date.now()) {
+  const def = EXPEDITION_MAP[id];
+  if (!def) return { ok: false, reason: '并无此地' };
+
+  const d = derive(state);
+  const n = Math.min(
+    Math.max(0, Math.floor(count)),
+    d.freeExpeditions,
+    Math.floor(state.silver / def.cost),
+    Math.floor(Math.max(0, state.population - 1) / def.people),
+  );
+  if (n <= 0) return { ok: false, reason: '名额、银两或人手不足' };
+
+  const seconds = expeditionSeconds(state, def);
+  state.silver -= def.cost * n;
+  state.population = Math.max(0, state.population - def.people * n);
+  for (let i = 0; i < n; i += 1) {
+    state.expeditions.push({
+      id,
+      startedAt: now,
+      remaining: seconds,
+      total: seconds,
+      people: def.people,
+      invested: def.cost,
+    });
+  }
+  pushLog(state, `${n} 队族人分头往「${def.name}」去了。`, 'trade', null, now);
+  emitEvent(GAME_EVENTS.EXPEDITION_SENT, { state, id, name: def.name, people: def.people * n, now });
+  return { ok: true, seconds, count: n };
+}
+
+/* ────────────────────────── 归来结算 ────────────────────────── */
+
+/**
+ * 按「游戏秒」推进探索，并结算所有到期的。随机源可注入，便于测试。
+ *
+ * 结算顺序（每一处都对应一条设计约定）：
+ *   ① **人口先返还存活的那部分**（折损的人不回来）—— 先还人，日志里的数字才对得上；
+ *   ② 银两受库房上限约束（溢出记进 stats.silverWasted，与产业口径一致）；
+ *   ③ 秘闻**最后**掷（它优先播报，且 grantSecret 内部会去重）；
+ *   ④ 广播 EXPEDITION_RETURNED，族谱由订阅者写（架构第 1 轮的做法）。
+ */
+function advanceExpeditions(state, gameSeconds, now = Date.now(), rng = Math.random) {
+  if (!Array.isArray(state.expeditions) || !state.expeditions.length || !(gameSeconds > 0)) return;
+
+  const due = [];
+  const keep = [];
+  for (const e of state.expeditions) {
+    e.remaining -= gameSeconds;
+    if (e.remaining <= 0) due.push(e);
+    else keep.push(e);
+  }
+  if (!due.length) return;
+  state.expeditions = keep;
+
+  const d = derive(state);
+
+  for (const e of due) {
+    const def = EXPEDITION_MAP[e.id];
+    if (!def) continue;
+
+    const sent = Math.max(1, Math.floor(Number(e.people) || def.people));
+    // ① 还人：按这个地点的折损率算存活数（期望 = sent × (1 − risk)）
+    const lost = sent * def.risk;
+    const whole = Math.floor(lost);
+    const survivors = Math.max(0, sent - whole - (rng() < lost - whole ? 1 : 0));
+    state.population += survivors;
+
+    // ② 银两（受库房上限约束）
+    const reward = def.silver;
+    const room = Math.max(0, d.silverCap - state.silver);
+    const applied = Math.min(reward, room);
+    state.silver += applied;
+    state.stats.silverEarned += applied;
+    state.stats.silverWasted += reward - applied;
+    state.expeditionRuns += 1;
+
+    // ③ 秘闻（凡人接触仙道的唯一桥梁；**不设总量上限**）
+    const chance = exploreSecretChance(state, def);
+    const gainedSecret = chance > 0 && rng() < chance;
+    if (gainedSecret) grantSecret(state, now, rng);
+
+    // ④ 广播（族谱由 systems/chronicle.js 订阅后落库）
+    emitEvent(GAME_EVENTS.EXPEDITION_RETURNED, {
+      state, id: def.id, name: def.name, sent, survivors,
+      lost: sent - survivors, silver: reward, overflow: reward - applied,
+      secret: gainedSecret, now,
+    });
+  }
 }
 
 /* ══════════ src/core/engine.js ══════════ */

@@ -22,3 +22,17 @@ on(GAME_EVENTS.CULTIVATOR_JOINED, (e) => {
       : `${e.name}祛障成功，成为家族第 ${e.qi} 位炼气修士。`,
     'cultivate', null, e.now);
 });
+
+/**
+ * 【凡人篇 I1】探索队归来。
+ * 文案由「商队归来，得银 N 两」改成「人回来了」—— 派出的是族人，先报生死再报钱。
+ * 秘闻不在这里写：它由 `grantSecret` 自己播报（且要优先），与旧版一致。
+ */
+on(GAME_EVENTS.EXPEDITION_RETURNED, (e) => {
+  if (!e || !e.state) return;
+  const parts = [`「${e.name}」的人回来了：${e.survivors} / ${e.sent} 人`];
+  if (e.lost > 0) parts.push(`折损 ${e.lost} 人`);
+  parts.push(`带回银 ${fmt(e.silver)} 两`);
+  if (e.overflow > 0.5) parts.push(`库房已满，溢出 ${fmt(e.overflow)} 两`);
+  pushLog(e.state, parts.join('，'), 'trade', null, e.now);
+});

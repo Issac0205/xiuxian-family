@@ -32,6 +32,10 @@ const GAME_EVENTS = {
   PILL_CRAFTED: 'PILL_CRAFTED',
   /** 炼废一炉丹。payload: {state,recipeId,name,rate} */
   PILL_CRAFT_FAILED: 'PILL_CRAFT_FAILED',
+  /** 族人出门探索。payload: {state,id,name,people,now} */
+  EXPEDITION_SENT: 'EXPEDITION_SENT',
+  /** 探索队归来。payload: {state,id,name,sent,survivors,lost,silver,overflow,secret,now} */
+  EXPEDITION_RETURNED: 'EXPEDITION_RETURNED',
 };
 
 /** 事件名 → 订阅者数组。 */

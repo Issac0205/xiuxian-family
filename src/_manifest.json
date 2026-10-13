@@ -42,6 +42,11 @@
     "marker": "/* ══════════ src/data/markets.js ══════════ */"
   },
   {
+    "comment": "【凡人篇 I1】寻仙探索的地点表。放在 trade.js 之后：秘闻文本池 SECRETS 在那里。",
+    "path": "src/data/expeditions.js",
+    "marker": "/* ══════════ src/data/expeditions.js ══════════ */"
+  },
+  {
     "path": "src/core/formulas.js",
     "marker": "/* ══════════ src/core/formulas.js ══════════ */"
   },
@@ -168,6 +173,11 @@
   {
     "path": "src/systems/markets.js",
     "marker": "/* ══════════ src/systems/markets.js ══════════ */"
+  },
+  {
+    "comment": "【凡人篇 I1】寻仙探索的规则层（派遣 / 计时 / 归来结算）。与 systems/exploration.js（仙道洞天）是两码事，名字必须区分。",
+    "path": "src/systems/expeditions.js",
+    "marker": "/* ══════════ src/systems/expeditions.js ══════════ */"
   },
   {
     "path": "src/core/engine.js",
