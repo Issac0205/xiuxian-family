@@ -244,7 +244,7 @@ const RES_CURRENCY = [
     //   不需要前置条件 —— 写 gateTech(trade) 会让「已攒下秘闻但科技被轮回重置」
     //   的存档里这一格凭空消失。
     rate: 'secretPerSec', cap: null, gate: gateNull(),
-    lockedUi: 'dim', hint: '遣商队与外族往来，才有秘闻带回家族',
+    lockedUi: 'dim', hint: '遣族人出门探访，才有秘闻带回家族',
     note: '⚠ **同名不同物**：本项是「累计发现的秘闻」（凭证，只增不减，'
       + 's.secrets 存的是 SECRETS 下标数组），**不是** cultivation.clues。'
       + '历史上两者被混过一次，所以改为独立 id：secret（秘闻凭证）/ clue（线索）。'
@@ -557,22 +557,25 @@ const RES_PROGRESS = [
       hint: '坊市一共能吃几笔银钱，看这条涨到哪一格',
       dev: { give: false },
     }),
-  makeResource('tradeRuns', '商队归来次数', 'progress', 'progress',
-    (s) => resNum(resAt(s, 'tradeRuns')), {
+  makeResource('expeditionRuns', '探索归来次数', 'progress', 'progress',
+    (s) => resNum(resAt(s, 'expeditionRuns')), {
       cap: null, gate: gateTech('trade'), lockedUi: 'hide',
-      hint: '每回来一支商队，就多一条秘闻的指望',
+      hint: '每回来一支探索队，就多一条秘闻的指望',
       dev: { give: false },
+      note: '【凡人篇 I1】原 `tradeRuns`。旧档的取值由 core/save.js 的 migrateV1toV2 / migrateV2toV3 搬过来。',
     }),
-  makeResource('caravanSlots', '商队位', 'progress', 'progress',
-    (s) => derive(s).caravanSlots, {
-      cap: null, gate: gateTech('trade'), lockedUi: 'hide', hint: '每座商队驿站多一个在途商队位',
+  makeResource('expeditionSlots', '驿馆名额', 'progress', 'progress',
+    (s) => derive(s).expeditionSlots, {
+      cap: null, gate: gateTech('trade'), lockedUi: 'hide', hint: '每座驿馆多一支在途探索队',
       dev: { give: false },
+      note: '【凡人篇 I1】原 `caravanSlots`。建筑 id 仍是 `caravan`（不许改），显示名已改「驿馆」。',
     }),
-  makeResource('usedCaravans', '在途商队', 'progress', 'progress',
-    (s) => resCount(s, 'caravans'), {
-      cap: 'caravanSlots', gate: gateTech('trade'), lockedUi: 'hide',
-      hint: '先有商队位才谈得上在途：在途的商队不算位子空着',
+  makeResource('usedExpeditions', '在途探索队', 'progress', 'progress',
+    (s) => resCount(s, 'expeditions'), {
+      cap: 'expeditionSlots', gate: gateTech('trade'), lockedUi: 'hide',
+      hint: '先有驿馆名额才谈得上在途：在途的探索队不算位子空着',
       dev: { give: false },
+      note: '【凡人篇 I1】原 `usedCaravans`，读的字段由 `caravans` 改成 `expeditions`。',
     }),
   makeResource('milestoneCount', '人口里程碑', 'progress', 'progress',
     (s) => resCount(s, 'milestones'), {
@@ -685,7 +688,7 @@ const RES_MODIFIERS = [
   resModifier('m_incomeMult', '岁入倍率', (s) => derive(s).fx.incomeMult, '科技与法宝带来的产出加成'),
   resModifier('m_cityMaterialMult', '作坊倍率', (s) => derive(s).cityMaterialMult, '灵田、悬壶、灵脉感应抬起来的产出加成'),
   resModifier('m_immortalCapMult', '名册加成', (s) => derive(s).fx.immortalCapMult, '仙道科技给名册容量的**乘数**加成（人口是底，科技只能放大）'),
-  resModifier('m_secretChance', '秘闻概率', (s) => derive(s).fx.secretChance, '商路带随机缘，这一项把它抬起来'),
+  resModifier('m_secretChance', '秘闻概率', (s) => derive(s).fx.secretChance, '出门探访带随机缘，这一项把它抬起来'),
 ];
 
 /* ═══════════════ 六、解锁标记（F） ═══════════════ */
@@ -773,7 +776,7 @@ const RES_INDEX = [
       + '分属货币大类但**同名不同物**；`morality` 是道心（规则型，必须有解锁状态之外的出口）；'
       + '`clock.year` 是世界钟（只折算成「寿 X 余 Y」，不单独占格子）；'
       + '`meta` 是跨周目的元进度；`settings` 是玩家偏好（含 devMode 开关）；'
-      + '`buildings` / `techs` / `immortalTechs` 归进度大类；`caravans` / `tradeRuns` 归进度；'
+      + '`buildings` / `techs` / `immortalTechs` 归进度大类；`expeditions` / `expeditionRuns` 归进度；'
       + '`log` / `stats` / `quiz` / `wordStats` 是内部记账，不属于资源。',
   }),
 ];

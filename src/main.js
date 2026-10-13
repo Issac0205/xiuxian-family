@@ -13,7 +13,7 @@ const isFresh = state.stats.playSeconds === 0 && state.log.length === 0;
 
 /**
  * 全局随机源。默认就是Math.random；测试可以换成播过种的，
- * 这样「轻松模式掷骰子」「祛障丹成算」「商路1% 秘闻」都能复现。
+ * 这样「轻松模式掷骰子」「祛障丹成算」「探索带秘闻」都能复现。
  */
 let rng = Math.random;
 
@@ -97,13 +97,14 @@ ui = createUI({
       return requestOperation('immortalResearch', techId);
     },
 
-    trade(routeId) {
-      return requestOperation('trade', routeId);
+    /** 寻仙探索：遣一支队出去（【凡人篇 I1】原 trade）。*/
+    expedition(routeId) {
+      return requestOperation('expedition', routeId);
     },
 
     /** 批量派遣：整批只出一道题。*/
-    tradeFleet(routeId, fleet) {
-      return requestOperation('tradeFleet', routeId, fleet === 'half' ? 'half' : 'all');
+    expeditionFleet(routeId, fleet) {
+      return requestOperation('expeditionFleet', routeId, fleet === 'half' ? 'half' : 'all');
     },
 
     /** 云深谷坊市：银两换灵石。走答题。*/
@@ -813,6 +814,10 @@ window.__xiuxian = {
   /** 各数据表。调试与测试。—。也方便在控制台里直接核对数值—*/
   data: {
     buildings: BUILDINGS, techs: TECHS, map: MAP_NODES,
+    /** 【凡人篇 I1】寻仙探索的地点表（原 TRADE_ROUTES 的替代）。 */
+    expeditions: EXPEDITIONS,
+    /** 秘闻文本池：`secrets.length` 是硬顶，测试要拿它核「池空仍产线索」。 */
+    secrets: SECRETS,
     /** 仙道科技：两条线咬合的那一半。 */
     immortalTechs: IMMORTAL_TECHS, immortalTechTiers: IMMORTAL_TECH_TIERS,
     /** 效果键 → 展示文案。测试用来自查「每个键都登记了文案」。 */
@@ -828,6 +833,33 @@ window.__xiuxian = {
     chapters: CODEX_CHAPTERS,
     /** 流派与道心：R10 新增。测试要拿它们核对数量与档位边界。 */
     schools: MANUAL_SCHOOLS, moralityTiers: MORALITY_TIERS,
+  },
+  /**
+   * 【凡人篇 I1】寻仙探索的调试出口。
+   *
+   * 玩家真正走的那条路是 `ui.actions.expedition(id)` / `expeditionFleet(id, fleet)`
+   * （答题 → planStatus → commitPlan）。这里只是把同一批规则函数摊开，
+   * 让控制台与测试能**直接问规则**，不必自己造一份状态去猜。
+   */
+  expedition: {
+    catalog: () => EXPEDITIONS,
+    map: () => EXPEDITION_MAP,
+    /** 询价：单队派遣（不改状态）。*/
+    plan: (id) => planExpedition(state, id),
+    /** 询价：批量派遣（不改状态）。*/
+    planFleet: (id, fleet) => planExpeditionFleet(state, id, fleet),
+    /** 不走答题的派遣（测试与内部使用）。*/
+    start: (id) => startExpedition(state, id),
+    /** 在途清单（快照，改不动内部数组）。*/
+    inFlight: () => state.expeditions.map((e) => ({ ...e })),
+    /** 按游戏秒推进并结算，随机源可注入。*/
+    advance: (gameSeconds, rngFn) => {
+      const r = advanceExpeditions(state, Number(gameSeconds) || 0, Date.now(), rngFn || rng);
+      ui.render();
+      return r;
+    },
+    /** 折损的唯一实现（与归来结算同一条路径）。*/
+    survivors: (id, n, rngFn) => expeditionSurvivors(EXPEDITION_MAP[id], rngFn || rng, n),
   },
   /** 道心：读写与三条后果。 */
   morality: {

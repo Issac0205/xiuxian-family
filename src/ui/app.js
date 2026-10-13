@@ -8,10 +8,10 @@ const IMMORTAL_METRICS = [
 ];
 
 /**
- * 通商面板最多画几行在途商队。
- * 位多的时候（几十个驿站）全画出来会把派遣按钮顶到屏幕外，所以截断并提示。
+ * 探索面板最多画几行在途的探索队。
+ * 名额多的时候（几十座驿馆）全画出来会把派遣按钮顶到屏幕外，所以截断并提示。
  */
-const MAX_CARAVAN_ROWS = 8;
+const MAX_EXPEDITION_ROWS = 8;
 
 /**
  * 界面层。
@@ -43,8 +43,8 @@ function createUI({ getState, actions, rng }) {
   const studyRefs = {};
   const immortalRefs = {};
 
-  let caravanSig = null;
-  let caravanRefs = [];
+  let expeditionSig = null;
+  let expeditionRefs = [];
   let logSig = null;
   let wrongBookSig = null;
   let difficultySig = null;
@@ -80,8 +80,8 @@ function createUI({ getState, actions, rng }) {
    *   · 查不到（状态量、派生量）→ 带 `data-res="<label>"`，**必须**另写 `resWhen`
    *     说明它靠什么成立，绝不允许「无 id 又能显示」这种第三种形态。
    * `resWhen` 是**已有页签门控**的显式例外（本页本身就是那个门控开的），
-   * 唯一用到它的是商队：那一格量的是「在途商队」，注册表里对应 `usedCaravans`，
-   * 而它在通商页出现与否只取决于「商队科技已研」——与 `caravanSlots` 无关，
+   * 唯一用到它的是探索：那一格量的是「在途探索队」，注册表里对应 `usedExpeditions`，
+   * 而它在探索页出现与否只取决于「商路科技已研」——与 `expeditionSlots` 无关，
    * 所以按 id 判可见性会误伤（恒隐藏），这里显式点名。
    */
   const PAGE_RES = {
@@ -98,7 +98,7 @@ function createUI({ getState, actions, rng }) {
     ],
     trade: [
       { id: 'silver', label: '银两', value: (s, d) => `${fmt(Math.floor(s.silver))} / ${fmt(d.silverCap)}` },
-      { id: 'usedCaravans', label: '商队', value: (s, d) => `${d.usedCaravans} / ${d.caravanSlots}`,
+      { id: 'usedExpeditions', label: '探索', value: (s, d) => `${d.usedExpeditions} / ${d.expeditionSlots}`,
         resWhen: (s) => techResearched(s, 'trade') },
       { id: 'secret', label: '秘闻', value: (s, d) => `${fmt(d.secretCount)} / ${fmt(d.secretGoal)}` },
     ],
@@ -127,7 +127,7 @@ function createUI({ getState, actions, rng }) {
     ],
   };
 
-  /** 商队那一格的门控：与 `visiblePages` 里通商页同一个判据。 */
+  /** 探索那一格的门控：与 `visiblePages` 里探索页同一个判据。 */
   function techResearched(s, id) {
     return Array.isArray(s?.techs) && s.techs.includes(id);
   }
@@ -377,7 +377,7 @@ function createUI({ getState, actions, rng }) {
     const host = $('route-list');
     host.innerHTML = '';
 
-    for (const def of TRADE_ROUTES) {
+    for (const def of EXPEDITIONS) {
       const row = document.createElement('div');
       row.className = 'route';
       row.dataset.route = def.id;
@@ -389,7 +389,8 @@ function createUI({ getState, actions, rng }) {
             <div class="route-title"><span>${def.name}</span></div>
             <div class="route-desc">${def.desc}</div>
             <div class="route-stats">
-              <span>本钱 ${fmt(def.cost)}</span>
+              <span>盘缠 ${fmt(def.cost)}</span>
+              <span>遣 ${fmt(def.people)} 人</span>
               <span>${fmtDuration(def.duration)}</span>
               <span class="profit" data-role="profit">—</span>
               <span class="secret" data-role="chance">—</span>
@@ -397,18 +398,18 @@ function createUI({ getState, actions, rng }) {
           </div>
         </div>
         <div class="route-actions">
-          <button class="btn go" data-action="trade" data-route="${def.id}"
-                  title="派出一支商队，答一道题。">
+          <button class="btn go" data-action="expedition" data-route="${def.id}"
+                  title="遣一支探索队，答一道题。">
             <span class="go-label">派遣 1 队</span>
             <span class="go-sub" data-role="onesub">—</span>
           </button>
-          <button class="btn go" data-action="trade-fleet" data-route="${def.id}" data-fleet="half"
+          <button class="btn go" data-action="expedition-fleet" data-route="${def.id}" data-fleet="half"
                   title="派出可派队数的一半（向上取整），整批只答一道题。">
             <span class="go-label">派遣一半</span>
             <span class="go-sub" data-role="halfsub">—</span>
           </button>
-          <button class="btn go" data-action="trade-fleet" data-route="${def.id}" data-fleet="all"
-                  title="把空商队位一次派满（受银两限制），整批只答一道题。">
+          <button class="btn go" data-action="expedition-fleet" data-route="${def.id}" data-fleet="all"
+                  title="把空名额一次派满（受银两与人口限制），整批只答一道题。">
             <span class="go-label">全部派遣</span>
             <span class="go-sub" data-role="allsub">—</span>
           </button>
@@ -417,7 +418,7 @@ function createUI({ getState, actions, rng }) {
 
       routeRefs[def.id] = {
         root: row,
-        one: row.querySelector('[data-action="trade"]'),
+        one: row.querySelector('[data-action="expedition"]'),
         half: row.querySelector('[data-fleet="half"]'),
         all: row.querySelector('[data-fleet="all"]'),
         oneSub: row.querySelector('[data-role="onesub"]'),
@@ -441,18 +442,18 @@ function createUI({ getState, actions, rng }) {
       desc:'房产提升人口容纳量，但也会略微抬高其他建筑的价格。', page:'home', target:'building-list', key:'house', type:'building', button:'查看房产' },
     { done: (s) => s.techs.includes('finance'), name:'经营银库', title:'研习金融，建立钱庄',
       desc:'钱庄能提高银两储存上限，为后期高价科技和丹药筹备资金。', page:'techs', target:'tech-list', key:'finance', type:'tech', button:'前往格物' },
-    { done: (s) => s.techs.includes('expansion'), name:'拓展势力', title:'研习对外扩张，准备商路',
+    { done: (s) => s.techs.includes('expansion'), name:'拓展势力', title:'研习对外扩张，为远行做准备',
       desc:'扩张可解锁演武台，但会带来一定的人口死亡代价。', page:'techs', target:'tech-list', key:'expansion', type:'tech', button:'前往格物' },
-    { done: (s) => s.techs.includes('trade'), name:'开辟商路', title:'研习商路，让银钱流动起来',
-      desc:'商路科技是贸易系统的门槛，先具备金融与对外扩张能力。', page:'techs', target:'tech-list', key:'trade', type:'tech', button:'前往格物' },
-    { done: (s) => s.buildings.caravan >= 1, name:'兴建驿站', title:'营造商队驿站，开辟商贸收入',
-      desc:'一座驿站提供一个商队位。商队行商能获得额外收入和秘闻。', page:'home', target:'building-list', key:'caravan', type:'building', button:'查看驿站' },
-    { done: (s) => s.secrets.length >= SECRET_UNLOCK, name:'探寻秘闻', title:'遣商队探秘，寻找修仙机缘',
-      desc:'收集十条秘闻即可找到云深谷坊市。研习「探秘者」能提高线索概率，但死亡率也会上升。', page:'trade', target:'route-list', type:'secrets', button:'前往通商' },
+    { done: (s) => s.techs.includes('trade'), name:'开辟驿路', title:'研习商路，让消息流动起来',
+      desc:'商路科技是寻仙探索的门槛，先具备金融与对外扩张能力。', page:'techs', target:'tech-list', key:'trade', type:'tech', button:'前往格物' },
+    { done: (s) => s.buildings.caravan >= 1, name:'兴建驿馆', title:'营造驿馆，遣族人出门探访',
+      desc:'一座驿馆提供一支在途探索队的名额。族人出门探访能带回秘闻与见闻。', page:'home', target:'building-list', key:'caravan', type:'building', button:'查看驿馆' },
+    { done: (s) => s.secrets.length >= SECRET_UNLOCK, name:'探寻秘闻', title:'遣族人探访，寻找修仙机缘',
+      desc:'收集十条秘闻即可找到云深谷坊市。研习「探秘者」能提高秘闻概率，但死亡率也会上升。', page:'trade', target:'route-list', type:'secrets', button:'前往探索' },
     { done: (s) => s.techs.includes('quzhang'), name:'研习祛障', title:'窥见天光，研习祛障之术',
       desc:'集齐秘闻后研习祛障。后期研习所需银两可能超过原银库上限。', page:'techs', target:'tech-list', key:'quzhang', type:'tech', button:'前往格物' },
     { done: (s) => s.spiritStones >= 1 || s.cultivation.pills > 0, name:'积攒灵石', title:'云深谷坊市，兑换灵石',
-      desc:'进入通商界面的坊市，将银两兑换成灵石，准备祛障丹。', page:'trade', target:'market', type:'stones', button:'前往坊市' },
+      desc:'进入探索界面的坊市，将银两兑换成灵石，准备祛障丹。', page:'trade', target:'market', type:'stones', button:'前往坊市' },
     { done: (s) => s.cultivation.qi >= 1, name:'踏入仙途', title:'服用祛障丹，冲击炼气',
       desc:'祛障丹并非必定成功。储备灵石后到仙途页尝试突破。', page:'immortal', target:'pill-box', type:'qi', button:'前往仙途' },
   ];
@@ -478,7 +479,7 @@ function createUI({ getState, actions, rng }) {
 
     if (!remaining) {
       title.textContent = '修仙之门已开，家族道途初成';
-      desc.textContent = '恭喜诞生炼气族人！接下来可继续经营商路、发展人口，并尝试更长远的家族规划。';
+      desc.textContent = '恭喜诞生炼气族人！接下来可继续派遣族人外出探访、发展人口，并尝试更长远的家族规划。';
       button.textContent = '查看仙途 ↗';
       button.dataset.targetPage = 'immortal';
       button.dataset.targetId = 'immortal-metrics';
@@ -1041,7 +1042,7 @@ function createUI({ getState, actions, rng }) {
       : `屋舍尚有余裕（占 <b>${fmtPercent(d.crowdRatio, 1)}</b>），生育不受所限。`;
 
     const expand = d.expandDeath > 0
-      ? `对外扩张（演武台／商队驿站）又折去 <b>${fmtPercent(d.expandDeath * speed, 2)}/秒</b>。`
+      ? `对外扩张（演武台／驿馆）又折去 <b>${fmtPercent(d.expandDeath * speed, 2)}/秒</b>。`
       : '';
 
     const tail = d.crowdOver > 0
@@ -1064,39 +1065,39 @@ function createUI({ getState, actions, rng }) {
     chip.classList.toggle('chip-full', d.freeSlots <= 0 && d.buildingCap > 0);
   }
 
-  function updateCaravans(s, d, now) {
+  function updateExpeditions(s, d, now) {
     const speed = currentSpeed(s);
     const host = $('caravan-slots');
-    const sig = `${d.caravanSlots}|${s.caravans.map((c) => c.startedAt).join(',')}`;
+    const sig = `${d.expeditionSlots}|${s.expeditions.map((e) => e.startedAt).join(',')}`;
 
-    if (sig !== caravanSig) {
-      caravanSig = sig;
+    if (sig !== expeditionSig) {
+      expeditionSig = sig;
       host.innerHTML = '';
-      caravanRefs = [];
+      expeditionRefs = [];
 
-      if (d.caravanSlots === 0) {
+      if (d.expeditionSlots === 0) {
         const div = document.createElement('div');
         div.className = 'caravan empty';
-        div.textContent = d.unlocked.caravan ? '尚无驿站，商路未通' : '须研习「商路」并建起驿站';
+        div.textContent = d.unlocked.caravan ? '尚无驿馆，驿路未通' : '须研习「商路」并建起驿馆';
         host.appendChild(div);
         return;
       }
 
-      // 只给在途商队画进度行。空置的位不各占一行——位一多，
+      // 只给在途的探索队画进度行。空置的名额不各占一行——名额一多，
       // 那些空行会把底下的派遣按钮顶到屏幕外去。
-      const shown = s.caravans.slice(0, MAX_CARAVAN_ROWS);
-      for (const c of shown) {
-        const route = ROUTE_MAP[c.routeId];
+      const shown = s.expeditions.slice(0, MAX_EXPEDITION_ROWS);
+      for (const e of shown) {
+        const def = EXPEDITION_MAP[e.id];
         const row = document.createElement('div');
         row.className = 'caravan';
         row.innerHTML = `
-          <span class="caravan-name">${route ? route.name : '未知商路'}</span>
+          <span class="caravan-name">${def ? def.name : '未知去处'}</span>
           <span class="caravan-time">—</span>
           <div class="bar"><div class="bar-fill"></div></div>`;
         host.appendChild(row);
-        caravanRefs.push({
-          remaining: c.remaining,
-          total: c.total,
+        expeditionRefs.push({
+          remaining: e.remaining,
+          total: e.total,
           time: row.querySelector('.caravan-time'),
           bar: row.querySelector('.bar-fill'),
         });
@@ -1109,18 +1110,18 @@ function createUI({ getState, actions, rng }) {
         host.appendChild(div);
       };
 
-      const extra = s.caravans.length - shown.length;
-      if (extra > 0) addNote(`另有 ${extra} 支商队在路上`);
+      const extra = s.expeditions.length - shown.length;
+      if (extra > 0) addNote(`另有 ${extra} 支探索队在路上`);
 
-      const free = Math.max(0, d.caravanSlots - s.caravans.length);
-      addNote(free > 0 ? `空置商队位 ×${free}` : '商队位已满');
+      const free = Math.max(0, d.expeditionSlots - s.expeditions.length);
+      addNote(free > 0 ? `空置名额 ×${free}` : '驿馆名额已满');
     }
 
     // 每帧都从 state 重读：倍速改了以后剩余时间要立刻跟着变
-    for (let i = 0; i < caravanRefs.length; i += 1) {
-      const ref = caravanRefs[i];
+    for (let i = 0; i < expeditionRefs.length; i += 1) {
+      const ref = expeditionRefs[i];
       if (!ref) continue;
-      const live = s.caravans[i];
+      const live = s.expeditions[i];
       const remaining = live ? live.remaining : ref.remaining;
       const total = live && live.total > 0 ? live.total : ref.total;
 
@@ -1133,52 +1134,59 @@ function createUI({ getState, actions, rng }) {
     }
 
     const chip = $('trade-chip');
-    if (!d.tradeUnlocked) {
-      chip.textContent = d.unlocked.caravan ? '待建驿站' : '未解锁';
+    if (!d.expeditionUnlocked) {
+      chip.textContent = d.unlocked.caravan ? '待建驿馆' : '未解锁';
       chip.className = 'chip';
     } else {
-      chip.textContent = `商队 ${d.usedCaravans} / ${d.caravanSlots}`;
-      chip.className = `chip${d.freeCaravans > 0 ? ' chip-open' : ' chip-full'}`;
+      chip.textContent = `探索 ${d.usedExpeditions} / ${d.expeditionSlots}`;
+      chip.className = `chip${d.freeExpeditions > 0 ? ' chip-open' : ' chip-full'}`;
     }
   }
 
   function updateRoutes(s, d) {
-    for (const def of TRADE_ROUTES) {
+    for (const def of EXPEDITIONS) {
       const ref = routeRefs[def.id];
-      const noSlot = d.freeCaravans <= 0;
+      const noSlot = d.freeExpeditions <= 0;
+      // 派空人是死局（族中至少留 1 个凡人），所以人口也要挡一道
+      const noPeople = s.population - def.people < 1;
 
       // 收益与秘闻概率会被科技改动（比如探秘者），所以每帧重算
-      ref.profit.textContent = `净赚 +${fmt(tradeReward(s, def) - def.cost)}`;
-      ref.chance.textContent = `秘闻 ${fmtPercent(tradeSecretChance(s, def), 0)}`;
+      // ⚠ 探索的银两是**净支出**（带回的比盘缠少），所以这里写「净耗」不写「净赚」
+      ref.profit.textContent = `净耗 ${fmt(def.cost - expeditionReward(s, def))} 两`;
+      ref.chance.textContent = `秘闻 ${fmtPercent(exploreSecretChance(s, def), 0)}`;
 
       // 单队
-      const canOne = d.tradeUnlocked && !noSlot && s.silver >= def.cost;
+      const canOne = d.expeditionUnlocked && !noSlot && !noPeople && s.silver >= def.cost;
       ref.one.disabled = !canOne;
-      ref.oneSub.textContent = !d.tradeUnlocked
+      ref.oneSub.textContent = !d.expeditionUnlocked
         ? '未解锁'
         : noSlot
           ? '无空位'
-          : s.silver < def.cost
-            ? '银两不足'
-            : `${fmt(def.cost)} 两`;
+          : noPeople
+            ? '须留 1 人在族中'
+            : s.silver < def.cost
+              ? '银两不足'
+              : `${fmt(def.cost)} 两`;
 
       // 批量：按钮上直接写清会派出几队、总共花多少
       for (const [fleet, btn, sub] of [
         ['half', ref.half, ref.halfSub],
         ['all', ref.all, ref.allSub],
       ]) {
-        const n = d.tradeUnlocked ? fleetSize(s, d, def, fleet) : 0;
+        const n = d.expeditionUnlocked ? expeditionFleetSize(s, d, def, fleet) : 0;
         btn.disabled = n <= 0;
-        sub.textContent = !d.tradeUnlocked
+        sub.textContent = !d.expeditionUnlocked
           ? '未解锁'
           : n > 0
             ? `${n} 队 · ${fmt(n * def.cost)} 两`
             : noSlot
               ? '无空位'
-              : '银两不足';
+              : noPeople
+                ? '人手不足（须留 1 人）'
+                : '银两不足';
       }
 
-      ref.root.classList.toggle('is-locked', !d.tradeUnlocked);
+      ref.root.classList.toggle('is-locked', !d.expeditionUnlocked);
       ref.root.classList.toggle('is-ready', canOne);
     }
   }
@@ -1193,7 +1201,7 @@ function createUI({ getState, actions, rng }) {
     $('secret-bar').style.width =
       `${Math.min(100, (d.secretCount / Math.max(1, d.secretGoal)) * 100).toFixed(1)}%`;
     $('secret-latest').textContent = last === undefined
-      ? '尚无所获。跑商路，总有人会多嘴。'
+      ? '尚无所获。遣族人出门探访，总有人会多嘴。'
       : SECRETS[last];
   }
 
@@ -2037,8 +2045,8 @@ function createUI({ getState, actions, rng }) {
         else if (action === 'research') actions.research(actEl.dataset.tech);
         else if (action === 'researchImmortal') actions.researchImmortal(actEl.dataset.tech);
         else if (action === 'tech-line') setTechLine(actEl.dataset.line);
-        else if (action === 'trade') actions.trade(actEl.dataset.route);
-        else if (action === 'trade-fleet') actions.tradeFleet(actEl.dataset.route, actEl.dataset.fleet);
+        else if (action === 'expedition') actions.expedition(actEl.dataset.route);
+        else if (action === 'expedition-fleet') actions.expeditionFleet(actEl.dataset.route, actEl.dataset.fleet);
         else if (action === 'exchange') actions.exchange();
         else if (action === 'pill') actions.pill(actEl.dataset.pill);
         else if (action === 'toggle-hide-done') actions.toggleHideDone();
@@ -2162,7 +2170,7 @@ function createUI({ getState, actions, rng }) {
     updateStudy(s);
     updateWrongBook(s);
     updateBanks();
-    updateCaravans(s, d, now);
+    updateExpeditions(s, d, now);
     updateRoutes(s, d);
     updateSecrets(s, d);
     updateMarket(s, d);

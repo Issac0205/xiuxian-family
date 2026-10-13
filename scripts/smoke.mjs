@@ -4738,6 +4738,9 @@ section('T-1 补强：1.0 时代的旧存档形状');
     generation: 1, silver: 12345, population: 200,
     buildings: { field: 3, house: 2 },
     techs: ['realestate', 'architecture'],
+    // 【凡人篇 I1】`caravans` / `tradeRuns` 是 v1/v2 的旧键：**迁移**负责搬运，
+    //   `hydrate` 已经不再读它们（兼容分支只许住在 core/save.js 的迁移链里）。
+    //   这里照样留着，正是为了证明「老形状的档载入不炸」。
     caravans: [], tradeRuns: 5, milestones: [100],
     stats: { silverEarned: 1, silverWasted: 0, silverFromSales: 0, births: 1, deaths: 0, playSeconds: 100 },
     settings: { quizMode: 'off', difficulty: 'normal', speed: 1 },
@@ -4780,7 +4783,8 @@ section('T-1 补强：逐字段往返（不只查那三个字段）');
   const keep = JSON.parse(JSON.stringify({
     immortalTechs: S.immortalTechs, exchangeCount: S.exchangeCount, morality: S.morality,
     clock: S.clock, generation: S.generation, silver: S.silver, population: S.population,
-    tradeRuns: S.tradeRuns, milestones: S.milestones, spiritStones: S.spiritStones,
+    expeditionRuns: S.expeditionRuns, expeditions: S.expeditions,
+    milestones: S.milestones, spiritStones: S.spiritStones,
     secrets: S.secrets, meta: S.meta, ui: S.ui,
   }));
   S.immortalTechs = ['yinling'];
@@ -4790,7 +4794,8 @@ section('T-1 补强：逐字段往返（不只查那三个字段）');
   S.generation = 3;
   S.silver = 999;
   S.population = 77;
-  S.tradeRuns = 11;
+  S.expeditionRuns = 11;
+  S.expeditions = [{ id: 'qingshan', startedAt: 1, remaining: 7.5, total: 30, people: 5, invested: 200 }];
   S.milestones = [100, 200];
   S.spiritStones = 4.5;
   S.secrets = [0, 1];
@@ -4826,7 +4831,8 @@ section('T-1 补强：逐字段往返（不只查那三个字段）');
   S.generation = keep.generation;
   S.silver = keep.silver;
   S.population = keep.population;
-  S.tradeRuns = keep.tradeRuns;
+  S.expeditionRuns = keep.expeditionRuns;
+  S.expeditions = keep.expeditions;
   S.milestones = keep.milestones;
   S.spiritStones = keep.spiritStones;
   S.secrets = keep.secrets;
@@ -6393,29 +6399,254 @@ section('事件总线：系统之间互不知道');
     })(), '为假就说明「一处改了另一处没改」');
 }
 
-/* ══════════════════════ 存档版本与迁移（凡人篇 I0） ══════════════════════ */
+/* ══════════════════════ 寻仙探索（凡人篇 I1） ══════════════════════
+ *
+ * 这一段替代原来散在各处的「商队」断言。它按**玩家真正走的那条路**验：
+ * `ui.actions.expedition(id)`（= main.js 的 requestOperation → planStatus → commitPlan），
+ * 以及主循环 `tick` 里的归来结算 —— 不是只调内部函数。
+ *
+ * ⚠ 每一条都必须是**会失败**的断言（变异测试见本轮报告）：
+ *   · 去掉「留 1 人」守卫 ⇒ 第一条红
+ *   · 去掉风险折损 ⇒ 折损那两条红
+ *   · 把 expeditionReward 换成常量 / 砍掉秘闻 ⇒ 结账与秘闻两条红
+ */
+section('寻仙探索：派遣 / 归来结账 / 秘闻');
+{
+  const domE = installDOM(html);
+  new Function(code)();
+  const XE = globalThis.window.__xiuxian;
+  const es = XE.expedition;
+  const st = XE.state;
+  clearInterval(XE.timer);
+
+  const defs = XE.data.expeditions;
+  const qing = defs.find((e) => e.id === 'qingshan');
+
+  /* ── ① 数据表与页面骨架 ── */
+  check('探索地点表 3 条（青山访闻 / 古迹探查 / 深山寻踪）',
+    defs.length === 3 && ['qingshan', 'guji', 'shenshan'].every((id) => defs.some((d) => d.id === id)),
+    defs.map((d) => d.id).join(','));
+  check('每一条带回的银两都**低于**盘缠（探索是秘闻的代价，不是印钞机）',
+    defs.every((e) => e.silver < e.cost),
+    defs.map((e) => `${e.id}:${e.cost}→${e.silver}`).join(' '));
+  check('探索页画出了 3 条地点（不再是 1 条凡人商路）',
+    domE.document.querySelectorAll('#route-list .route').length === 3,
+    `${domE.document.querySelectorAll('#route-list .route').length} 行`);
+  check('页面不再有 data-route="mortal"（旧商路已下线）',
+    !domE.document.querySelector('[data-route="mortal"]'));
+  // ⚠ 只在 `#route-list` 里数：无头 DOM 垫片对模板字符串的解析不保证与浏览器一致，
+  //   全文档计数会数到垫片自己造出来的残影（本轮实测确实多一个）。
+  //   真实浏览器里的「可见可点」由 scripts/uicheck.mjs 用 Edge 单独审。
+  check('探索页里的派遣按钮走 data-action="expedition"（玩家路径已接线）',
+    domE.document.querySelectorAll('#route-list [data-action="expedition"]').length === 3
+    && domE.document.querySelectorAll('#route-list [data-action="trade"]').length === 0,
+    `expedition=${domE.document.querySelectorAll('#route-list [data-action="expedition"]').length}`
+    + ` trade=${domE.document.querySelectorAll('#route-list [data-action="trade"]').length}`);
+  check('三条地点各有一对批量按钮（一半 / 全部），且路线 id 都真的在地点表里',
+    domE.document.querySelectorAll('#route-list [data-action="expedition-fleet"]').length === 6
+    && [...domE.document.querySelectorAll('#route-list .route')]
+      .every((r) => defs.some((d) => d.id === r.dataset.route)),
+    [...domE.document.querySelectorAll('#route-list .route')].map((r) => r.dataset.route).join(','));
+
+  /** 把状态摆成「刚好能派遣」的样子。 */
+  const prep = () => {
+    st.techs = ['trade'];
+    st.buildings.caravan = 2;
+    // 库房上限 = (3000 + 钱庄×8000) × (1+vaultMult)。银两若贴着上限，
+    // 归来的银两会当场蒸发（silverWasted），断言就查不出「到底结算了多少」。
+    st.buildings.bank = 12;
+    st.silver = 3000;
+    st.population = 100;
+    st.expeditions = [];
+    st.secrets = [];
+    st.cultivation.clues = 0;
+    st.settings.quizMode = 'off';   // 免答：直接兑现，走的是同一条 commitPlan
+    XE.setRng(() => 0.99);
+    XE.ui.render();
+  };
+  /* ── ② 未建驿馆 / 未研习商路 ⇒ 拒绝 ── */
+  prep();
+  check('探针自检：库房上限足够大，不会让归来的银两蒸发（否则结账断言查不出真数）',
+    XE.derive().silverCap > 50000, `silverCap=${XE.derive().silverCap}（bank=${st.buildings.bank}）`);
+  st.buildings.caravan = 0;
+  st.techs = [];
+  check('未研习「商路」时派遣被拒绝（无驿馆）', es.plan('qingshan').ok === false,
+    es.plan('qingshan').reason);
+
+  /* ── ③ 🔴 派空人被拒绝：族中必须留 1 个凡人 ── */
+  prep();
+  st.population = 3;                       // 青山访闻要 5 人
+  const guard = es.plan('qingshan');
+  check('🔴 派空人被拒绝（族中必须留 1 人，否则人口再也长不回来）',
+    guard.ok === false && /留 1 人/.test(guard.reason), guard.reason);
+  {
+    const snap = { p: st.population, s: st.silver, n: st.expeditions.length };
+    XE.actions.expedition('qingshan');      // 玩家路径：应被同一条守卫挡住
+    check('玩家路径同样挡住：人口 / 银两 / 在途数一个都没动',
+      st.population === snap.p && st.silver === snap.s && st.expeditions.length === snap.n,
+      `人口 ${st.population} 银两 ${st.silver} 在途 ${st.expeditions.length}`);
+  }
+  // 边界：刚好留 1 人 ⇒ 允许（不能把守卫写成「永远派不出去」）
+  st.population = 6;                        // 6 − 5 = 1
+  check('刚好留得下 1 人时允许派遣（守卫不是「一律拒绝」）',
+    es.plan('qingshan').ok === true, es.plan('qingshan').reason);
+
+  /* ── ④ 派遣：走玩家路径，扣盘缠、扣人、进在途 ── */
+  prep();
+  XE.actions.expedition('qingshan');
+  check('玩家路径派遣成功：在途 +1',
+    st.expeditions.length === 1 && st.expeditions[0].id === 'qingshan',
+    JSON.stringify(st.expeditions));
+  check('派遣立刻扣掉盘缠与人口（人出门了就不在族中）',
+    st.silver === 3000 - qing.cost && st.population === 100 - qing.people,
+    `银两 ${st.silver}（应 ${3000 - qing.cost}）人口 ${st.population}（应 ${100 - qing.people}）`);
+
+  /* ── ⑤ 归来结账：人口返还与折损 / 银两 / 日志 ── */
+  // 折损算法（data/expeditions.js 的 expeditionSurvivors）：lost = 派出×risk，
+  // 小数部分按概率进位。青山访闻 5 人 × 0.02 = 0.1 ⇒ rng<0.1 时折损 1 人。
+  const settle = (rngFn) => {
+    const before = {
+      pop: st.population, silver: st.silver, runs: st.expeditionRuns, logs: st.log.length,
+      secrets: st.secrets.length, clues: st.cultivation.clues,
+    };
+    st.expeditions.forEach((e) => { e.remaining = 0; });
+    XE.setRng(rngFn);
+    st.expeditions.forEach((e) => { e.remaining = 0; });   // render 不会重置，保险起见
+    es.advance(1, rngFn);                                   // tick 里调的就是这一个函数
+    return before;
+  };
+
+  // ⑤a rng=0 ⇒ 折损 1 人；秘闻必得
+  {
+    const before = settle(() => 0);
+    const wantReward = Math.round(qing.silver * (1 + XE.derive().fx.tradeIncome));
+    check('归来把**存活的人**还回族中（5 人派出、折损 1 ⇒ +4）',
+      Math.round(st.population) === Math.round(before.pop) + 4,
+      `${before.pop} → ${st.population}`);
+    check('归来的银两与 expeditionReward 一分不差（显示与结算同一个真相源）',
+      Math.round(st.silver) === Math.round(before.silver) + wantReward,
+      `银两 ${before.silver} → ${st.silver}（应 +${wantReward}）`);
+    check('归来次数 +1（expeditionRuns）', st.expeditionRuns === before.runs + 1,
+      `${before.runs} → ${st.expeditionRuns}`);
+    check('在途列表清空（到期的那趟已出队）', st.expeditions.length === 0,
+      `${st.expeditions.length} 条残留`);
+    check('族谱记了一笔归来纪事（由 chronicle 订阅者写，含存活/折损/银两）',
+      st.log.length > before.logs && /人回来了/.test(st.log[0].text)
+      && /折损 1 人/.test(st.log[0].text) && /带回银/.test(st.log[0].text),
+      st.log[0] ? st.log[0].text : '(没有日志)');
+    check('归来一次只写**一条**纪事（不是系统里再 pushLog 一遍）',
+      st.log.filter((e) => /人回来了/.test(e.text)).length === 1,
+      st.log.slice(0, 3).map((e) => e.text).join(' ｜ '));
+    check('秘闻仍能获得：池中有空位时 secrets +1',
+      st.secrets.length === before.secrets + 1,
+      `${before.secrets} → ${st.secrets.length}`);
+  }
+
+  // ⑤b rng=0.9 ⇒ 小数折损不进位，5 人全回来（证明折损真的掷了骰子）
+  {
+    prep();
+    st.expeditions = [{
+      id: 'qingshan', startedAt: Date.now(), remaining: 0, total: 30, people: 5, invested: 200,
+    }];
+    st.population = 50;
+    const before = st.population;
+    XE.setRng(() => 0.9);
+    es.advance(1, () => 0.9);
+    check('折损按概率进位：rng 不落在小数区间时 5 人一个不少地回来',
+      Math.round(st.population) === Math.round(before) + 5,
+      `${before} → ${st.population}`);
+  }
+
+  // ⑤c 深山寻踪的折损更大（风险递增是设计的一部分）
+  {
+    prep();
+    const shen = defs.find((e) => e.id === 'shenshan');
+    st.population = 100;
+    st.expeditions = [{
+      id: 'shenshan', startedAt: Date.now(), remaining: 0, total: 240,
+      people: shen.people, invested: shen.cost,
+    }];
+    st.silver = 0;
+    es.advance(1, () => 0);
+    // 25 人 × 0.12 = 3.0 ⇒ 恰好折损 3 人（整数部分不受 rng 影响）
+    check('高风险地点折损更多：深山寻踪 25 人派出、折损 3（25×0.12），回来 22 人',
+      Math.round(st.population) === 100 + (shen.people - 3),
+      `人口 ${st.population}（应 ${100 + shen.people - 3}）`);
+  }
+
+  /* ── ⑥ 秘闻没有总量上限：池子抽干之后，出门照样继续产线索 ── */
+  {
+    prep();
+    st.secrets = XE.data.secrets.map((_, i) => i);   // 20 条全抽到
+    st.cultivation.clues = 0;
+    st.expeditions = [{
+      id: 'qingshan', startedAt: Date.now(), remaining: 0, total: 30, people: 5, invested: 200,
+    }];
+    es.advance(1, () => 0);
+    check('秘闻池抽干后，归来仍然 +1 条线索（唯一来源不封顶）',
+      st.cultivation.clues === 1 && st.secrets.length === XE.data.secrets.length,
+      `线索 ${st.cultivation.clues} 秘闻 ${st.secrets.length}`);
+  }
+
+  /* ── ⑦ 主循环接线：到期的探索队由 tick 结算（不是只有内部函数能用） ── */
+  {
+    prep();
+    st.expeditions = [{
+      id: 'guji', startedAt: Date.now(), remaining: 0.5, total: 90, people: 12, invested: 800,
+    }];
+    st.silver = 5000;
+    const runs0 = st.expeditionRuns;
+    XE.setRng(() => 0.99);
+    XE.step(1);                              // 主循环：1 游戏秒 > 剩余 0.5
+    check('主循环 tick 会结算到期的探索队（时钟真的接通了）',
+      st.expeditions.length === 0 && st.expeditionRuns === runs0 + 1,
+      `在途 ${st.expeditions.length} 次数 ${st.expeditionRuns}`);
+  }
+
+  /* ── ⑧ 批量派遣：整批一个 plan（只出一道题） ── */
+  {
+    prep();
+    st.silver = 3000;
+    st.population = 400;
+    const fleet = es.planFleet('qingshan', 'all');
+    check('批量派遣询价：整批算一个 plan（数量 ≥ 2）',
+      fleet.ok === true && fleet.kind === 'expeditionFleet' && fleet.count >= 2,
+      JSON.stringify({ ok: fleet.ok, kind: fleet.kind, count: fleet.count }));
+    check('批量派遣受「留 1 人」约束：人数上限 = floor((人口−1)/每队人数)',
+      fleet.count <= Math.floor((400 - 1) / qing.people),
+      `count=${fleet.count} 上限=${Math.floor((400 - 1) / qing.people)}`);
+    XE.actions.expeditionFleet('qingshan', 'all');
+    check('批量派遣走玩家路径后，在途条数 = 询价条数',
+      st.expeditions.length === fleet.count, `${st.expeditions.length} / ${fleet.count}`);
+  }
+}
+
 
 section('存档版本与迁移');
 // 【凡人篇 I0】用户要求「以后更新内容不能老玩家全部丢档」。
 // 先把迁移机制建起来，并守住一条最容易被忽略的危险：
 //   读到的存档比游戏版本**新**时，绝不能当成「没有存档」——
 //   main.js 是 `readSave() || createState()`，那会当场开新档并覆盖玩家的新档。
+// 【凡人篇 I1】v2→v3 多了一条真正的风险：**在途的商队**。旧商路 id `mortal`
+//   在新地点表里没有对应项，直接搬会被 hydrate 过滤掉 ⇒ 玩家白等一场。
+//   下面 ③ 就是钉这一条的。
 {
   const domM = installDOM(html);
   new Function(code)();
   const XM = globalThis.window.__xiuxian;
   const saveX = XM.save;
-  check('SAVE_VERSION 已升到 2', saveX.version === 2, `version=${saveX.version}`);
+  check('SAVE_VERSION 已升到 3', saveX.version === 3, `version=${saveX.version}`);
 
-  // ① v1 档 → v2：tradeRuns 必须被复制成 expeditionRuns
+  // ① v1 档 → 最新：tradeRuns 必须被复制成 expeditionRuns，旧键必须清掉
   const v1 = saveX.serialize(XM.state);
   v1.version = 1;
   v1.tradeRuns = 7;
   delete v1.expeditionRuns;
   const m1 = saveX.migrate(v1);
-  check('v1 档能迁移到 v2', m1.ok === true && m1.from === 1 && m1.to === 2, `ok=${m1.ok} ${m1.from}→${m1.to}`);
+  check('v1 档能迁移到最新版本', m1.ok === true && m1.from === 1 && m1.to === 3, `ok=${m1.ok} ${m1.from}→${m1.to}`);
   check('v1 的 tradeRuns 被复制成 expeditionRuns', m1.raw.expeditionRuns === 7, `expeditionRuns=${m1.raw.expeditionRuns}`);
-  check('迁移不动 tradeRuns（I1 才接手删商队）', m1.raw.tradeRuns === 7, `tradeRuns=${m1.raw.tradeRuns}`);
+  check('v1→v3 之后旧键 tradeRuns 已被清掉（I1 接手删商队）',
+    m1.raw.tradeRuns === undefined, `tradeRuns=${m1.raw.tradeRuns}`);
 
   // ② 端到端：v1 真档 → 迁移 → 还原，进度一项不丢
   const v1Real = saveX.serialize(XM.state);
@@ -6432,13 +6663,36 @@ section('存档版本与迁移');
     `人口 ${back.population} 银两 ${back.silver} 秘闻 ${back.secrets.length}`);
   check('迁移后次数落到 expeditionRuns', back.expeditionRuns === 9, `expeditionRuns=${back.expeditionRuns}`);
 
-  // ③ 已经是 v2 的档：迁移必须恒等（不许把 expeditionRuns 又覆盖回 tradeRuns）
+  // ③ ⚠ 【凡人篇 I1】v2 档里的**在途商队**必须一个都不丢。
+  //    旧商路 id 是 `mortal`，新地点表里没有它 —— 直接搬会被 hydrate 过滤掉。
   const v2 = saveX.serialize(XM.state);
+  v2.version = 2;
   v2.expeditionRuns = 3;
   v2.tradeRuns = 99;
+  v2.caravans = [
+    { routeId: 'mortal', startedAt: 1000, remaining: 12, total: 25, invested: 100 },
+    { id: 'shenshan', startedAt: 2000, remaining: 5, total: 240, people: 25, invested: 2000 },
+  ];
+  delete v2.expeditions;
   const m2 = saveX.migrate(v2);
-  check('v2 档再过一次迁移是恒等（expeditionRuns 不被 tradeRuns 覆盖）',
-    m2.raw.expeditionRuns === 3, `expeditionRuns=${m2.raw.expeditionRuns}`);
+  check('v2 档迁移到 v3', m2.ok === true && m2.to === 3, `ok=${m2.ok} ${m2.from}→${m2.to}`);
+  check('v2 的 tradeRuns 落到 expeditionRuns（且删掉旧键）',
+    m2.raw.expeditionRuns === 3 && m2.raw.tradeRuns === undefined,
+    `expeditionRuns=${m2.raw.expeditionRuns} tradeRuns=${m2.raw.tradeRuns}`);
+  check('v2 的在途商队搬到 expeditions（数量不丢）',
+    Array.isArray(m2.raw.expeditions) && m2.raw.expeditions.length === 2,
+    `${JSON.stringify(m2.raw.expeditions)}`);
+  const backV2 = saveX.hydrate(m2.raw);
+  check('🔴 旧商路(mortal)的在途商队折算成新地点后**没有被 hydrate 丢掉**',
+    backV2.expeditions.length === 2
+    && backV2.expeditions.every((e) => XM.data.expeditions.some((d) => d.id === e.id)),
+    `在途 ${backV2.expeditions.length} 条：${backV2.expeditions.map((e) => e.id).join(',')}`);
+  check('折算后的那一趟地点合法且剩余时间原样保留',
+    backV2.expeditions[0].id === 'qingshan' && backV2.expeditions[0].remaining === 12
+    && backV2.expeditions[1].id === 'shenshan',
+    JSON.stringify(backV2.expeditions.map((e) => [e.id, e.remaining])));
+  check('旧商队没有「派出几人」这一项 ⇒ 按该地点标准人数兜底（不是 0）',
+    backV2.expeditions[0].people === 5, `people=${backV2.expeditions[0].people}`);
 
   // ④ ⚠ 最关键：比游戏更新的存档必须被**拒绝**，不许静默当当前版本读
   const mFuture = saveX.migrate({ version: 99, population: 5 });
@@ -6446,19 +6700,34 @@ section('存档版本与迁移');
   check('拒绝时给出可读的理由（含版本号）',
     typeof mFuture.reason === 'string' && mFuture.reason.includes('99'), `「${mFuture.reason}」`);
 
-  // ⑤ 结构性：新顶层字段必须进 serialize 白名单（否则刷新即丢）
-  check('serialize 写出了 expeditionRuns（白名单没漏）',
-    Object.prototype.hasOwnProperty.call(saveX.serialize(XM.state), 'expeditionRuns'));
+  // ⑤ 结构性：新顶层字段必须进 serialize 白名单（否则刷新即丢）；
+  //    旧键必须**不再**出现在白名单里（否则「写进去又读不回来」）
+  {
+    const ser = saveX.serialize(XM.state);
+    check('serialize 写出了 expeditionRuns / expeditions（白名单没漏）',
+      Object.prototype.hasOwnProperty.call(ser, 'expeditionRuns')
+      && Object.prototype.hasOwnProperty.call(ser, 'expeditions'));
+    check('serialize 不再写出 caravans / tradeRuns',
+      !Object.prototype.hasOwnProperty.call(ser, 'caravans')
+      && !Object.prototype.hasOwnProperty.call(ser, 'tradeRuns'));
+  }
 
-  // ⑥ 真实往返：写盘 → 重新加载页面 → 新字段仍在
+  // ⑥ 真实往返：写盘 → 重新加载页面 → 新字段（含在途）仍在
   {
     const store2 = domM.store;
     XM.state.expeditionRuns = 11;
+    XM.state.expeditions = [{
+      id: 'guji', startedAt: Date.now(), remaining: 40, total: 90, people: 12, invested: 800,
+    }];
     XM.actions.save();
     installDOM(html, { store: store2 });
     new Function(code)();
-    const after = globalThis.window.__xiuxian.state.expeditionRuns;
-    check('刷新页面后 expeditionRuns 仍在（真往返）', after === 11, `expeditionRuns=${after}`);
+    const after = globalThis.window.__xiuxian.state;
+    check('刷新页面后 expeditionRuns 仍在（真往返）', after.expeditionRuns === 11, `expeditionRuns=${after.expeditionRuns}`);
+    check('刷新页面后在途探索队仍在（真往返）',
+      after.expeditions.length === 1 && after.expeditions[0].id === 'guji'
+      && after.expeditions[0].remaining === 40,
+      JSON.stringify(after.expeditions));
   }
 }
 

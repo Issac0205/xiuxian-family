@@ -79,11 +79,20 @@ const EXPEDITIONS = [
 
 const EXPEDITION_MAP = Object.fromEntries(EXPEDITIONS.map((e) => [e.id, e]));
 
-/** 一趟探索跑完，人数还剩多少（风险折损后的存活人数）。 */
-function expeditionSurvivors(def, rng = Math.random) {
-  const lost = def.people * def.risk;
-  // 折损按概率取整：小数部分按概率进位，保证「期望 = people × risk」
+/**
+ * 一趟探索跑完，人数还剩多少（风险折损后的存活人数）。
+ *
+ * ⚠ 这是折损的**唯一实现**：归来结算（systems/expeditions.js 的 advanceExpeditions）
+ *   也调它，不许在那边再抄一份 —— 抄两份的下场是「改了一处、另一处还是老数」，
+ *   而这个项目的变异测试正是靠「改了必须变红」来抓这种事的。
+ *
+ * @param {number} n 实际派出去的人数（整批派遣 / 老档折算时可能不等于 def.people）
+ */
+function expeditionSurvivors(def, rng = Math.random, n = def.people) {
+  const sent = Math.max(0, Number(n) || 0);
+  const lost = sent * def.risk;
+  // 折损按概率取整：小数部分按概率进位，保证「期望 = sent × risk」
   const whole = Math.floor(lost);
   const frac = lost - whole;
-  return Math.max(0, def.people - whole - (rng() < frac ? 1 : 0));
+  return Math.max(0, sent - whole - (rng() < frac ? 1 : 0));
 }

@@ -25,9 +25,9 @@ function serialize(state) {
     // 【策划 T-2b / docs/91 §三 T-2b 涉及文件】世界钟（寿元钟）。
     // 它是 T-1 那条结构性断言的**第一个受益者**：加字段的同时就必须加这里。
     clock: state.clock,
-    caravans: state.caravans,
-    tradeRuns: state.tradeRuns,
-    // 【凡人篇 I0】寻仙探索次数。**顶层字段，加进来才行**（白名单漏一个就刷新即丢）。
+    // 【凡人篇 I1】寻仙探索：在途的探索队 + 归来次数。
+    // 原 `caravans` / `tradeRuns` 两个键由 migrateV2toV3 搬到这里（见本文件末尾的迁移链）。
+    expeditions: state.expeditions,
     expeditionRuns: state.expeditionRuns,
     milestones: state.milestones,
     stats: state.stats,
@@ -63,9 +63,6 @@ function hydrate(raw) {
   fresh.generation = num(raw.generation, 1);
   fresh.silver = Math.max(0, num(raw.silver, fresh.silver));
   fresh.population = Math.max(0, num(raw.population, fresh.population));
-  fresh.tradeRuns = Math.max(0, num(raw.tradeRuns, 0));
-  // 【凡人篇 I0】探索次数。旧档（v1）由 migrateV1toV2 从 tradeRuns 复制过来，
-  //   所以这里读到的已经是迁移后的值。
   fresh.expeditionRuns = Math.max(0, num(raw.expeditionRuns, fresh.expeditionRuns));
 
   for (const def of BUILDINGS) {
@@ -85,29 +82,34 @@ function hydrate(raw) {
     }
   }
 
-  if (Array.isArray(raw.caravans)) {
+  // 【凡人篇 I1】在途探索队。迁移在 hydrate **之前**跑，所以这里读到的元素已经是
+  //   `{ id(地点 id), ... }` 形状；键名漂移的兼容分支一律留在 migrateV2toV3 里。
+  if (Array.isArray(raw.expeditions)) {
     const now = Date.now();
-    fresh.caravans = raw.caravans
-      .filter((c) => c && typeof c.routeId === 'string')
-      .map((c) => {
-        let remaining = num(c.remaining, NaN);
-        let total = num(c.total, NaN);
+    fresh.expeditions = raw.expeditions
+      .filter((e) => e && typeof e.id === 'string' && EXPEDITION_MAP[e.id])
+      .map((e) => {
+        let remaining = num(e.remaining, NaN);
+        let total = num(e.total, NaN);
 
         if (!Number.isFinite(remaining)) {
-          // 旧存档存的是绝对结束时间戳，换算成剩余游戏秒。
+          // 更老的存档存的是绝对结束时间戳，换算成剩余游戏秒。
           // 已经到期的置 0，下一次 tick 会照常结算，不会吞掉奖励。
-          remaining = Math.max(0, (num(c.endsAt, now) - now) / 1000);
+          remaining = Math.max(0, (num(e.endsAt, now) - now) / 1000);
           total = Math.max(remaining, 1);
         } else if (!Number.isFinite(total) || total <= 0) {
           total = Math.max(remaining, 1);
         }
 
         return {
-          routeId: c.routeId,
-          startedAt: num(c.startedAt, now),
+          id: e.id,
+          startedAt: num(e.startedAt, now),
           remaining,
           total,
-          invested: num(c.invested, 0),
+          // 老档的商队没有「派了几个人」这一项：按该地点的标准人数兜底，
+          // 否则归来结算的折损会算在 0 人头上（等于白丢一趟）。
+          people: Math.max(0, num(e.people, EXPEDITION_MAP[e.id].people)),
+          invested: num(e.invested, 0),
         };
       });
   }
@@ -573,17 +575,70 @@ let lastLoadIssue = null;
  */
 const SAVE_MIGRATIONS = {
   1: migrateV1toV2,
+  2: migrateV2toV3,
 };
 
 /**
  * v1 → v2：凡人篇重构第一步。把「商队归来次数」复制成「寻仙探索次数」。
- * `tradeRuns` **保留**到 I1 真正删掉商队为止 —— 让「改字段名」与「删系统」
- * 分开两步，任何一步出问题都能单独回退。
+ * `tradeRuns` 在 v2 里**保留**（让「改字段名」与「删系统」分成两步，任何一步出问题
+ * 都能单独回退）；真正删掉它的是下一步 `migrateV2toV3`。
  */
 function migrateV1toV2(raw) {
   if (raw.expeditionRuns === undefined && raw.tradeRuns !== undefined) {
     raw.expeditionRuns = raw.tradeRuns;
   }
+  return raw;
+}
+
+/**
+ * v2 → v3：凡人篇重构 I1。商队整套换成寻仙探索，两个顶层字段随之改名。
+ *
+ *   `caravans`    → `expeditions`（元素键也从 `routeId` 变成 `id(地点 id)`）
+ *   `tradeRuns`   → `expeditionRuns`（v1→v2 已经复制过一份，这里只是删掉旧键）
+ *
+ * ⚠ **在途的商队一个都不许丢**（这是本迁移唯一有风险的资产）：
+ *   旧商路只有一个 id（`mortal`，见 data/trade.js 的 MORTAL_ROUTE），它在新地点表里
+ *   **没有对应项**，直接搬过去会被 `hydrate` 的 `EXPEDITION_MAP[e.id]` 过滤掉 ——
+ *   玩家已经付掉的盘缠与等掉的时间就白费了。所以这里把它折算成**同量级的一趟探索**：
+ *   `qingshan`（青山访闻）。折算后「派出去的人」按该地点标准人数补上（旧商队没有这一项），
+ *   归来时照常返还存活的人 —— 玩家最多白得几个人，绝不会白丢一趟。
+ *   不是新地点 id 的其他值一律走同一条折算，保证「没有一趟在途会被静默丢弃」。
+ *
+ * ⚠ 迁移只做「字段搬运与归一化」，不做业务判断（拿不到运行中的 state）。
+ */
+function migrateV2toV3(raw) {
+  // ── ① 在途：caravans → expeditions ──
+  if (raw.expeditions === undefined) {
+    const old = Array.isArray(raw.caravans) ? raw.caravans : [];
+    raw.expeditions = old
+      .filter((c) => c && typeof c === 'object')
+      .map((c) => {
+        const want = typeof c.id === 'string' ? c.id : c.routeId;
+        const id = EXPEDITION_MAP[want] ? want : 'qingshan';
+        const now = Date.now();
+        const remaining = num(c.remaining, NaN);
+        const base = {
+          id,
+          startedAt: num(c.startedAt, now),
+          people: Math.max(0, num(c.people, EXPEDITION_MAP[id].people)),
+          invested: num(c.invested, 0),
+        };
+        // 更老的档存的是绝对结束时间戳：连 endsAt 一起搬过去，
+        // 由 hydrate 的 NaN 分支换算成剩余游戏秒（那条分支本来就在）。
+        if (!Number.isFinite(remaining)) {
+          return { ...base, endsAt: num(c.endsAt, now), total: Math.max(num(c.total, 0), 1) };
+        }
+        return { ...base, remaining, total: Math.max(num(c.total, 0), remaining, 1) };
+      })
+      .filter((c) => c.id);
+  }
+  delete raw.caravans;
+
+  // ── ② 归来次数：tradeRuns → expeditionRuns ──
+  if (raw.expeditionRuns === undefined && raw.tradeRuns !== undefined) {
+    raw.expeditionRuns = raw.tradeRuns;
+  }
+  delete raw.tradeRuns;
   return raw;
 }
 

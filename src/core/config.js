@@ -104,18 +104,21 @@ const ARENA_DISCOUNT_HALF = 12;
 /** 演武台 + 科技（营造术等）叠加后的地产折扣总上限。 */
 const TOTAL_DISCOUNT_MAX = 0.75;
 
-/** 商队驿站：每座提供的商队位。 */
-const CARAVAN_SLOTS_PER = 1;
+/** 驿馆：每座提供的一支「在途探索队」名额。 */
+const EXPEDITION_SLOTS_PER = 1;
 
 /**
  * 对外扩张的代价：死亡率。
  *
- * 演武台是「族中子弟走出去争地」，商路是「商队走出去换钱」——
+ * 演武台是「族中子弟走出去争地」，驿馆是「族人走出去打听消息」——
  * 走出去的人回不来，家族的人口基就薄一层。这是刻意的负面对价：
  * 扩张让你赚得更快，但也让你更难养人，必须拿田地补回来。
+ *
+ * ⚠ 【凡人篇 I1】建筑 id 仍是 `caravan`（不许改，老存档按 id 记账），
+ *   只有显示名与常量名跟着「寻仙探索」改。这一点与 scripts/savecompat.mjs 第 ① 条一致。
  */
-const ARENA_DEATH = 0.0006;   // 每座演武台
-const CARAVAN_DEATH = 0.0008; // 每座商队驿站
+const ARENA_DEATH = 0.0006;      // 每座演武台
+const EXPEDITION_DEATH = 0.0008; // 每座驿馆
 
 /** 出售建筑时的返还比例（半价）。 */
 const SELL_RATIO = 0.5;
@@ -225,11 +228,13 @@ const POP_MILESTONES = [50, 100, 200, 400, 800, 1600, 3200, 6400, 12800];
  *    直接读不到（不是丢失，是「看起来像新游戏」，见 scripts/savecompat.mjs 第 ② 条）。
  *    版本演进一律靠 `SAVE_VERSION`，不靠键名。
  *
- *  ⚠ `SAVE_VERSION` 现在是 **2**：凡人篇重构 I0 把「商队归来的次数」
- *    复制成了「寻仙探索的次数」（迁移链见 core/save.js 的 SAVE_MIGRATIONS）。
+ *  ⚠ `SAVE_VERSION` 现在是 **3**：凡人篇重构 I0 把「商队归来的次数」
+ *    复制成了「寻仙探索的次数」（v1→v2）；I1 把整套商队换成寻仙探索，
+ *    于是 `caravans` / `tradeRuns` 两个顶层字段改名为 `expeditions` / `expeditionRuns`（v2→v3）。
+ *    迁移链见 core/save.js 的 SAVE_MIGRATIONS。
  */
 const SAVE_KEY = 'xiuxian-family/save/v1';
-const SAVE_VERSION = 2;
+const SAVE_VERSION = 3;
 /**
  * 【凡人篇 I0】当存档版本**比当前游戏新**时，把原档整份备份到这个键。
  * 为什么不直接丢弃：玩家可能把游戏文件回退到旧版却还开着新档；

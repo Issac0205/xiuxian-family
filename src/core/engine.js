@@ -518,159 +518,30 @@ function commitPill(state, pillId = 'quzhangdan', now = Date.now(), rng = Math.r
   return { ok: true, success, qi: state.cultivation.qi, cost: pill.stoneCost };
 }
 
-/* ────────────────────────────── 贸易 ────────────────────────────── */
-
-/** 一条路线在当前科技下的实际耗时（秒）。 */
-function routeSeconds(state, route) {
-  const { fx } = derive(state);
-  return route.duration * (1 - fx.tradeSpeed);
-}
-
-/** 计算派遣一支商队的代价；不改动状态。 */
-function planTrade(state, routeId) {
-  const route = ROUTE_MAP[routeId];
-  if (!route) return { ok: false, reason: '并无此路' };
-
-  const d = derive(state);
-  if (!d.tradeUnlocked) return { ok: false, reason: '尚未建立商队驿站' };
-  if (d.freeCaravans <= 0) return { ok: false, reason: '商队位已满，商队尚未归来' };
-  if (state.silver < route.cost) {
-    return { ok: false, reason: `需备本钱 ${fmt(route.cost)} 两` };
-  }
-
-  const seconds = routeSeconds(state, route);
-  return {
-    ok: true,
-    kind: 'trade',
-    id: route.id,
-    name: route.name,
-    cost: route.cost,
-    currency: 'silver',
-    seconds,
-    label: `遣商队往「${route.name}」`,
-  };
-}
-
-/** 兑现一次派遣。 */
-function commitTrade(state, routeId, now = Date.now()) {
-  const route = ROUTE_MAP[routeId];
-  if (!route) return { ok: false, reason: '并无此路' };
-
-  const d = derive(state);
-  if (d.freeCaravans <= 0) return { ok: false, reason: '商队位已满' };
-  if (state.silver < route.cost) return { ok: false, reason: '银两不足' };
-
-  const seconds = routeSeconds(state, route);
-  state.silver -= route.cost;
-  state.caravans.push({
-    routeId,
-    startedAt: now,
-    remaining: seconds,   // 还需多少「游戏秒」
-    total: seconds,       // 全程「游戏秒」，用于算进度
-    invested: route.cost,
-  });
-
-  pushLog(
-    state,
-    `商队启程前往「${route.name}」，押本 ${fmt(route.cost)} 两，约 ${fmtDuration(seconds)} 后归来。`,
-    'trade',
-    null,
-    now,
-  );
-
-  return { ok: true, seconds, cost: route.cost };
-}
-
-/** 一站式派遣（不含答题，供测试与内部使用）。 */
-function startTrade(state, routeId, now = Date.now()) {
-  const plan = planTrade(state, routeId);
-  if (!plan.ok) return plan;
-  return commitTrade(state, routeId, now);
-}
-
-/* ────────────────────── 批量派遣：全部 / 一半 ────────────────────── */
+/* ────────────────────── 寻仙探索（【凡人篇 I1】原「贸易」）────────────────────── */
 
 /**
- * 询价：批量派遣。
+ * 派遣 / 计时 / 归来结算**全部**搬进了 `src/systems/expeditions.js`：
+ * `planExpedition` / `commitExpedition` / `startExpedition` /
+ * `planExpeditionFleet` / `commitExpeditionFleet` / `advanceExpeditions`。
  *
- * 整批算**一个 plan**，所以整批只出一道题——这正是这个功能存在的意义，
- * 一队一道题的话，按钮越多越烦。答错时地狱难度没收的也是整批的本钱。
+ * 为什么搬走：这一块原来是「商队」（routeSeconds 乘科技、银两是收益）。
+ * 现在收益是秘闻、代价是银两与人口，规则与数据表都换了，
+ * 再留在 core/engine.js 里只会让 engine 继续变大（见 docs/103 §四 第 3 轮）。
+ *
+ * ⚠ 原 `routeSeconds` **不再有对应物**：`expeditionSeconds` 故意不乘任何科技加速
+ *   （加速会把 10/15/20 三道秘闻门变松）—— 详见 systems/expeditions.js 的注释。
+ *   ⚠ 连带后果：凡人科技「驿道（courier）」的 `tradeSpeed: 0.15` 现在**没有消费者**，
+ *     见 docs/104-凡人篇重构.md「已知遗留」。
  */
-function planTradeFleet(state, routeId, fleet = 'all') {
-  const route = ROUTE_MAP[routeId];
-  if (!route) return { ok: false, reason: '并无此路' };
-
-  const d = derive(state);
-  if (!d.tradeUnlocked) return { ok: false, reason: '尚未建立商队驿站' };
-  if (d.freeCaravans <= 0) return { ok: false, reason: '商队位已满，商队尚未归来' };
-
-  const n = fleetSize(state, d, route, fleet);
-  if (n <= 0) {
-    return { ok: false, reason: `银两不足，每队需备本钱 ${fmt(route.cost)} 两` };
-  }
-
-  const seconds = routeSeconds(state, route);
-  const cost = route.cost * n;
-  return {
-    ok: true,
-    kind: 'tradeFleet',
-    id: route.id,
-    name: route.name,
-    count: n,
-    cost,
-    currency: 'silver',
-    seconds,
-    label: n > 1 ? `遣 ${n} 支商队往「${route.name}」` : `遣商队往「${route.name}」`,
-  };
-}
-
-/** 兑现一次批量派遣。整批共用一条纪事，不刷屏。 */
-function commitTradeFleet(state, routeId, count, now = Date.now()) {
-  const route = ROUTE_MAP[routeId];
-  if (!route) return { ok: false, reason: '并无此路' };
-
-  const d = derive(state);
-  const n = Math.min(
-    Math.max(0, Math.floor(count)),
-    d.freeCaravans,
-    Math.floor(state.silver / route.cost),
-  );
-  if (n <= 0) return { ok: false, reason: '商队位已满或银两不足' };
-
-  const seconds = routeSeconds(state, route);
-  const cost = route.cost * n;
-
-  state.silver -= cost;
-  for (let i = 0; i < n; i += 1) {
-    state.caravans.push({
-      routeId,
-      startedAt: now,
-      remaining: seconds,
-      total: seconds,
-      invested: route.cost,
-    });
-  }
-
-  pushLog(
-    state,
-    n > 1
-      ? `${n} 支商队一同启程前往「${route.name}」，共押本 ${fmt(cost)} 两，约 ${fmtDuration(seconds)} 后归来。`
-      : `商队启程前往「${route.name}」，押本 ${fmt(cost)} 两，约 ${fmtDuration(seconds)} 后归来。`,
-    'trade',
-    `fleet:${route.id}`,
-    now,
-  );
-
-  return { ok: true, count: n, cost, seconds };
-}
 
 /** 为界面准备一份「可执行的操作」清单状态。 */
 function planStatus(state, kind, id, mode = '1') {
   if (kind === 'buy') return planBuy(state, id, mode);
   if (kind === 'research') return planResearch(state, id);
   if (kind === 'immortalResearch') return planImmortalResearch(state, id);
-  if (kind === 'trade') return planTrade(state, id);
-  if (kind === 'tradeFleet') return planTradeFleet(state, id, mode);
+  if (kind === 'expedition') return planExpedition(state, id);
+  if (kind === 'expeditionFleet') return planExpeditionFleet(state, id, mode);
   if (kind === 'exchange') return planExchange(state, mode === '1' ? 1 : Number(mode) || 1);
   if (kind === 'pill') return planPill(state, id);
   return { ok: false, reason: '未知操作' };
@@ -682,8 +553,8 @@ function commitPlan(state, plan, now = Date.now(), rng = Math.random) {
   if (plan.kind === 'buy') return commitBuy(state, plan.id, plan.count, now);
   if (plan.kind === 'research') return commitResearch(state, plan.id, now);
   if (plan.kind === 'immortalResearch') return commitImmortalResearch(state, plan.id, now);
-  if (plan.kind === 'trade') return commitTrade(state, plan.id, now);
-  if (plan.kind === 'tradeFleet') return commitTradeFleet(state, plan.id, plan.count, now);
+  if (plan.kind === 'expedition') return commitExpedition(state, plan.id, now);
+  if (plan.kind === 'expeditionFleet') return commitExpeditionFleet(state, plan.id, plan.count, now);
   if (plan.kind === 'exchange') return commitExchange(state, plan.count, now);
   if (plan.kind === 'pill') return commitPill(state, plan.id, now, rng);
   return { ok: false, reason: '未知操作' };
@@ -692,55 +563,6 @@ function commitPlan(state, plan, now = Date.now(), rng = Math.random) {
 /** 一个建筑/科技当前是否能立刻执行（界面上用来区分「答对就成」与「根本买不起」）。 */
 function techPlanStatus(state, techId) {
   return techStatus(state, TECH_MAP[techId]);
-}
-
-/* ────────────────────────────── 商队结算 ────────────────────────────── */
-
-/** 按「游戏秒」推进商队，并结算所有到期的。随机源可注入，便于测试。 */
-function advanceCaravans(state, gameSeconds, now = Date.now(), rng = Math.random) {
-  if (!state.caravans.length || !(gameSeconds > 0)) return;
-
-  const due = [];
-  const keep = [];
-  for (const c of state.caravans) {
-    c.remaining -= gameSeconds;
-    if (c.remaining <= 0) due.push(c);
-    else keep.push(c);
-  }
-  if (!due.length) return;
-  state.caravans = keep;
-
-  const d = derive(state);
-
-  for (const c of due) {
-    const route = ROUTE_MAP[c.routeId];
-    if (!route) continue;
-
-    const reward = tradeReward(state, route);
-    const room = Math.max(0, d.silverCap - state.silver);
-    const applied = Math.min(reward, room);
-
-    state.silver += applied;
-    state.stats.silverEarned += applied;
-    state.stats.silverWasted += reward - applied;
-    state.tradeRuns += 1;
-
-    const overflow = reward - applied;
-    const chance = tradeSecretChance(state, route);
-    const gainedSecret = chance > 0 && rng() < chance;
-
-    // 秘闻优先播报：它是这条商路真正值钱的东西
-    if (gainedSecret) grantSecret(state, now, rng);
-
-    pushLog(
-      state,
-      `「${route.name}」商队归来，得银 ${fmt(reward)} 两` +
-        (overflow > 0.5 ? `（库房已满，溢出 ${fmt(overflow)} 两）` : ''),
-      'trade',
-      null,
-      now,
-    );
-  }
 }
 
 /* ────────────────────────────── 时间推进 ────────────────────────────── */
@@ -832,7 +654,7 @@ function tick(state, gameDt, now = Date.now(), rng = Math.random) {
     ensureClock(state);
     state.clock.year += (gameDt / 3600) * YEARS_PER_GAME_HOUR;
     simulateSpan(state, gameDt, MAX_SIM_STEP, rng, now);
-    advanceCaravans(state, gameDt, now, rng);
+    advanceExpeditions(state, gameDt, now, rng);
   }
   checkMilestones(state, now);
   // 【架构 docs/101 §3.3】开发者模式：在**每 tick 的末尾**统一补满。
@@ -880,7 +702,7 @@ function runOffline(state, seconds, now = Date.now()) {
   const step = Math.max(MAX_SIM_STEP, capped / OFFLINE_MAX_STEPS);
   simulateSpan(state, capped, step, Math.random, now);
 
-  advanceCaravans(state, capped, now);
+  advanceExpeditions(state, capped, now);
   const top = checkMilestones(state, now, true);
 
   // 【架构 docs/101 §3.3】离线结算同样收在末尾补满一次：

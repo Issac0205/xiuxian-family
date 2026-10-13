@@ -189,14 +189,15 @@ function advanceExpeditions(state, gameSeconds, now = Date.now(), rng = Math.ran
     if (!def) continue;
 
     const sent = Math.max(1, Math.floor(Number(e.people) || def.people));
-    // ① 还人：按这个地点的折损率算存活数（期望 = sent × (1 − risk)）
-    const lost = sent * def.risk;
-    const whole = Math.floor(lost);
-    const survivors = Math.max(0, sent - whole - (rng() < lost - whole ? 1 : 0));
+    // ① 还人：折损的唯一实现在 data/expeditions.js 的 expeditionSurvivors（不在这里抄一份）
+    const survivors = expeditionSurvivors(def, rng, sent);
     state.population += survivors;
 
     // ② 银两（受库房上限约束）
-    const reward = def.silver;
+    // ⚠ 必须走 `expeditionReward`（core/formulas.js）—— 界面上的「带回」也读它。
+    //   直接写 `def.silver` 会让「显示的收益」与「到手的收益」变成两个真相源
+    //   （docs/96 §1.2 缺陷①就是这么来的：界面差 5 倍而断言全绿）。
+    const reward = expeditionReward(state, def);
     const room = Math.max(0, d.silverCap - state.silver);
     const applied = Math.min(reward, room);
     state.silver += applied;

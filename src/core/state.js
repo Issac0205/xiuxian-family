@@ -56,17 +56,15 @@ function createState(now = Date.now()) {
     exchangeCount: 0,
 
     /**
-     * 进行中的商队。
+     * 进行中的寻仙探索队（【凡人篇 I1】原 `caravans`，v2→v3 迁移改名）。
      * 时间按**游戏秒**记账，不存绝对时间戳——这样中途改倍速，
      * 剩余时间与进度条会自然跟着变，不必回头重算。
-     * { routeId, startedAt(真实毫秒，仅作标识用), remaining, total, invested }
+     * { id(地点 id), startedAt(真实毫秒，仅作标识用), remaining, total, people, invested }
      */
-    caravans: [],
-    tradeRuns: 0,
+    expeditions: [],
     /**
-     * 【凡人篇重构 I0】寻仙探索的次数。
-     * v1→v2 迁移时由 `tradeRuns` 复制而来；I1 真正删掉商队之后，它就是唯一口径。
-     * 先复制、后删代码，是为了不让「改字段名」和「删系统」两件事挤在同一步里。
+     * 【凡人篇 I0 / I1】寻仙探索归来的次数（原 `tradeRuns`）。
+     * v1→v2 迁移把 `tradeRuns` 复制进来；v2→v3 迁移删掉 `tradeRuns`，它就是唯一口径。
      */
     expeditionRuns: 0,
 
@@ -199,7 +197,7 @@ const PAGES = ['home', 'techs', 'trade', 'immortal', 'study', 'codex', 'cycle'];
 const PAGE_NAMES = {
   home: '家业',
   techs: '格物',
-  trade: '通商',
+  trade: '探索',
   immortal: '仙途',
   study: '治学',
   codex: '百科',

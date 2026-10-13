@@ -90,19 +90,22 @@ const BUILDINGS = [
     footnote: () => `第 ${ARENA_DISCOUNT_HALF} 座正好拿到一半折扣`,
   },
   {
+    // ⚠ 【凡人篇 I1】id 仍是 `caravan`，**绝不许改** —— 存档里的 `buildings.caravan`
+    //   与 fixtures/save-ids.json 的基线都按它记账（scripts/savecompat.mjs 第 ① 条）。
+    //   这一轮只改显示文案：商队驿站 → 驿馆。
     id: 'caravan',
-    name: '商队驿站',
-    icon: '驮',
+    name: '驿馆',
+    icon: '驿',
     accent: 'violet',
-    tagline: '驼铃西去，货通四方',
-    lore: '立起驿站，便可派出商队行商。只是商路凶险，走的人未必都回得来。',
+    tagline: '驿路既通，山野间的消息自会流进来',
+    lore: '立起驿馆，便可遣族人出门探访。远行人未必都回得来，但带回来的消息，比银钱值钱。',
     baseCost: 800,
     growth: 1.28,
     slots: 1,
     tech: 'trade',
-    perText: `商队位 +${CARAVAN_SLOTS_PER}，死亡率 +${fmtPercent(CARAVAN_DEATH, 2)}/秒`,
+    perText: `驿馆名额 +${EXPEDITION_SLOTS_PER}，死亡率 +${fmtPercent(EXPEDITION_DEATH, 2)}/秒`,
     effectText: (n) =>
-      `商队位 +${CARAVAN_SLOTS_PER * n} · 死亡率 +${fmtPercent(CARAVAN_DEATH * n, 2)}/秒`,
+      `驿馆名额 +${EXPEDITION_SLOTS_PER * n} · 死亡率 +${fmtPercent(EXPEDITION_DEATH * n, 2)}/秒`,
   },
 
   /* ══════════ 仙凡经济：城里的作坊 ══════════

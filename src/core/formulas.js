@@ -117,18 +117,21 @@ function arenaDiscount(n) {
 }
 
 /**
- * 商路的一趟回报（已含科技对收益的削减）。
- * 探秘者这类科技会让商队赚得少，所以报价必须过这一层。
+ * 一趟探索带回的银两（已含科技对收益的修正）。
+ *
+ * 探秘者这类科技会让探索赚得少（tradeIncome 为负），所以**结算与界面报价
+ * 都必须过这一层**——data/expeditions.js 的 `silver` 只是基准值。
+ * ⚠ 注意口径：探索的 `silver` **低于** `cost`，净额是**支出**（见 data/expeditions.js）。
  */
-function tradeReward(state, route) {
+function expeditionReward(state, def) {
   const fx = techEffects(state);
-  return routeReward(route, 1 + fx.tradeIncome);
+  return Math.round((def.silver || 0) * (1 + fx.tradeIncome));
 }
 
-/** 一趟商路带回秘闻的概率（已含科技加成）。 */
-function tradeSecretChance(state, route) {
+/** 一趟探索带回一条秘闻的概率（已含科技与修士加成）。 */
+function exploreSecretChance(state, def) {
   const fx = techEffects(state);
-  return Math.min(1, Math.max(0, (route.secretChance || 0) + fx.secretChance + cultivationBonuses(state).exploreTradeBonus));
+  return Math.min(1, Math.max(0, (def.secretChance || 0) + fx.secretChance + cultivationBonuses(state).exploreTradeBonus));
 }
 
 /** 科技是否已研习（凡人侧）。 */
@@ -399,7 +402,7 @@ function derive(state) {
    * 这是仙凡咬合里**凡人对仙道的付出**那一半。
    * 最后再乘一层「流派倍率」——血煞魔功养功要拿人填。
    */
-  const expandDeath = (b.arena || 0) * ARENA_DEATH + (b.caravan || 0) * CARAVAN_DEATH;
+  const expandDeath = (b.arena || 0) * ARENA_DEATH + (b.caravan || 0) * EXPEDITION_DEATH;
   const crowdDeath = CROWD.k * crowdOver * crowdOver;
   const laborWorkers = cityWorkshopWorkers(state);
   const laborDeath = laborWorkers * CITY_LABOR_DEATH;
@@ -441,10 +444,11 @@ function derive(state) {
   const estateDiscountTotal = Math.min(TOTAL_DISCOUNT_MAX, arenaPart + fx.estateDiscount);
   const estateDiscount = 1 - estateDiscountTotal;
 
-  // ── 商队 ──────────────────────────────────────────────────
-  const caravanSlots = (b.caravan || 0) * CARAVAN_SLOTS_PER;
-  const usedCaravans = state.caravans.length;
-  const freeCaravans = Math.max(0, caravanSlots - usedCaravans);
+  // ── 寻仙探索（【凡人篇 I1】原「商队」）─────────────────────
+  // ⚠ 建筑 id 仍叫 `caravan`（存 old 档按 id 记账，不许改）；只有派生键改了名。
+  const expeditionSlots = (b.caravan || 0) * EXPEDITION_SLOTS_PER;
+  const usedExpeditions = (state.expeditions || []).length;
+  const freeExpeditions = Math.max(0, expeditionSlots - usedExpeditions);
 
   // ── 解锁情况 ───────────────────────────────────────────────
   /** @type {Record<string, boolean>} */
@@ -512,10 +516,10 @@ function derive(state) {
     estateDiscount,
     estateDiscountTotal,
 
-    caravanSlots,
-    usedCaravans,
-    freeCaravans,
-    tradeUnlocked: unlocked.caravan && freeCaravans + usedCaravans > 0,
+    expeditionSlots,
+    usedExpeditions,
+    freeExpeditions,
+    expeditionUnlocked: unlocked.caravan && freeExpeditions + usedExpeditions > 0,
   };
 }
 
@@ -592,26 +596,6 @@ function populationMood(d) {
   if (d.netRate > -0.0002) return { key: 'flat', text: '不增不减' };
   if (d.netRate > -0.004) return { key: 'shrink', text: '略有凋零' };
   return { key: 'crisis', text: '人丁凋敝' };
-}
-
-/* ────────────────────────── 批量派遣 ────────────────────────── */
-
-/**
- * 这批能派几队商队。
- *
- * 上限同时受「空商队位」和「银两」约束。「一半」向上取整——
- * 只剩 1 个空位时也派得出去，不然那个按钮就成了摆设。
- *
- * @param {'all'|'half'} fleet
- */
-function fleetSize(state, d, route, fleet) {
-  const bySilver = Math.floor(state.silver / route.cost);
-  const capacity = Math.min(d.freeCaravans, bySilver);
-  if (capacity <= 0) return 0;
-  if (fleet === 'half') {
-    return Math.min(Math.ceil(Math.min(d.freeCaravans, capacity) / 2), capacity);
-  }
-  return capacity;
 }
 
 /* ────────────────────────── 出售 ────────────────────────── */

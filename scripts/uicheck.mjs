@@ -137,6 +137,58 @@ try {
   const got = vis(document.getElementById('__uicheck_control__'));
   out.control = { detected: got === 'display:none（.' + '' + '）' || String(got).startsWith('display:none'), got };
   d.remove();
+
+  // ── ⑥ 【凡人篇 I1】寻仙探索页：可见 **并且真的可点** ──
+  //   ①～⑤ 只查「元素在不在、看不看得见」。这里多问一步：按下派遣按钮，
+  //   在途数量真的 +1 吗？—— 本轮最怕的形态是「页面好看、按钮点了没反应」
+  //   （旧版通商页那次「按钮说已勾选、点下去没人出门」就是同族缺陷）。
+  {
+    const s = X.state;
+    const need = ['realestate', 'architecture', 'finance', 'expansion', 'trade'];
+    s.techs = Array.from(new Set((s.techs || []).concat(need)));
+    s.buildings.caravan = 2;
+    s.buildings.bank = 12;
+    s.silver = 5000;
+    s.population = 100;
+    s.expeditions = [];
+    s.settings.quizMode = 'off';
+    if (X.actions.setPage) X.actions.setPage('trade');
+    X.ui.render();
+
+    const host = document.getElementById('route-list');
+    add('探索页：地点列表容器可见', vis(host));
+
+    const rows = host ? Array.prototype.slice.call(host.querySelectorAll('.route')) : [];
+    const hiddenRows = rows.filter(function (r) { return vis(r); });
+    add('探索页：' + X.data.expeditions.length + ' 条地点行都看得见（实际 ' + rows.length + ' 行）',
+      rows.length === X.data.expeditions.length && hiddenRows.length === 0
+        ? null
+        : '行数 ' + rows.length + '，不可见 ' + hiddenRows.length);
+
+    const btn = host ? host.querySelector('[data-action="expedition"]') : null;
+    add('探索页：派遣按钮带 data-action="expedition"（不是旧 trade）', btn ? null : '找不到派遣按钮');
+    add('探索页：派遣按钮可见', btn ? vis(btn) : '按钮不存在');
+    add('探索页：派遣按钮**可点**（不是 disabled）',
+      btn ? (btn.disabled ? '按钮是 disabled —— 摆好的状态没被界面认出来' : null) : '按钮不存在');
+
+    const before = X.state.expeditions.length;
+    if (btn && !btn.disabled) btn.click();
+    add('探索页：点一下真的派出去了（在途 ' + before + ' → ' + X.state.expeditions.length + '）',
+      X.state.expeditions.length === before + 1
+        ? null
+        : '点了没反应（在途数没变）');
+
+    // 在途行住在 #caravan-slots（#route-list 的兄弟节点，不在它里面）
+    const slots = document.getElementById('caravan-slots');
+    const flight = slots ? slots.querySelector('.caravan:not(.empty)') : null;
+    add('探索页：在途那一行画出来了且可见（进度条有宿主）',
+      flight ? vis(flight) : '没有在途行 —— 派出去之后界面没画回来');
+
+    // 顺带钉住「旧文案没留在界面上」：探索页里不该再有「商队」
+    const bodyText = (document.querySelector('.page[data-page="trade"]') || {}).textContent || '';
+    add('探索页文案已改口径（不再出现「商队」）',
+      bodyText.indexOf('商队') < 0 ? null : '页面上还留着「商队」字样');
+  }
 } catch (e) {
   out.error = String((e && e.stack) || e);
 }
