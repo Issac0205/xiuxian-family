@@ -193,3 +193,35 @@ function techVisible(state, tech, immortal) {
 
   return !missTech.length && !missImmortal.length && !missSecrets;
 }
+
+/**
+ * 【凡人篇 I3】三条路线第 5 阶「三选一互斥」的判据。
+ *
+ * 为什么要有它：I3 把凡人科技树重做成三条路线 × 5 阶，玩家每周目该能走不同
+ * 方向。**前三阶永不互斥**（早期选择不吃亏），互斥只发生在第 5 阶那三块碑上：
+ * 百年望族（`xiangxian`）/ 江南巨富（`jiangnan_rich`）/ 寻仙世家（`xunxian`）。
+ *
+ * 这个函数是**唯一判据**，两个消费点：
+ *   1. `core/formulas.js` 的 `isTechUnlocked()` —— 于是 `techStatus()` 会把它
+ *      判成 `locked`，界面按钮随之禁用、`researchableCount()` 不再把它算进去；
+ *   2. `core/engine.js` 的 `planResearch()` —— 在通用「缺前置」之前先查这一条，
+ *      于是拒绝理由说的是**互斥**，而不是含混的「须先研习」。
+ *
+ * @param {object} state 游戏状态
+ * @param {object} tech  科技定义
+ * @returns {object|null} 已被研习的那个同组科技（有 ⇒ 本项不可再研习）
+ */
+function exclusiveResearchBlocker(state, tech) {
+  const group = tech && tech.exclusiveGroup;
+  if (!group) return null;
+  return TECHS.find((t) => t.exclusiveGroup === group
+    && t.id !== tech.id
+    && isResearched(state, t.id)) || null;
+}
+
+/** 互斥的说明文案：拒绝理由与界面提示**共用这一句**（免得两处口径漂移）。 */
+function exclusiveResearchReason(blocker) {
+  if (!blocker) return '';
+  const names = CAPSTONE_TECHS.map((id) => `「${techLabelOf(id)}」`).join('');
+  return `${names}三者只能择一 —— 本家已立「${blocker.name}」，此路不再走`;
+}

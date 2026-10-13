@@ -235,7 +235,7 @@ const RES_CURRENCY = [
   }),
   makeResource('spiritStones', '灵石', 'currency', 'currency', (s) => resNum(resAt(s, 'spiritStones')), {
     rate: 'stonesPerSec', cap: null, gate: gateSecrets(SECRET_UNLOCK),
-    lockedUi: 'hide', hint: `集齐 ${SECRET_UNLOCK} 条秘闻，云深谷坊市才会开，银钱才换得动灵石`,
+    lockedUi: 'hide', hint: `集齐 ${SECRET_UNLOCK} 条秘闻，江南坊市才会开，银钱才换得动灵石`,
     note: '平价兑率：MARKET_EXCHANGE_BASE_SILVER → BASE_STONES×(1+tradeStoneMult)。',
   }),
   makeResource('secret', '秘闻', 'currency', 'currency', (s) => resCount(s, 'secrets'), {

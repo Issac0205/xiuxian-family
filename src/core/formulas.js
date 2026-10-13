@@ -10,7 +10,12 @@
  * scripts/smoke.mjs 里有断言逐项检查这三处是否对齐。
  */
 const MORTAL_EFFECT_KEYS = [
-  'estateDiscount', 'birthFlat', 'incomeMult', 'tradeSpeed', 'fieldBonus',
+  // ⚠ 【凡人篇 I3】原列表里有 `tradeSpeed`（「商队耗时 −15%」）。I1 取消商队后
+  //   它没有了消费者（engine.routeSeconds 不再存在，expeditionSeconds 故意不吃
+  //   科技加速），而「登记了却不生效」的键正是 docs/15 第八节点名的静默失败。
+  //   I3 把它从累加器、EFFECT_LABELS 与数据表里**一并删除**，原来是唯一用它的
+  //   「驿道（courier）」改挂 `secretChance`（探索真的会读它）。
+  'estateDiscount', 'birthFlat', 'incomeMult', 'fieldBonus',
   'tradeIncome', 'deathFlat', 'secretChance', 'explorePerSecFlat', 'vaultMult',
 ];
 
@@ -154,8 +159,13 @@ function isImmortalTechResearched(state, techId) {
  *   都要退化成「无前置」，而不是静默锁死一项科技。
  */
 function isTechUnlocked(state, tech) {
+  if (!tech) return false;
   if (!(tech.requires || []).every((r) => isResearched(state, r))) return false;
-  return (tech.requiresImmortal || []).every((r) => isImmortalTechResearched(state, r));
+  if (!(tech.requiresImmortal || []).every((r) => isImmortalTechResearched(state, r))) return false;
+  // 【凡人篇 I3】三条路线的第 5 阶三选一互斥：研习了其中一块碑，另外两块就
+  // 永久关闭（判据只有一处：systems/progression.js 的 exclusiveResearchBlocker）。
+  // 放在这里的好处：techStatus() / researchableCount() / 界面按钮全部自动跟上。
+  return !exclusiveResearchBlocker(state, tech);
 }
 
 /**

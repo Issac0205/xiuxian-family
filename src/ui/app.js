@@ -1,6 +1,6 @@
 /** 仙途面板的四项指标。 */
 const IMMORTAL_METRICS = [
-  ['secrets', '秘闻', '集齐足量秘闻，才能摸到云深谷坊市'],
+  ['secrets', '秘闻', '集齐足量秘闻，才能摸到江南坊市'],
   ['stones', '灵石', '凡人换来的修行货币'],
   ['qi', '炼气人口', '祛障或天生灵根诞生，每位修士独立管理'],
   ['innate', '天生修士', '上限可达炼气九层'],
@@ -81,7 +81,7 @@ function createUI({ getState, actions, rng }) {
    *     说明它靠什么成立，绝不允许「无 id 又能显示」这种第三种形态。
    * `resWhen` 是**已有页签门控**的显式例外（本页本身就是那个门控开的），
    * 唯一用到它的是探索：那一格量的是「在途探索队」，注册表里对应 `usedExpeditions`，
-   * 而它在探索页出现与否只取决于「商路科技已研」——与 `expeditionSlots` 无关，
+   * 而它在探索页出现与否只取决于「驿路科技已研」——与 `expeditionSlots` 无关，
    * 所以按 id 判可见性会误伤（恒隐藏），这里显式点名。
    */
   const PAGE_RES = {
@@ -236,6 +236,15 @@ function createUI({ getState, actions, rng }) {
     };
   }
 
+  /**
+   * 【凡人篇 I3】建凡人科技树：**按路线分组**，每条路线内部按 5 阶排。
+   *
+   * 改动前的形状是「七阶一条直线」（for TECH_TIERS → filter(tier)）。
+   * 现在外层是 TECH_ROUTES（三条路线 + 共用的城基组），行上带
+   * `data-route` / `data-tier` 两个属性 —— 这样「三条路线都画出来了」
+   * 与「第二阶开局不出现」都能被 uicheck 在真实浏览器里直接断言，
+   * 不必去数中文标题。
+   */
   function buildTechs() {
     const host = $('tech-list');
     // 【缺陷修复 · 由 6d2ce7f 引入】静态骨架把 #tech-list 包在
@@ -244,8 +253,8 @@ function createUI({ getState, actions, rng }) {
     // hidden 祖先内部 —— 界面上一条都看不见（房地产 / 建筑学 / 钱庄 / …），
     // 玩家会以为这些内容被删掉了，而家业页的建筑卡片还在提示
     // 「须研习『房地产』」，形成死结。
-    // smoke 抓不到这个：`#tech-list .tech[data-tech].length === 18` 照样通过，
-    // 因为 DOM 里确实有 18 个子节点 —— 无头垫片不计算可见性。
+    // smoke 抓不到这个：`#tech-list .tech[data-tech].length === TECHS.length` 照样通过，
+    // 因为 DOM 里确实有那么多个子节点 —— 无头垫片不计算可见性。
     // 修法：JS 接管后把占位层的 hidden 摘掉。容器 (#tech-list) 留在原位即可见，
     // 而且保住了原本「JS 接管前藏住静态标记」的防闪意图 —— 因为解除隐藏时
     // 紧跟其后的 innerHTML='' 会把静态标记清掉，玩家只可能看到 JS 构建的结果。
@@ -257,30 +266,36 @@ function createUI({ getState, actions, rng }) {
     host.innerHTML = '';
     techGroups.length = 0;
 
-    for (const tier of TECH_TIERS) {
-      const items = TECHS.filter((t) => t.tier === tier.tier);
+    for (const route of TECH_ROUTES) {
+      const items = TECHS.filter((t) => (t.route || 'base') === route.key)
+        .sort((a, b) => (a.tier || 0) - (b.tier || 0) || a.cost - b.cost);
       if (!items.length) continue;
 
       const group = document.createElement('div');
       group.className = 'tech-group';
+      group.dataset.route = route.key;
       const groupIds = items.map((t) => t.id);
 
       const head = document.createElement('div');
       head.className = 'tech-tier';
-      head.innerHTML = `<span class="tier-name">${tier.name}</span><span class="tier-hint">${tier.hint}</span>`;
+      head.innerHTML = `<span class="tier-name">${route.name}</span><span class="tier-hint">${route.hint}</span>`;
       group.appendChild(head);
 
       for (const tech of items) {
         const gains = techGainText(tech, BUILDING_MAP[tech.unlocksBuilding]?.name);
+        const rank = (TECH_TIERS.find((t) => t.tier === tech.tier) || {}).name || '';
         const row = document.createElement('div');
         row.className = 'tech';
         row.dataset.tech = tech.id;
+        row.dataset.route = route.key;
+        row.dataset.tier = String(tech.tier || '');
         row.title = tech.desc;
         row.innerHTML = `
           <div class="tech-mark">${tech.icon}</div>
           <div class="tech-body">
             <div class="tech-title">
               <span class="tech-name">${tech.name}</span>
+              <span class="tech-rank" data-role="rank" title="${rank}">${tech.tier || ''}</span>
               <span class="tech-cost" data-role="cost">—</span>
             </div>
             <div class="tech-gain">${gains.join(' · ')}</div>
@@ -298,7 +313,7 @@ function createUI({ getState, actions, rng }) {
       }
 
       host.appendChild(group);
-      techGroups.push({ root: group, ids: groupIds });
+      techGroups.push({ root: group, ids: groupIds, route: route.key });
     }
   }
 
@@ -434,25 +449,25 @@ function createUI({ getState, actions, rng }) {
   const GUIDE_STEPS = [
     { done: (s) => s.buildings.field >= 2, name:'添置田地', title:'先有良田，方能养活族人',
       desc:'田地能提升出生率，人口增长后每秒银两也会增加。建议先添置第二块田地。', page:'home', target:'building-list', key:'field', type:'building', button:'查看田地' },
-    { done: (s) => s.techs.includes('realestate'), name:'置办地契', title:'研习房地产，开启置业之路',
-      desc:'当前只能种地。研习「房地产」后才能修建地产，扩大营造容量。', page:'techs', target:'tech-list', key:'realestate', type:'tech', button:'前往格物' },
+    { done: (s) => s.techs.includes('realestate'), name:'置办地契', title:'研习商铺经营，开启置业之路',
+      desc:'当前只能种地。研习「商铺经营」后才能修建地产，扩大营造容量。', page:'techs', target:'tech-list', key:'realestate', type:'tech', button:'前往格物' },
     { done: (s) => s.techs.includes('architecture'), name:'营造屋舍', title:'解锁建筑学，扩充家族居所',
       desc:'人口住得太挤会提高死亡率。研习建筑学，尽快解锁房产。', page:'techs', target:'tech-list', key:'architecture', type:'tech', button:'前往格物' },
     { done: (s) => s.buildings.house >= 1, name:'安置族人', title:'建造房产，让家族兴旺',
       desc:'房产提升人口容纳量，但也会略微抬高其他建筑的价格。', page:'home', target:'building-list', key:'house', type:'building', button:'查看房产' },
-    { done: (s) => s.techs.includes('finance'), name:'经营银库', title:'研习金融，建立钱庄',
+    { done: (s) => s.techs.includes('finance'), name:'经营银库', title:'研习钱庄体系，建立钱庄',
       desc:'钱庄能提高银两储存上限，为后期高价科技和丹药筹备资金。', page:'techs', target:'tech-list', key:'finance', type:'tech', button:'前往格物' },
     { done: (s) => s.techs.includes('expansion'), name:'拓展势力', title:'研习对外扩张，为远行做准备',
       desc:'扩张可解锁演武台，但会带来一定的人口死亡代价。', page:'techs', target:'tech-list', key:'expansion', type:'tech', button:'前往格物' },
-    { done: (s) => s.techs.includes('trade'), name:'开辟驿路', title:'研习商路，让消息流动起来',
-      desc:'商路科技是寻仙探索的门槛，先具备金融与对外扩张能力。', page:'techs', target:'tech-list', key:'trade', type:'tech', button:'前往格物' },
+    { done: (s) => s.techs.includes('trade'), name:'开辟驿路', title:'研习驿路，让消息流动起来',
+      desc:'驿路科技是寻仙探索的门槛（它解锁驿馆，而驿馆是探索名额的唯一来源），先具备钱庄体系与对外扩张能力。', page:'techs', target:'tech-list', key:'trade', type:'tech', button:'前往格物' },
     { done: (s) => s.buildings.caravan >= 1, name:'兴建驿馆', title:'营造驿馆，遣族人出门探访',
       desc:'一座驿馆提供一支在途探索队的名额。族人出门探访能带回秘闻与见闻。', page:'home', target:'building-list', key:'caravan', type:'building', button:'查看驿馆' },
     { done: (s) => s.secrets.length >= SECRET_UNLOCK, name:'探寻秘闻', title:'遣族人探访，寻找修仙机缘',
-      desc:'收集十条秘闻即可找到云深谷坊市。研习「探秘者」能提高秘闻概率，但死亡率也会上升。', page:'trade', target:'route-list', type:'secrets', button:'前往探索' },
+      desc:'收集十条秘闻即可找到江南坊市。研习「江湖耳目」能提高秘闻概率，但死亡率也会上升。', page:'trade', target:'route-list', type:'secrets', button:'前往探索' },
     { done: (s) => s.techs.includes('quzhang'), name:'研习祛障', title:'窥见天光，研习祛障之术',
       desc:'集齐秘闻后研习祛障。后期研习所需银两可能超过原银库上限。', page:'techs', target:'tech-list', key:'quzhang', type:'tech', button:'前往格物' },
-    { done: (s) => s.spiritStones >= 1 || s.cultivation.pills > 0, name:'积攒灵石', title:'云深谷坊市，兑换灵石',
+    { done: (s) => s.spiritStones >= 1 || s.cultivation.pills > 0, name:'积攒灵石', title:'江南坊市，兑换灵石',
       desc:'进入探索界面的坊市，将银两兑换成灵石，准备祛障丹。', page:'trade', target:'market', type:'stones', button:'前往坊市' },
     { done: (s) => s.cultivation.qi >= 1, name:'踏入仙途', title:'服用祛障丹，冲击炼气',
       desc:'祛障丹并非必定成功。储备灵石后到仙途页尝试突破。', page:'immortal', target:'pill-box', type:'qi', button:'前往仙途' },
@@ -931,7 +946,12 @@ function createUI({ getState, actions, rng }) {
        *   「祛障」的跨树前置就是这样：不写出来，玩家只会看到它一直锁着。
        */
       const blockers = [];
-      if (status === 'locked' && !isResearched(s, tech.id)) {
+      // 【凡人篇 I3】第 5 阶的三选一互斥：这不是「缺前置」，而是「你已经选了另一块碑」。
+      //   文案与 planResearch 的拒绝理由共用同一条函数（免得两处口径漂移）。
+      const capstone = exclusiveResearchBlocker(s, tech);
+      if (capstone && status !== 'done') {
+        blockers.push(exclusiveResearchReason(capstone));
+      } else if (status === 'locked' && !isResearched(s, tech.id)) {
         // 【修复 用户实机缺陷 ③·拼音泄漏 · 第四落点】两处又是 `TECH_MAP/IMMORTAL_TECH_MAP
         //   …?.name || 原始 id` 的回退。前置条件表是两条线**共用**的，所以两处都用
         //   单一入口 `techLabelOf()`（它自己会先查仙道线再查凡人线）。
@@ -952,8 +972,12 @@ function createUI({ getState, actions, rng }) {
       ref.req.textContent = blockers.join(' · ');
 
       ref.btn.disabled = status !== 'ready';
-      ref.btn.textContent = status === 'done' ? '已研习' : status === 'locked' ? '需前置' : status === 'open' ? '银两不足' : '立即研习';
-      ref.btn.title = status === 'open' ? `还缺 ${fmt(Math.ceil(Math.max(0,tech.cost - s.silver)))} 两` : tech.desc;
+      ref.btn.textContent = status === 'done' ? '已研习'
+        : capstone ? '已择别路'
+          : status === 'locked' ? '需前置'
+            : status === 'open' ? '银两不足' : '立即研习';
+      ref.btn.title = capstone ? exclusiveResearchReason(capstone)
+        : status === 'open' ? `还缺 ${fmt(Math.ceil(Math.max(0,tech.cost - s.silver)))} 两` : tech.desc;
     }
 
     updateImmortalTechs(s);
@@ -1078,7 +1102,7 @@ function createUI({ getState, actions, rng }) {
       if (d.expeditionSlots === 0) {
         const div = document.createElement('div');
         div.className = 'caravan empty';
-        div.textContent = d.unlocked.caravan ? '尚无驿馆，驿路未通' : '须研习「商路」并建起驿馆';
+        div.textContent = d.unlocked.caravan ? '尚无驿馆，驿路未通' : '须研习「驿路」并建起驿馆';
         host.appendChild(div);
         return;
       }
@@ -1289,7 +1313,7 @@ function createUI({ getState, actions, rng }) {
     } else if (!researched) {
       note.innerHTML = d.marketUnlocked
         ? '已在「格物」中解锁<b>祛障</b>——研习它，才能服下祛障丹。'
-        : `集齐 <b>${fmt(d.secretGoal)}</b> 条秘闻，才能摸到云深谷坊市；`
+        : `集齐 <b>${fmt(d.secretGoal)}</b> 条秘闻，才能摸到江南坊市；`
           + '那是凡人换到灵石唯一的路。';
     } else {
       note.innerHTML =

@@ -77,7 +77,7 @@ function grantSecret(state, now = Date.now(), rng = Math.random) {
 
   const total = state.secrets.length;
   if (total === SECRET_UNLOCK) {
-    pushLog(state, `秘闻已集 ${SECRET_UNLOCK} 条，云深谷坊市的路，摸到了。`, 'unlock', null, now);
+    pushLog(state, `秘闻已集 ${SECRET_UNLOCK} 条，${CULTIVATOR_MARKET.shortName || CULTIVATOR_MARKET.name}的路，摸到了。`, 'unlock', null, now);
   }
   pushLog(state, `得秘闻一条（${total}/${SECRET_UNLOCK}）：${SECRETS[idx]}`, 'secret', null, now);
   return idx;
@@ -90,6 +90,12 @@ function planResearch(state, techId) {
   const tech = TECH_MAP[techId];
   if (!tech) return { ok: false, reason: '并无此术' };
   if (isResearched(state, tech.id)) return { ok: false, reason: '此术已研习' };
+
+  // 【凡人篇 I3】第 5 阶三选一互斥：必须在通用「缺前置」之前查，
+  //   否则玩家看到的理由是含混的「须先研习 …」，而不是「你已经在另一条路上立了碑」。
+  //   判据只有一处：systems/progression.js 的 exclusiveResearchBlocker()。
+  const capstone = exclusiveResearchBlocker(state, tech);
+  if (capstone) return { ok: false, reason: exclusiveResearchReason(capstone) };
 
   if (!isTechUnlocked(state, tech)) {
     const missing = tech.requires
@@ -130,6 +136,10 @@ function planResearch(state, techId) {
 function commitResearch(state, techId, now = Date.now()) {
   const tech = TECH_MAP[techId];
   if (!tech || isResearched(state, tech.id)) return { ok: false, reason: '此术已研习' };
+  // 【凡人篇 I3】互斥是硬闸：plan 拦一次、commit 再拦一次 ——
+  //   免得「先算好的 plan 在别人研习了另一块碑之后再兑现」这种绕法。
+  const capstone = exclusiveResearchBlocker(state, tech);
+  if (capstone) return { ok: false, reason: exclusiveResearchReason(capstone) };
   if (state.silver < tech.cost) return { ok: false, reason: '银两不足' };
 
   state.silver -= tech.cost;
@@ -367,7 +377,7 @@ function sell(state, id, count = 1, now = Date.now()) {
   return commitSell(state, id, count, now);
 }
 
-/* ────────────────────── 云深谷坊市：银两换灵石 ────────────────────── */
+/* ───── 江南坊市（data/trade.js 的 CULTIVATOR_MARKET，旧称云深谷）：银两换灵石 ───── */
 
 /**
  * 询价：再兑一笔灵石要多少银两、给多少灵石。不改动状态。
@@ -401,7 +411,7 @@ function planExchange(state, count = 1) {
   if (done >= limit) {
     return {
       ok: false,
-      reason: `云深谷坊市已吃不下更多银钱（${done}/${limit} 笔）——扩建坊市或通仙凡互市可再开胃口`,
+      reason: `${CULTIVATOR_MARKET.shortName || CULTIVATOR_MARKET.name}已吃不下更多银钱（${done}/${limit} 笔）——扩建坊市或通仙凡互市可再开胃口`,
       exhausted: true,
     };
   }
@@ -439,7 +449,7 @@ function planExchange(state, count = 1) {
     remaining: limit - done - batches,
     limit,
     quote: marketExchangeQuote(state, done),
-    label: `云深谷坊市兑灵石 ×${batches}`,
+    label: `${CULTIVATOR_MARKET.shortName || CULTIVATOR_MARKET.name}兑灵石 ×${batches}`,
   };
 }
 
@@ -454,7 +464,7 @@ function commitExchange(state, count = 1, now = Date.now()) {
 
   pushLog(
     state,
-    `于云深谷坊市兑得灵石 ${fmtStones(plan.stones)} 枚，耗银 ${fmt(plan.cost)} 两`
+    `于${CULTIVATOR_MARKET.name}兑得灵石 ${fmtStones(plan.stones)} 枚，耗银 ${fmt(plan.cost)} 两`
       + `（第 ${plan.index + plan.count}/${plan.limit} 笔）。`,
     'spirit',
     null,
@@ -531,8 +541,12 @@ function commitPill(state, pillId = 'quzhangdan', now = Date.now(), rng = Math.r
  *
  * ⚠ 原 `routeSeconds` **不再有对应物**：`expeditionSeconds` 故意不乘任何科技加速
  *   （加速会把 10/15/20 三道秘闻门变松）—— 详见 systems/expeditions.js 的注释。
- *   ⚠ 连带后果：凡人科技「驿道（courier）」的 `tradeSpeed: 0.15` 现在**没有消费者**，
- *     见 docs/104-凡人篇重构.md「已知遗留」。
+ *   ⚠ 连带后果（【凡人篇 I3】已修）：凡人科技「驿道（courier）」原来挂的
+ *     `tradeSpeed: 0.15` 因此没有消费者（点了等于没点）。I3 把这份额度改挂到
+ *     `secretChance`（探索归来结算 + 界面报价共用 exploreSecretChance），
+ *     并把 `tradeSpeed` 从累加器、EFFECT_LABELS 与数据表里一并删除。
+ *     仍然**生效**的是 `tradeIncome`：它的消费方是 `expeditionReward()`
+ *     （「出门探访带回的银两」，见 core/formulas.js），不是旧商路。
  */
 
 /** 为界面准备一份「可执行的操作」清单状态。 */

@@ -719,6 +719,29 @@ body {
 .tech-group { border-bottom: 1px solid rgba(255, 255, 255, 0.045); }
 .tech-group:last-child { border-bottom: 0; }
 
+/* 【凡人篇 I3】三条路线各给一层淡色底，玩家一眼看出这是三条不同的路 */
+.tech-group[data-route="clan"] .tech-tier { background: linear-gradient(90deg, rgba(217, 180, 94, 0.07), transparent); }
+.tech-group[data-route="rich"] .tech-tier { background: linear-gradient(90deg, rgba(150, 186, 226, 0.08), transparent); }
+.tech-group[data-route="rich"] .tier-name { color: #9dbbdd; }
+.tech-group[data-route="seek"] .tech-tier { background: linear-gradient(90deg, rgba(99, 201, 168, 0.08), transparent); }
+.tech-group[data-route="seek"] .tier-name { color: var(--jade); }
+.tech-group[data-route="base"] .tech-tier { background: linear-gradient(90deg, rgba(255, 255, 255, 0.035), transparent); }
+.tech-group[data-route="base"] .tier-name { color: var(--muted); }
+/* 阶徽：一 / 二 / 三 / 四 / 五 */
+.tech-rank {
+  flex: 0 0 auto;
+  min-width: 15px;
+  padding: 0 4px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 3px;
+  font-family: var(--font-serif);
+  font-size: 10.5px;
+  line-height: 15px;
+  text-align: center;
+  color: var(--muted-dim);
+}
+.tech.is-done .tech-rank { border-color: rgba(99, 201, 168, 0.35); color: var(--jade); }
+
 .tech-tier {
   display: flex;
   align-items: baseline;
@@ -1066,7 +1089,7 @@ body {
   font-style: italic;
 }
 
-/* ───────────────────────── 云深谷坊市 ───────────────────────── */
+/* ───────────────────── 江南坊市（旧称云深谷） ───────────────────── */
 
 .market {
   margin: 0 14px 14px;
@@ -2549,7 +2572,7 @@ body[data-theme="daotian"] ::-webkit-scrollbar-thumb:hover { background: #3a4c60
             <span class="bcard-count" data-role="count">×0</span>
           </div>
           <div class="bcard-tagline">驿路既通，山野间的消息自会流进来</div>
-          <div class="bcard-effect" data-role="effect">须研习「商路」</div>
+          <div class="bcard-effect" data-role="effect">须研习「驿路」</div>
         </div>
         <div class="bcard-buy">
           <button class="btn buy" data-action="buy" data-id="caravan" disabled="disabled">
@@ -2593,134 +2616,25 @@ body[data-theme="daotian"] ::-webkit-scrollbar-thumb:hover { background: #3a4c60
           </div>
           <div class="tech-list is-hidden" id="immortal-tech-list"></div>
           <div class="tech-list-static-placeholder" hidden>
-          <div class="tech-list" id="tech-list"><div class="tech-group"><div class="tech-tier"><span class="tier-name">一 · 立族</span><span class="tier-hint">从一姓一户，到有地有业</span></div><div class="tech is-open" data-tech="realestate" title="摸清了地契、税契与里正的门道，世家终于能在本乡置办田庄宅地。">
-          <div class="tech-mark">宅</div>
-          <div class="tech-body">
-            <div class="tech-title">
-              <span class="tech-name">房地产</span>
-              <span class="tech-cost" data-role="cost">250 两</span>
-            </div>
-            <div class="tech-gain">解锁营造「地产」</div>
-            <div class="tech-req" data-role="req"></div>
-          </div>
-          <button class="btn tech-btn" data-action="research" data-tech="realestate" disabled="disabled" title="还缺 137 两">银两不足</button></div></div><div class="tech-group"><div class="tech-tier"><span class="tier-name">二 · 兴家</span><span class="tier-hint">起广厦，通银钱</span></div><div class="tech is-locked" data-tech="architecture" title="夯土、榫卯、院落布局——族人不必再挤在一处，可起广厦安置老小。">
-          <div class="tech-mark">匠</div>
-          <div class="tech-body">
-            <div class="tech-title">
-              <span class="tech-name">建筑学</span>
-              <span class="tech-cost" data-role="cost">320 两</span>
-            </div>
-            <div class="tech-gain">解锁营造「房产」</div>
-            <div class="tech-req" data-role="req">须先研习 「房地产」</div>
-          </div>
-          <button class="btn tech-btn" data-action="research" data-tech="architecture" disabled="disabled" title="夯土、榫卯、院落布局——族人不必再挤在一处，可起广厦安置老小。">需前置</button></div><div class="tech is-locked" data-tech="finance" title="懂得了折色、兑付与存息，银钱可以存下来，不必再堆在自家地窖里。">
-          <div class="tech-mark">铢</div>
-          <div class="tech-body">
-            <div class="tech-title">
-              <span class="tech-name">金融</span>
-              <span class="tech-cost" data-role="cost">700 两</span>
-            </div>
-            <div class="tech-gain">解锁营造「钱庄」</div>
-            <div class="tech-req" data-role="req">须先研习 「房地产」</div>
-          </div>
-          <button class="btn tech-btn" data-action="research" data-tech="finance" disabled="disabled" title="懂得了折色、兑付与存息，银钱可以存下来，不必再堆在自家地窖里。">需前置</button></div></div><div class="tech-group"><div class="tech-tier"><span class="tier-name">三 · 拓土</span><span class="tier-hint">向外伸手，方有腾挪之地</span></div><div class="tech is-locked" data-tech="expansion" title="族中子弟走出本乡，与外姓争地争水。立起演武台，方有立威之所。">
-          <div class="tech-mark">旗</div>
-          <div class="tech-body">
-            <div class="tech-title">
-              <span class="tech-name">对外扩张</span>
-              <span class="tech-cost" data-role="cost">1200 两</span>
-            </div>
-            <div class="tech-gain">解锁营造「演武台」</div>
-            <div class="tech-req" data-role="req">须先研习 「建筑学」</div>
-          </div>
-          <button class="btn tech-btn" data-action="research" data-tech="expansion" disabled="disabled" title="族中子弟走出本乡，与外姓争地争水。立起演武台，方有立威之所。">需前置</button></div><div class="tech is-locked" data-tech="surveying" title="会看地形、会算工时，同样的银两能置下更多地产。">
-          <div class="tech-mark">矩</div>
-          <div class="tech-body">
-            <div class="tech-title">
-              <span class="tech-name">营造术</span>
-              <span class="tech-cost" data-role="cost">900 两</span>
-            </div>
-            <div class="tech-gain">地产价格 −15%</div>
-            <div class="tech-req" data-role="req">须先研习 「房地产」</div>
-          </div>
-          <button class="btn tech-btn" data-action="research" data-tech="surveying" disabled="disabled" title="会看地形、会算工时，同样的银两能置下更多地产。">需前置</button></div></div><div class="tech-group"><div class="tech-tier"><span class="tier-name">四 · 通商</span><span class="tier-hint">货通四方，人丁自聚</span></div><div class="tech is-locked" data-tech="household" title="编户齐民，生子入册。族中生育从此有了章程，人丁滋生更稳。">
-          <div class="tech-mark">册</div>
-          <div class="tech-body">
-            <div class="tech-title">
-              <span class="tech-name">户籍</span>
-              <span class="tech-cost" data-role="cost">1600 两</span>
-            </div>
-            <div class="tech-gain">基础出生率 +0.10%/秒</div>
-            <div class="tech-req" data-role="req">须先研习 「建筑学」</div>
-          </div>
-          <button class="btn tech-btn" data-action="research" data-tech="household" disabled="disabled" title="编户齐民，生子入册。族中生育从此有了章程，人丁滋生更稳。">需前置</button></div><div class="tech is-locked" data-tech="trade" title="摸清了各州关隘与抽分，可设驿站、养商队，让银钱自己跑起来。">
-          <div class="tech-mark">驼</div>
-          <div class="tech-body">
-            <div class="tech-title">
-              <span class="tech-name">商路</span>
-              <span class="tech-cost" data-role="cost">2600 两</span>
-            </div>
-            <div class="tech-gain">解锁营造「商队驿站」</div>
-            <div class="tech-req" data-role="req">须先研习 「金融」、「对外扩张」</div>
-          </div>
-          <button class="btn tech-btn" data-action="research" data-tech="trade" disabled="disabled" title="摸清了各州关隘与抽分，可设驿站、养商队，让银钱自己跑起来。">需前置</button></div><div class="tech is-locked" data-tech="tuntian" title="设屯田、修水利，同一块田地能养活更多人。">
-          <div class="tech-mark">耒</div>
-          <div class="tech-body">
-            <div class="tech-title">
-              <span class="tech-name">屯田</span>
-              <span class="tech-cost" data-role="cost">2200 两</span>
-            </div>
-            <div class="tech-gain">田地效果 +25%</div>
-            <div class="tech-req" data-role="req">须先研习 「对外扩张」</div>
-          </div>
-          <button class="btn tech-btn" data-action="research" data-tech="tuntian" disabled="disabled" title="设屯田、修水利，同一块田地能养活更多人。">需前置</button></div><div class="tech is-locked" data-tech="seeker" title="养一批专管打听的人。他们不走货，只走门路——商队赚得少了，人也折得多，但山野间的风声听得见了。">
-          <div class="tech-mark">探</div>
-          <div class="tech-body">
-            <div class="tech-title">
-              <span class="tech-name">探秘者</span>
-              <span class="tech-cost" data-role="cost">1800 两</span>
-            </div>
-            <div class="tech-gain">商路银两收益 −30% · 死亡率 +0.40%/秒 · 秘闻概率 +5%</div>
-            <div class="tech-req" data-role="req">须先研习 「商路」</div>
-          </div>
-          <button class="btn tech-btn" data-action="research" data-tech="seeker" disabled="disabled" title="养一批专管打听的人。他们不走货，只走门路——商队赚得少了，人也折得多，但山野间的风声听得见了。">需前置</button></div></div><div class="tech-group"><div class="tech-tier"><span class="tier-name">五 · 致远</span><span class="tier-hint">以术驭势，家业可久</span></div><div class="tech is-locked" data-tech="arithmetic" title="会记帐、会盘库，族中产出不再白白流失。">
-          <div class="tech-mark">筹</div>
-          <div class="tech-body">
-            <div class="tech-title">
-              <span class="tech-name">算学</span>
-              <span class="tech-cost" data-role="cost">3500 两</span>
-            </div>
-            <div class="tech-gain">银两产出 +10%</div>
-            <div class="tech-req" data-role="req">须先研习 「金融」、「户籍」</div>
-          </div>
-          <button class="btn tech-btn" data-action="research" data-tech="arithmetic" disabled="disabled" title="会记帐、会盘库，族中产出不再白白流失。">需前置</button></div><div class="tech is-locked" data-tech="courier" title="沿官道设驿、换马不换人，商队往返比别家快上一截。">
-          <div class="tech-mark">驿</div>
-          <div class="tech-body">
-            <div class="tech-title">
-              <span class="tech-name">驿道</span>
-              <span class="tech-cost" data-role="cost">6000 两</span>
-            </div>
-            <div class="tech-gain">商队耗时 −15%</div>
-            <div class="tech-req" data-role="req">须先研习 「商路」</div>
-          </div>
-          <button class="btn tech-btn" data-action="research" data-tech="courier" disabled="disabled" title="沿官道设驿、换马不换人，商队往返比别家快上一截。">需前置</button></div></div><div class="tech-group"><div class="tech-tier"><span class="tier-name">六 · 祛障</span><span class="tier-hint">破凡俗之障，方见天光</span></div><div class="tech is-locked" data-tech="quzhang" title="凡人篇的最后一道门。障一破，方见天光——但破障要拿命去试。">
-          <div class="tech-mark">障</div>
-          <div class="tech-body">
-            <div class="tech-title">
-              <span class="tech-name">祛障</span>
-              <span class="tech-cost" data-role="cost">5000 两</span>
-            </div>
-            <div class="tech-gain">解锁「祛障丹」</div>
-            <div class="tech-req" data-role="req">须先研习 「商路」 · 须集齐 10 条秘闻（0/10）</div>
-          </div>
-          <button class="btn tech-btn" data-action="research" data-tech="quzhang" disabled="disabled" title="凡人篇的最后一道门。障一破，方见天光——但破障要拿命去试。">需前置</button></div></div></div>
+          <!-- 【凡人篇 I3】静态骨架已删除。
+               它原来是「七阶一条直线」的一份手抄副本，而且**早已过期**：只抄了 12 条
+               （vault / marketexp / yizhuang / jixian / xiangxian / mutualmarket
+               六条根本没抄进去），文案还停在 I1 之前的「商路／商队」口径；
+               而 app.js 的 buildTechs() 一接管就 `innerHTML=''` 重建 ——
+               留一份必然过期的副本只会误导下一轮改动，所以整段删掉（JS 是唯一真相源）。
+               ⚠ `#tech-list` 本身与外面这层 `.tech-list-static-placeholder[hidden]`
+                 必须保留：scripts/smoke.mjs 有一条断言专门钉住
+                 「JS 接管后 #tech-list 不得有 hidden 祖先」（2026-10-11 的真实缺陷）。 -->
+          <div class="tech-list" id="tech-list"></div>
           </div>
           <p class="foot-note">
             研习科技可解锁新的营造门类，或直接精进家业数值。带<b>金色边框</b>的是当前买得起的。
             <br>
             <b>凡人 · 格物</b>花银两，长在城里；<b>仙道 · 参悟</b>花灵石与银两，长在修士身上。
-            两条线互相咬合：许多仙道之法要先有城里的本事（屯田、营造、户籍），
-            而城里也有几项非仙家不成（祛障、义庄、集贤馆）。
+            凡人侧分<b>三条路线</b>（人丁兴旺 / 富甲江南 / 寻仙问道），每条 5 阶，
+            第 5 阶<b>三选一</b>；三条路线之外另有「共业 · 城基」一组共用节点。
+            两条线互相咬合：许多仙道之法要先有城里的本事（精耕细作、营造术、宗族制度），
+            而城里也有几项非仙家不成（祛障、医药改善、藏书阁）。
           </p>
         </div>
       </section>
@@ -2769,7 +2683,7 @@ body[data-theme="daotian"] ::-webkit-scrollbar-thumb:hover { background: #3a4c60
             <span class="go-sub" data-role="allsub">未解锁</span>
           </button>
         </div></div></div>
-          <div class="caravan-slots" id="caravan-slots"><div class="caravan empty">须研习「商路」并建起驿馆</div></div>
+          <div class="caravan-slots" id="caravan-slots"><div class="caravan empty">须研习「驿路」并建起驿馆</div></div>
 
           <div class="secret-block">
             <div class="sec-head">
@@ -2782,7 +2696,7 @@ body[data-theme="daotian"] ::-webkit-scrollbar-thumb:hover { background: #3a4c60
 
           <div class="market" id="market">
             <div class="market-head">
-              <span class="market-name">云深谷坊市</span>
+              <span class="market-name">江南坊市（旧称云深谷）</span>
               <span class="chip chip-locked" id="market-chip">需 10 秘闻</span>
             </div>
             <p class="market-desc" id="market-desc">集齐 10 条秘闻，才能摸到这条路（现有 0 条）。</p>
@@ -2810,7 +2724,7 @@ body[data-theme="daotian"] ::-webkit-scrollbar-thumb:hover { background: #3a4c60
           </div>
         </div>
         <div class="panel-body">
-          <div class="metrics" id="immortal-metrics"><div class="metric" title="集齐足量秘闻，才能摸到云深谷坊市"><span class="m-label">秘闻</span><span class="m-value flat" data-role="v">0 / 10</span></div><div class="metric" title="凡人换来的修行货币"><span class="m-label">灵石</span><span class="m-value flat" data-role="v">0 枚</span></div><div class="metric" title="祛障或天生灵根诞生，每位修士独立管理。上限 = 5 + 凡人人口 ÷ 1000（科技按比例放大）"><span class="m-label">炼气人口</span><span class="m-value flat" data-role="v">0</span></div><div class="metric" title="上限可达炼气九层"><span class="m-label">天生修士</span><span class="m-value flat" data-role="v">0</span></div><div class="metric" title="服下多少枚"><span class="m-label">已服祛障丹</span><span class="m-value flat" data-role="v">0</span></div></div>
+          <div class="metrics" id="immortal-metrics"><div class="metric" title="集齐足量秘闻，才能摸到江南坊市"><span class="m-label">秘闻</span><span class="m-value flat" data-role="v">0 / 10</span></div><div class="metric" title="凡人换来的修行货币"><span class="m-label">灵石</span><span class="m-value flat" data-role="v">0 枚</span></div><div class="metric" title="祛障或天生灵根诞生，每位修士独立管理。上限 = 5 + 凡人人口 ÷ 1000（科技按比例放大）"><span class="m-label">炼气人口</span><span class="m-value flat" data-role="v">0</span></div><div class="metric" title="上限可达炼气九层"><span class="m-label">天生修士</span><span class="m-value flat" data-role="v">0</span></div><div class="metric" title="服下多少枚"><span class="m-label">已服祛障丹</span><span class="m-value flat" data-role="v">0</span></div></div>
 
           <div class="pill-box" id="pill-box">
             <div class="pill-info">
@@ -2820,7 +2734,7 @@ body[data-theme="daotian"] ::-webkit-scrollbar-thumb:hover { background: #3a4c60
             <button class="btn pill" data-action="pill" data-pill="quzhangdan" id="pill-btn" disabled="disabled">未解锁</button>
           </div>
 
-          <p class="note" id="immortal-note">集齐 <b>10</b> 条秘闻，才能摸到云深谷坊市；那是凡人换到灵石唯一的路。</p>
+          <p class="note" id="immortal-note">集齐 <b>10</b> 条秘闻，才能摸到江南坊市；那是凡人换到灵石唯一的路。</p>
         </div>
       </section>
 

@@ -719,6 +719,29 @@ body {
 .tech-group { border-bottom: 1px solid rgba(255, 255, 255, 0.045); }
 .tech-group:last-child { border-bottom: 0; }
 
+/* 【凡人篇 I3】三条路线各给一层淡色底，玩家一眼看出这是三条不同的路 */
+.tech-group[data-route="clan"] .tech-tier { background: linear-gradient(90deg, rgba(217, 180, 94, 0.07), transparent); }
+.tech-group[data-route="rich"] .tech-tier { background: linear-gradient(90deg, rgba(150, 186, 226, 0.08), transparent); }
+.tech-group[data-route="rich"] .tier-name { color: #9dbbdd; }
+.tech-group[data-route="seek"] .tech-tier { background: linear-gradient(90deg, rgba(99, 201, 168, 0.08), transparent); }
+.tech-group[data-route="seek"] .tier-name { color: var(--jade); }
+.tech-group[data-route="base"] .tech-tier { background: linear-gradient(90deg, rgba(255, 255, 255, 0.035), transparent); }
+.tech-group[data-route="base"] .tier-name { color: var(--muted); }
+/* 阶徽：一 / 二 / 三 / 四 / 五 */
+.tech-rank {
+  flex: 0 0 auto;
+  min-width: 15px;
+  padding: 0 4px;
+  border: 1px solid rgba(255, 255, 255, 0.14);
+  border-radius: 3px;
+  font-family: var(--font-serif);
+  font-size: 10.5px;
+  line-height: 15px;
+  text-align: center;
+  color: var(--muted-dim);
+}
+.tech.is-done .tech-rank { border-color: rgba(99, 201, 168, 0.35); color: var(--jade); }
+
 .tech-tier {
   display: flex;
   align-items: baseline;
@@ -1066,7 +1089,7 @@ body {
   font-style: italic;
 }
 
-/* ───────────────────────── 云深谷坊市 ───────────────────────── */
+/* ───────────────────── 江南坊市（旧称云深谷） ───────────────────── */
 
 .market {
   margin: 0 14px 14px;
@@ -2549,7 +2572,7 @@ body[data-theme="daotian"] ::-webkit-scrollbar-thumb:hover { background: #3a4c60
             <span class="bcard-count" data-role="count">×0</span>
           </div>
           <div class="bcard-tagline">驿路既通，山野间的消息自会流进来</div>
-          <div class="bcard-effect" data-role="effect">须研习「商路」</div>
+          <div class="bcard-effect" data-role="effect">须研习「驿路」</div>
         </div>
         <div class="bcard-buy">
           <button class="btn buy" data-action="buy" data-id="caravan" disabled="disabled">
@@ -2593,134 +2616,25 @@ body[data-theme="daotian"] ::-webkit-scrollbar-thumb:hover { background: #3a4c60
           </div>
           <div class="tech-list is-hidden" id="immortal-tech-list"></div>
           <div class="tech-list-static-placeholder" hidden>
-          <div class="tech-list" id="tech-list"><div class="tech-group"><div class="tech-tier"><span class="tier-name">一 · 立族</span><span class="tier-hint">从一姓一户，到有地有业</span></div><div class="tech is-open" data-tech="realestate" title="摸清了地契、税契与里正的门道，世家终于能在本乡置办田庄宅地。">
-          <div class="tech-mark">宅</div>
-          <div class="tech-body">
-            <div class="tech-title">
-              <span class="tech-name">房地产</span>
-              <span class="tech-cost" data-role="cost">250 两</span>
-            </div>
-            <div class="tech-gain">解锁营造「地产」</div>
-            <div class="tech-req" data-role="req"></div>
-          </div>
-          <button class="btn tech-btn" data-action="research" data-tech="realestate" disabled="disabled" title="还缺 137 两">银两不足</button></div></div><div class="tech-group"><div class="tech-tier"><span class="tier-name">二 · 兴家</span><span class="tier-hint">起广厦，通银钱</span></div><div class="tech is-locked" data-tech="architecture" title="夯土、榫卯、院落布局——族人不必再挤在一处，可起广厦安置老小。">
-          <div class="tech-mark">匠</div>
-          <div class="tech-body">
-            <div class="tech-title">
-              <span class="tech-name">建筑学</span>
-              <span class="tech-cost" data-role="cost">320 两</span>
-            </div>
-            <div class="tech-gain">解锁营造「房产」</div>
-            <div class="tech-req" data-role="req">须先研习 「房地产」</div>
-          </div>
-          <button class="btn tech-btn" data-action="research" data-tech="architecture" disabled="disabled" title="夯土、榫卯、院落布局——族人不必再挤在一处，可起广厦安置老小。">需前置</button></div><div class="tech is-locked" data-tech="finance" title="懂得了折色、兑付与存息，银钱可以存下来，不必再堆在自家地窖里。">
-          <div class="tech-mark">铢</div>
-          <div class="tech-body">
-            <div class="tech-title">
-              <span class="tech-name">金融</span>
-              <span class="tech-cost" data-role="cost">700 两</span>
-            </div>
-            <div class="tech-gain">解锁营造「钱庄」</div>
-            <div class="tech-req" data-role="req">须先研习 「房地产」</div>
-          </div>
-          <button class="btn tech-btn" data-action="research" data-tech="finance" disabled="disabled" title="懂得了折色、兑付与存息，银钱可以存下来，不必再堆在自家地窖里。">需前置</button></div></div><div class="tech-group"><div class="tech-tier"><span class="tier-name">三 · 拓土</span><span class="tier-hint">向外伸手，方有腾挪之地</span></div><div class="tech is-locked" data-tech="expansion" title="族中子弟走出本乡，与外姓争地争水。立起演武台，方有立威之所。">
-          <div class="tech-mark">旗</div>
-          <div class="tech-body">
-            <div class="tech-title">
-              <span class="tech-name">对外扩张</span>
-              <span class="tech-cost" data-role="cost">1200 两</span>
-            </div>
-            <div class="tech-gain">解锁营造「演武台」</div>
-            <div class="tech-req" data-role="req">须先研习 「建筑学」</div>
-          </div>
-          <button class="btn tech-btn" data-action="research" data-tech="expansion" disabled="disabled" title="族中子弟走出本乡，与外姓争地争水。立起演武台，方有立威之所。">需前置</button></div><div class="tech is-locked" data-tech="surveying" title="会看地形、会算工时，同样的银两能置下更多地产。">
-          <div class="tech-mark">矩</div>
-          <div class="tech-body">
-            <div class="tech-title">
-              <span class="tech-name">营造术</span>
-              <span class="tech-cost" data-role="cost">900 两</span>
-            </div>
-            <div class="tech-gain">地产价格 −15%</div>
-            <div class="tech-req" data-role="req">须先研习 「房地产」</div>
-          </div>
-          <button class="btn tech-btn" data-action="research" data-tech="surveying" disabled="disabled" title="会看地形、会算工时，同样的银两能置下更多地产。">需前置</button></div></div><div class="tech-group"><div class="tech-tier"><span class="tier-name">四 · 通商</span><span class="tier-hint">货通四方，人丁自聚</span></div><div class="tech is-locked" data-tech="household" title="编户齐民，生子入册。族中生育从此有了章程，人丁滋生更稳。">
-          <div class="tech-mark">册</div>
-          <div class="tech-body">
-            <div class="tech-title">
-              <span class="tech-name">户籍</span>
-              <span class="tech-cost" data-role="cost">1600 两</span>
-            </div>
-            <div class="tech-gain">基础出生率 +0.10%/秒</div>
-            <div class="tech-req" data-role="req">须先研习 「建筑学」</div>
-          </div>
-          <button class="btn tech-btn" data-action="research" data-tech="household" disabled="disabled" title="编户齐民，生子入册。族中生育从此有了章程，人丁滋生更稳。">需前置</button></div><div class="tech is-locked" data-tech="trade" title="摸清了各州关隘与抽分，可设驿站、养商队，让银钱自己跑起来。">
-          <div class="tech-mark">驼</div>
-          <div class="tech-body">
-            <div class="tech-title">
-              <span class="tech-name">商路</span>
-              <span class="tech-cost" data-role="cost">2600 两</span>
-            </div>
-            <div class="tech-gain">解锁营造「商队驿站」</div>
-            <div class="tech-req" data-role="req">须先研习 「金融」、「对外扩张」</div>
-          </div>
-          <button class="btn tech-btn" data-action="research" data-tech="trade" disabled="disabled" title="摸清了各州关隘与抽分，可设驿站、养商队，让银钱自己跑起来。">需前置</button></div><div class="tech is-locked" data-tech="tuntian" title="设屯田、修水利，同一块田地能养活更多人。">
-          <div class="tech-mark">耒</div>
-          <div class="tech-body">
-            <div class="tech-title">
-              <span class="tech-name">屯田</span>
-              <span class="tech-cost" data-role="cost">2200 两</span>
-            </div>
-            <div class="tech-gain">田地效果 +25%</div>
-            <div class="tech-req" data-role="req">须先研习 「对外扩张」</div>
-          </div>
-          <button class="btn tech-btn" data-action="research" data-tech="tuntian" disabled="disabled" title="设屯田、修水利，同一块田地能养活更多人。">需前置</button></div><div class="tech is-locked" data-tech="seeker" title="养一批专管打听的人。他们不走货，只走门路——商队赚得少了，人也折得多，但山野间的风声听得见了。">
-          <div class="tech-mark">探</div>
-          <div class="tech-body">
-            <div class="tech-title">
-              <span class="tech-name">探秘者</span>
-              <span class="tech-cost" data-role="cost">1800 两</span>
-            </div>
-            <div class="tech-gain">商路银两收益 −30% · 死亡率 +0.40%/秒 · 秘闻概率 +5%</div>
-            <div class="tech-req" data-role="req">须先研习 「商路」</div>
-          </div>
-          <button class="btn tech-btn" data-action="research" data-tech="seeker" disabled="disabled" title="养一批专管打听的人。他们不走货，只走门路——商队赚得少了，人也折得多，但山野间的风声听得见了。">需前置</button></div></div><div class="tech-group"><div class="tech-tier"><span class="tier-name">五 · 致远</span><span class="tier-hint">以术驭势，家业可久</span></div><div class="tech is-locked" data-tech="arithmetic" title="会记帐、会盘库，族中产出不再白白流失。">
-          <div class="tech-mark">筹</div>
-          <div class="tech-body">
-            <div class="tech-title">
-              <span class="tech-name">算学</span>
-              <span class="tech-cost" data-role="cost">3500 两</span>
-            </div>
-            <div class="tech-gain">银两产出 +10%</div>
-            <div class="tech-req" data-role="req">须先研习 「金融」、「户籍」</div>
-          </div>
-          <button class="btn tech-btn" data-action="research" data-tech="arithmetic" disabled="disabled" title="会记帐、会盘库，族中产出不再白白流失。">需前置</button></div><div class="tech is-locked" data-tech="courier" title="沿官道设驿、换马不换人，商队往返比别家快上一截。">
-          <div class="tech-mark">驿</div>
-          <div class="tech-body">
-            <div class="tech-title">
-              <span class="tech-name">驿道</span>
-              <span class="tech-cost" data-role="cost">6000 两</span>
-            </div>
-            <div class="tech-gain">商队耗时 −15%</div>
-            <div class="tech-req" data-role="req">须先研习 「商路」</div>
-          </div>
-          <button class="btn tech-btn" data-action="research" data-tech="courier" disabled="disabled" title="沿官道设驿、换马不换人，商队往返比别家快上一截。">需前置</button></div></div><div class="tech-group"><div class="tech-tier"><span class="tier-name">六 · 祛障</span><span class="tier-hint">破凡俗之障，方见天光</span></div><div class="tech is-locked" data-tech="quzhang" title="凡人篇的最后一道门。障一破，方见天光——但破障要拿命去试。">
-          <div class="tech-mark">障</div>
-          <div class="tech-body">
-            <div class="tech-title">
-              <span class="tech-name">祛障</span>
-              <span class="tech-cost" data-role="cost">5000 两</span>
-            </div>
-            <div class="tech-gain">解锁「祛障丹」</div>
-            <div class="tech-req" data-role="req">须先研习 「商路」 · 须集齐 10 条秘闻（0/10）</div>
-          </div>
-          <button class="btn tech-btn" data-action="research" data-tech="quzhang" disabled="disabled" title="凡人篇的最后一道门。障一破，方见天光——但破障要拿命去试。">需前置</button></div></div></div>
+          <!-- 【凡人篇 I3】静态骨架已删除。
+               它原来是「七阶一条直线」的一份手抄副本，而且**早已过期**：只抄了 12 条
+               （vault / marketexp / yizhuang / jixian / xiangxian / mutualmarket
+               六条根本没抄进去），文案还停在 I1 之前的「商路／商队」口径；
+               而 app.js 的 buildTechs() 一接管就 `innerHTML=''` 重建 ——
+               留一份必然过期的副本只会误导下一轮改动，所以整段删掉（JS 是唯一真相源）。
+               ⚠ `#tech-list` 本身与外面这层 `.tech-list-static-placeholder[hidden]`
+                 必须保留：scripts/smoke.mjs 有一条断言专门钉住
+                 「JS 接管后 #tech-list 不得有 hidden 祖先」（2026-10-11 的真实缺陷）。 -->
+          <div class="tech-list" id="tech-list"></div>
           </div>
           <p class="foot-note">
             研习科技可解锁新的营造门类，或直接精进家业数值。带<b>金色边框</b>的是当前买得起的。
             <br>
             <b>凡人 · 格物</b>花银两，长在城里；<b>仙道 · 参悟</b>花灵石与银两，长在修士身上。
-            两条线互相咬合：许多仙道之法要先有城里的本事（屯田、营造、户籍），
-            而城里也有几项非仙家不成（祛障、义庄、集贤馆）。
+            凡人侧分<b>三条路线</b>（人丁兴旺 / 富甲江南 / 寻仙问道），每条 5 阶，
+            第 5 阶<b>三选一</b>；三条路线之外另有「共业 · 城基」一组共用节点。
+            两条线互相咬合：许多仙道之法要先有城里的本事（精耕细作、营造术、宗族制度），
+            而城里也有几项非仙家不成（祛障、医药改善、藏书阁）。
           </p>
         </div>
       </section>
@@ -2769,7 +2683,7 @@ body[data-theme="daotian"] ::-webkit-scrollbar-thumb:hover { background: #3a4c60
             <span class="go-sub" data-role="allsub">未解锁</span>
           </button>
         </div></div></div>
-          <div class="caravan-slots" id="caravan-slots"><div class="caravan empty">须研习「商路」并建起驿馆</div></div>
+          <div class="caravan-slots" id="caravan-slots"><div class="caravan empty">须研习「驿路」并建起驿馆</div></div>
 
           <div class="secret-block">
             <div class="sec-head">
@@ -2782,7 +2696,7 @@ body[data-theme="daotian"] ::-webkit-scrollbar-thumb:hover { background: #3a4c60
 
           <div class="market" id="market">
             <div class="market-head">
-              <span class="market-name">云深谷坊市</span>
+              <span class="market-name">江南坊市（旧称云深谷）</span>
               <span class="chip chip-locked" id="market-chip">需 10 秘闻</span>
             </div>
             <p class="market-desc" id="market-desc">集齐 10 条秘闻，才能摸到这条路（现有 0 条）。</p>
@@ -2810,7 +2724,7 @@ body[data-theme="daotian"] ::-webkit-scrollbar-thumb:hover { background: #3a4c60
           </div>
         </div>
         <div class="panel-body">
-          <div class="metrics" id="immortal-metrics"><div class="metric" title="集齐足量秘闻，才能摸到云深谷坊市"><span class="m-label">秘闻</span><span class="m-value flat" data-role="v">0 / 10</span></div><div class="metric" title="凡人换来的修行货币"><span class="m-label">灵石</span><span class="m-value flat" data-role="v">0 枚</span></div><div class="metric" title="祛障或天生灵根诞生，每位修士独立管理。上限 = 5 + 凡人人口 ÷ 1000（科技按比例放大）"><span class="m-label">炼气人口</span><span class="m-value flat" data-role="v">0</span></div><div class="metric" title="上限可达炼气九层"><span class="m-label">天生修士</span><span class="m-value flat" data-role="v">0</span></div><div class="metric" title="服下多少枚"><span class="m-label">已服祛障丹</span><span class="m-value flat" data-role="v">0</span></div></div>
+          <div class="metrics" id="immortal-metrics"><div class="metric" title="集齐足量秘闻，才能摸到江南坊市"><span class="m-label">秘闻</span><span class="m-value flat" data-role="v">0 / 10</span></div><div class="metric" title="凡人换来的修行货币"><span class="m-label">灵石</span><span class="m-value flat" data-role="v">0 枚</span></div><div class="metric" title="祛障或天生灵根诞生，每位修士独立管理。上限 = 5 + 凡人人口 ÷ 1000（科技按比例放大）"><span class="m-label">炼气人口</span><span class="m-value flat" data-role="v">0</span></div><div class="metric" title="上限可达炼气九层"><span class="m-label">天生修士</span><span class="m-value flat" data-role="v">0</span></div><div class="metric" title="服下多少枚"><span class="m-label">已服祛障丹</span><span class="m-value flat" data-role="v">0</span></div></div>
 
           <div class="pill-box" id="pill-box">
             <div class="pill-info">
@@ -2820,7 +2734,7 @@ body[data-theme="daotian"] ::-webkit-scrollbar-thumb:hover { background: #3a4c60
             <button class="btn pill" data-action="pill" data-pill="quzhangdan" id="pill-btn" disabled="disabled">未解锁</button>
           </div>
 
-          <p class="note" id="immortal-note">集齐 <b>10</b> 条秘闻，才能摸到云深谷坊市；那是凡人换到灵石唯一的路。</p>
+          <p class="note" id="immortal-note">集齐 <b>10</b> 条秘闻，才能摸到江南坊市；那是凡人换到灵石唯一的路。</p>
         </div>
       </section>
 
@@ -4211,18 +4125,32 @@ function cloneState(state) {
 
 /* ══════════ src/data/techs.js ══════════ */
 /**
- * 凡人科技线。
+ * 凡人科技线 —— 【凡人篇 I3】三条路线 × 5 阶。
+ *
+ * 玩家要能「每周目走不同方向」，所以凡人线不再是七阶一条直线，而是三条
+ * 各自独立成链的路线，第 5 阶三选一互斥（百年望族 / 江南巨富 / 寻仙世家）：
+ *
+ *   TECH_ROUTES = [
+ *     clan  一 · 人丁兴旺   household → tuntian → yizhuang → jiangnan_clan → xiangxian
+ *     rich  二 · 富甲江南   realestate → finance → vault → marketexp → jiangnan_rich
+ *     seek  三 · 寻仙问道   seeker → jixian → sishu → fanggu → xunxian
+ *     base  共业 · 城基     architecture / surveying / expansion / trade /
+ *                          arithmetic / courier / quzhang / mutualmarket
+ *   ]
  *
  * 设计原则：
  *  - 开局只会「种地」——田地是唯一不需要科技的营造项。
- *  - 其余建筑全部由科技解锁，其中「房地产 / 建筑学 / 对外扩张」的命名与顺序
- *    由需求指定，钱庄与驿站对应的「金融 / 商路」是同一风格补齐的。
- *  - 除解锁建筑外，还有若干「精进」类科技直接改数值，让这条线有纵深。
+ *  - 三条路线的第 1 阶都**零前置**（`realestate` / `household` / `seeker`），
+ *    所以「先走哪条」是一局里第一个真决策，而不是被上一阶逼出来的。
+ *  - 第 5 阶**三选一互斥**：`exclusiveGroup: 'capstone'`。互斥判据落在
+ *    `src/systems/progression.js` 的 `exclusiveResearchBlocker()`，
+ *    消费点是 `core/formulas.js` 的 `isTechUnlocked()` 与
+ *    `core/engine.js` 的 `planResearch()`（拒绝时必须说明「与谁择一」）。
+ *    ⚠ 互斥只发生在第 5 阶：早期选择（前四阶）永不后悔、永不互斥。
  *
  * ⚠ **没有孤儿节点**：每一项科技都必须至少被另一项 require，
  *   或者被仙道侧 require（见 data/immortal-techs.js）。
- *   这条规则是仿真的科技盘点（balance.mjs 的 auditTechs）逐条查的，
- *   上一版有 6 项点了只为它自己，这一版清零。
+ *   这条规则是仿真的科技盘点（balance.mjs 的 auditTechs）逐条查的。
  *
  * ⚠ **跨树前置只能挂在凡人线的「可选深处」，绝不能挂在主线上。**
  *   这条规则是踩过坑之后立的：第一版让「祛障」require 仙道「引灵」，
@@ -4232,130 +4160,351 @@ function cloneState(state) {
  *   这就是**互相卡脖子**，也正是本次设计要避免的东西。
  *
  *   现在跨树前置的方向是「仙道依赖凡人」：
- *     仙道「灵田」← 凡人「屯田」
- *     仙道「灵脉感应」← 凡人「探秘者」
- *   而凡人侧的跨树前置（义庄←悬壶、集贤馆←聚灵阵）都是**tier 6–7 的
- *   可选深处**，不挡任何主线。主线的方向永远是「凡人→仙道」单向的。
+ *     仙道「灵田」← 凡人「精耕细作」（id 仍是 tuntian）
+ *     仙道「灵脉感应」← 凡人「江湖耳目」（id 仍是 seeker）
+ *   而凡人侧的跨树前置（医药改善←悬壶、藏书阁←聚灵阵、仙凡互市←界墟）
+ *   都在各路线的深处（第 3–5 阶），不挡任何主线。
+ *
+ * ⚠ **id 只增不减**（`node scripts/savecompat.mjs` 拿 fixtures/save-ids.json
+ *   逐表比对）。I3 只改了 `name` / `desc` / `requires` / `effect` / `tier` /
+ *   新增 `route`，**没有删或改任何一个 id**。
  *
  * effect 支持的键：见文件末尾的 EFFECT_LABELS，那里登记了全部合法键。
  *   （凡人侧与仙道侧共用一张表；键在这里定义，在 core/formulas.js 里结算。）
  */
 
-const TECH_TIERS = [
-  { tier: 1, name: '一 · 立族', hint: '从一姓一户，到有地有业' },
-  { tier: 2, name: '二 · 兴家', hint: '起广厦，通银钱' },
-  { tier: 3, name: '三 · 拓土', hint: '向外伸手，方有腾挪之地' },
-  { tier: 4, name: '四 · 通商', hint: '货通四方，人丁自聚' },
-  { tier: 5, name: '五 · 致远', hint: '以术驭势，家业可久' },
-  { tier: 6, name: '六 · 祛障', hint: '门开了，就该想着怎么把根扎在城里' },
-  { tier: 7, name: '七 · 望郡', hint: '一邑之望，与仙家共此城' },
+/**
+ * 三条路线 + 一个共用的「城基」组。
+ *   key   路由键（写进 tech.route 与界面上的 data-route）
+ *   name  界面上的组标题
+ *   hint  组标题右边那一行小字（说清这条路线的性格）
+ *
+ * ⚠ 字段叫 `key` 而不是 `id`，是**有意的**：`scripts/savecompat.mjs` 会把
+ *   `src/data/*.js` 里每一处 id 字面量收进存档基线（只增不减）。路线键是展示层的
+ *   东西，没必要被基线冻住 —— 所以不让它长得像一条数据表的 id。
+ *   （同理：这段注释里也不要**写出** id 字面量的形状，否则会被那条正则收进基线。）
+ */
+const TECH_ROUTES = [
+  {
+    key: 'clan', name: '一 · 人丁兴旺', icon: '丁',
+    hint: '田地、宗族、医药 —— 把一姓人扎进这片土里',
+  },
+  {
+    key: 'rich', name: '二 · 富甲江南', icon: '银',
+    hint: '铺面、钱庄、库房、坊市 —— 让银钱自己长大',
+  },
+  {
+    key: 'seek', name: '三 · 寻仙问道', icon: '寻',
+    hint: '耳目、藏书、私塾、访古 —— 一步步摸到修行的边',
+  },
+  {
+    key: 'base', name: '共业 · 城基', icon: '基',
+    hint: '三条路线都要踩的共用节点（营造 / 驿路 / 祛障 / 互市）',
+  },
 ];
 
+/**
+ * 每一条路线内部的五个阶。
+ * ⚠ 阶只是**路线内部**的先后与展示分层，跨路线的比较不靠它。
+ */
+const TECH_TIERS = [
+  { tier: 1, name: '一阶 · 起手', hint: '零前置 —— 三条路随你先挑一条' },
+  { tier: 2, name: '二阶 · 扎根', hint: '把第一条路走深（前置满足才现身）' },
+  { tier: 3, name: '三阶 · 兴业', hint: '别的路线开始反过来喂这一条' },
+  { tier: 4, name: '四阶 · 门户', hint: '本家在这一带已经叫得出字号' },
+  { tier: 5, name: '五阶 · 世家', hint: '三选一：百年望族 / 江南巨富 / 寻仙世家' },
+];
+
+/**
+ * 【凡人篇 I3】第 5 阶的三选一互斥。
+ *
+ * 只做一件事：研习了其中一个，另两个的 `plan` 必须**拒绝并说明理由**
+ * （判据在 systems/progression.js 的 exclusiveResearchBlocker）。
+ * 这是「每周目走不同方向」的最小实现 —— 前四阶永不互斥，所以早选不吃亏。
+ */
+const CAPSTONE_GROUP = 'capstone';
+const CAPSTONE_TECHS = ['xiangxian', 'jiangnan_rich', 'xunxian'];
+
 const TECHS = [
+  /* ══════════════ 一 · 人丁兴旺（clan）══════════════ */
+  {
+    id: 'household',
+    name: '宗族制度',
+    icon: '册',
+    route: 'clan',
+    tier: 1,
+    cost: 1600,
+    requires: [],
+    effect: { birthFlat: 0.001 },
+    desc: '编户齐民，生子入册，房长支长各管一摊。族中生育从此有了章程，'
+      + '人丁滋生更稳 —— 这一条是整条「人丁兴旺」路的头一块砖。',
+  },
+  {
+    id: 'tuntian',
+    name: '精耕细作',
+    icon: '耒',
+    route: 'clan',
+    tier: 2,
+    cost: 2200,
+    requires: ['household'],
+    effect: { fieldBonus: 0.25 },
+    /**
+     * 跨树前置：精耕细作要「引灵」（id 与位置一个字都没动）。
+     * 理由是叙事上的：引灵台把灵气引到田里，同一块田才真的能多养人。
+     * 数值上它让「凡人篇的农业」与「仙道篇的灵气」第一次接上。
+     */
+    requiresImmortal: ['yinling'],
+    desc: '设屯田、修水利，选种、轮作、淤田，同一块田地能养活更多人。'
+      + '引灵台的水先过一遍田垄，收成便不只多一成。',
+  },
+  {
+    id: 'yizhuang',
+    name: '医药改善',
+    icon: '药',
+    route: 'clan',
+    tier: 3,
+    cost: 9000,
+    requires: ['tuntian'],
+    effect: { deathFlat: -0.0012, birthFlat: 0.0008 },
+    /** 跨树前置：医药改善要「悬壶」（仙家的医药）。见 data/immortal-techs.js。 */
+    requiresImmortal: ['xuanhu'],
+    desc: '在城外立一处义庄，收殓无主的尸骨，也给族里老弱一口热粥；'
+      + '再请悬壶堂的郎中过府坐馆。死的人少了，活着的人也就敢多生。',
+  },
+  {
+    id: 'jiangnan_clan',
+    name: '江南名门',
+    icon: '门',
+    route: 'clan',
+    tier: 4,
+    cost: 30000,
+    requires: ['yizhuang'],
+    effect: { birthFlat: 0.0015, deathFlat: -0.0006 },
+    desc: '三世积谷，五世积德，到这一代终于有人肯把女儿嫁进来、'
+      + '也有人肯把儿子送进来读书。门第既立，生养与医药都不再是一家一户的事。',
+  },
+  {
+    id: 'xiangxian',
+    name: '百年望族',
+    icon: '乡',
+    route: 'clan',
+    tier: 5,
+    cost: 45000,
+    requires: ['jiangnan_clan'],
+    terminal: true,
+    exclusiveGroup: CAPSTONE_GROUP,
+    effect: { incomeMult: 0.25, birthFlat: 0.0015, secretChance: 0.04 },
+    desc: '一姓在此地传了七代，里正见你祖父要叫一声老太爷。'
+      + '祠堂里的牌位比县衙的卷宗还厚——这城里的事，一半在族中过。'
+      + '（与「江南巨富」「寻仙世家」三选一。）',
+  },
+
+  /* ══════════════ 二 · 富甲江南（rich）══════════════ */
   {
     id: 'realestate',
-    name: '房地产',
+    name: '商铺经营',
     icon: '宅',
+    route: 'rich',
     tier: 1,
     cost: 250,
     requires: [],
     unlocksBuilding: 'estate',
-    desc: '摸清了地契、税契与里正的门道，世家终于能在本乡置办田庄宅地。',
+    desc: '摸清了地契、铺面、税契与里正的门道，世家终于能在本乡置办田庄宅地，'
+      + '也能盘下几间临街的铺子。',
   },
+  {
+    id: 'finance',
+    name: '钱庄体系',
+    icon: '铢',
+    route: 'rich',
+    tier: 2,
+    cost: 700,
+    requires: ['realestate'],
+    unlocksBuilding: 'bank',
+    desc: '懂得了折色、兑付与存息，银钱可以存下来，不必再堆在自家地窖里。'
+      + '票号既通，本家的银子才敢往远处走。',
+  },
+  {
+    id: 'vault',
+    name: '资金容量',
+    icon: '库',
+    route: 'rich',
+    tier: 3,
+    cost: 4800,
+    requires: ['finance'],
+    effect: { vaultMult: 1.0 },
+    desc: '钱庄只管把银子收进来，库房管的是「收进来之后还数得清」。'
+      + '账房分门别类、按季盘库，同一批仓库能装下的银子翻了一倍。'
+      + '——坊市那头肯不肯多称几钱灵石，全看你先拿得出多少现银。',
+  },
+  {
+    id: 'marketexp',
+    name: '商业网络',
+    icon: '廛',
+    route: 'rich',
+    tier: 4,
+    cost: 8000,
+    requires: ['vault', 'arithmetic'],
+    effect: { tradeStoneMult: 0.25 },
+    desc: '把江南坊市那头的小集扩成一条街，再沿水路布下几处货栈。'
+      + '本家的银钱递过去，对面肯多称几钱灵石——兑率这东西，向来是人多的一方说了算。',
+  },
+  {
+    id: 'jiangnan_rich',
+    name: '江南巨富',
+    icon: '富',
+    route: 'rich',
+    tier: 5,
+    cost: 50000,
+    requires: ['marketexp'],
+    terminal: true,
+    exclusiveGroup: CAPSTONE_GROUP,
+    effect: { incomeMult: 0.3, tradeStoneMult: 0.2 },
+    desc: '到这一代，本家的字号在江南几条水路上都挂得住。'
+      + '银钱已经不必自己跑——是它自己认得回来的路。'
+      + '（与「百年望族」「寻仙世家」三选一。）',
+  },
+
+  /* ══════════════ 三 · 寻仙问道（seek）══════════════ */
+  {
+    id: 'seeker',
+    name: '江湖耳目',
+    icon: '探',
+    route: 'seek',
+    tier: 1,
+    cost: 1800,
+    requires: [],
+    /**
+     * 拿银两与人命换消息。
+     *
+     * ⚠ 【凡人篇 I1/I3】`tradeIncome` 原写的是「商路银两收益」，
+     *   商队取消后它的消费方变成了**探索结算**（core/formulas.js 的
+     *   `expeditionReward()`，被 systems/expeditions.js 的归来结算与
+     *   界面的报价各读一次）—— 也就是「出门探访带回的银两少三成」。
+     *   所以这个键**不是**死效果，文案在 I3 一并改到探索口径。
+     *   （对照：`courier` 原来的 `tradeSpeed` 才是真的没有消费者，见那里。）
+     */
+    effect: { tradeIncome: -0.3, deathFlat: 0.004, secretChance: 0.05 },
+    desc: '养一批专管打听的人。他们不走货，只走门路——出门探访带回的银两少三成，'
+      + '人也折得多，但山野间的风声听得见了。',
+  },
+  {
+    id: 'jixian',
+    name: '藏书阁',
+    icon: '贤',
+    route: 'seek',
+    tier: 2,
+    cost: 11000,
+    requires: ['seeker'],
+    effect: { incomeMult: 0.12, secretChance: 0.03, explorePerSecFlat: 0.00012 },
+    /**
+     * 跨树前置：藏书阁要「聚灵阵」。
+     * 阁里养的不是普通读书人，是**替仙家记档、递帖子的人** ——
+     * 所以它顺带给了「修士自动寻秘」，这也是城里唯一一项
+     * 「仙道进度直接变成凡人科技的产出」。
+     */
+    requiresImmortal: ['julingzhen'],
+    desc: '养几个读书人，管账、修谱、也管往山外递帖子。'
+      + '阁里清静，日子久了，什么话都能听见——哪怕说话的人不在城里。',
+  },
+  {
+    id: 'sishu',
+    name: '私塾',
+    icon: '塾',
+    route: 'seek',
+    tier: 3,
+    cost: 12000,
+    requires: ['jixian'],
+    effect: { incomeMult: 0.08, secretChance: 0.03 },
+    desc: '族中子弟不必再跟着父兄下地。识字、算账、读山志、记舆图 ——'
+      + '认得字的人多了，山外递进来的一张纸才有人看得出值钱。',
+  },
+  {
+    id: 'fanggu',
+    name: '访古寻迹',
+    icon: '古',
+    route: 'seek',
+    tier: 4,
+    cost: 20000,
+    requires: ['sishu'],
+    effect: { secretChance: 0.05, explorePerSecFlat: 0.0002 },
+    desc: '照着旧地方志与山志，把断碑、废观、老渡口一处一处走一遍。'
+      + '凡人找不到仙家，但凡人的脚力能把仙家的旧迹踩出来。',
+  },
+  {
+    id: 'xunxian',
+    name: '寻仙世家',
+    icon: '仙',
+    route: 'seek',
+    tier: 5,
+    cost: 40000,
+    requires: ['fanggu'],
+    terminal: true,
+    exclusiveGroup: CAPSTONE_GROUP,
+    effect: { secretChance: 0.08, explorePerSecFlat: 0.0003 },
+    desc: '到这一代，本家已经不必四处打听：山里那头会自己把话递下来。'
+      + '一姓人家几代人都在找同一件事，这件事也就认了这一姓。'
+      + '（与「百年望族」「江南巨富」三选一。）',
+  },
+
+  /* ══════════════ 共业 · 城基（base）：三条路线共用的节点 ══════════════ */
   {
     id: 'architecture',
     name: '建筑学',
     icon: '匠',
-    tier: 2,
+    route: 'base',
+    tier: 1,
     cost: 320,
     requires: ['realestate'],
     unlocksBuilding: 'house',
     desc: '夯土、榫卯、院落布局——族人不必再挤在一处，可起广厦安置老小。',
   },
   {
-    id: 'finance',
-    name: '金融',
-    icon: '铢',
+    id: 'surveying',
+    name: '营造术',
+    icon: '矩',
+    route: 'base',
     tier: 2,
-    cost: 700,
-    requires: ['realestate'],
-    unlocksBuilding: 'bank',
-    desc: '懂得了折色、兑付与存息，银钱可以存下来，不必再堆在自家地窖里。',
+    cost: 900,
+    requires: ['architecture'],
+    effect: { estateDiscount: 0.15 },
+    desc: '会看地形、会算工时，同样的银两能置下更多地产。',
   },
   {
     id: 'expansion',
     name: '对外扩张',
     icon: '旗',
-    tier: 3,
+    route: 'base',
+    tier: 2,
     cost: 1200,
     requires: ['architecture'],
     unlocksBuilding: 'arena',
     desc: '族中子弟走出本乡，与外姓争地争水。立起演武台，方有立威之所。',
   },
   {
-    id: 'surveying',
-    name: '营造术',
-    icon: '矩',
-    tier: 3,
-    cost: 900,
-    requires: ['realestate'],
-    effect: { estateDiscount: 0.15 },
-    desc: '会看地形、会算工时，同样的银两能置下更多地产。',
-  },
-  {
-    id: 'household',
-    name: '户籍',
-    icon: '册',
-    tier: 4,
-    cost: 1600,
-    requires: ['architecture'],
-    effect: { birthFlat: 0.001 },
-    desc: '编户齐民，生子入册。族中生育从此有了章程，人丁滋生更稳。',
-  },
-  {
     id: 'trade',
-    name: '商路',
-    icon: '驼',
-    tier: 4,
+    name: '驿路',
+    icon: '驿',
+    route: 'base',
+    tier: 3,
     cost: 2600,
     requires: ['finance', 'expansion'],
-    unlocksBuilding: 'caravan',
-    desc: '摸清了各州关隘与抽分，可设驿站、养商队，让银钱自己跑起来。',
-  },
-  {
-    id: 'tuntian',
-    name: '屯田',
-    icon: '耒',
-    tier: 4,
-    cost: 2200,
-    requires: ['expansion'],
-    effect: { fieldBonus: 0.25 },
     /**
-     * 跨树前置：屯田要「引灵」。
-     * 理由是叙事上的：引灵台把灵气引到田里，屯田才真的能多养人。
-     * 数值上它让「凡人篇的农业」与「仙道篇的灵气」第一次接上。
+     * ⚠ 解锁 `caravan`（驿馆）是**探索名额的唯一来源**
+     *   （core/formulas.js 的 `expeditionSlots = (b.caravan||0) × EXPEDITION_SLOTS_PER`），
+     *   这条线断了就没有探索队，秘闻也就断了。I1 把它从「商路」改叫「驿路」、
+     *   从「养商队」改到「设驿馆、遣族人出门探访」，但 id 与解锁关系一个字没动。
      */
-    requiresImmortal: ['yinling'],
-    desc: '设屯田、修水利，同一块田地能养活更多人。'
-      + '引灵台的水先过一遍田垄，收成便不只多一成。',
-  },
-  {
-    id: 'seeker',
-    name: '探秘者',
-    icon: '探',
-    tier: 4,
-    cost: 1800,
-    requires: ['trade'],
-    /** 拿银两与人命换消息。 */
-    effect: { tradeIncome: -0.3, deathFlat: 0.004, secretChance: 0.05 },
-    desc: '养一批专管打听的人。他们不走货，只走门路——商队赚得少了，人也折得多，'
-      + '但山野间的风声听得见了。',
+    unlocksBuilding: 'caravan',
+    desc: '摸清了各州关隘与抽分，沿官道设驿馆、备马匹干粮，'
+      + '遣族人出门探访——探索队的名额从此有着落。',
   },
   {
     id: 'arithmetic',
     name: '算学',
     icon: '筹',
-    tier: 5,
+    route: 'base',
+    tier: 4,
     cost: 3500,
     requires: ['finance', 'household'],
     effect: { incomeMult: 0.1 },
@@ -4364,30 +4513,34 @@ const TECHS = [
   {
     id: 'courier',
     name: '驿道',
-    icon: '驿',
-    tier: 5,
+    icon: '传',
+    route: 'base',
+    tier: 4,
     cost: 6000,
-    requires: ['trade'],
-    effect: { tradeSpeed: 0.15 },
-    desc: '沿官道设驿、换马不换人，商队往返比别家快上一截。',
-  },
-  {
-    id: 'vault',
-    name: '库房',
-    icon: '库',
-    tier: 5,
-    cost: 4800,
-    requires: ['finance', 'household'],
-    effect: { vaultMult: 1.0 },
-    desc: '钱庄只管把银子收进来，库房管的是「收进来之后还数得清」。'
-      + '账房分门别类、按季盘库，同一批仓库能装下的银子翻了一倍。'
-      + '——坊市那头肯不肯多称几钱灵石，全看你先拿得出多少现银。',
+    requires: ['trade', 'surveying'],
+    /**
+     * 【凡人篇 I1/I3】**被修掉的死效果**。
+     *
+     * 原来这里挂的是 `effect: { tradeSpeed: 0.15 }`（「商队耗时 −15%」）。
+     * I1 把商队整套换成寻仙探索之后，`engine.routeSeconds()` 不再存在，
+     * 而 `systems/expeditions.js` 的 `expeditionSeconds()` **故意不乘任何科技加速**
+     * （加速会把 10/15/20 三道秘闻门变松）—— 于是 `tradeSpeed` 没有消费者，
+     * 玩家研习「驿道」点了等于没点（见 docs/104 §七 已知遗留 1）。
+     *
+     * I3 的处理：把这份额度改挂到**探索真的会读**的东西上 ——
+     * `secretChance`（`core/formulas.js` 的 `exploreSecretChance()`，
+     * 结算与界面报价共用）。口径也顺着改：驿道铺开，山野间的风声先到本家一步。
+     */
+    effect: { secretChance: 0.04 },
+    desc: '沿官道设驿、换马不换人，出门探访的人先在本家驿站落脚。'
+      + '路既通，山野间的消息比别家早到一步。',
   },
   {
     id: 'quzhang',
     name: '祛障',
     icon: '障',
-    tier: 6,
+    route: 'base',
+    tier: 5,
     cost: 6500,
     requires: ['trade', 'household', 'courier'],
     /** 除了前置科技，还要先摸到修行世界的边（集齐秘闻）。 */
@@ -4397,71 +4550,18 @@ const TECHS = [
     desc: '凡人篇的最后一道门。障一破，方见天光——但破障要拿命去试。',
   },
   {
-    id: 'marketexp',
-    name: '坊市扩建',
-    icon: '廛',
-    tier: 6,
-    cost: 8000,
-    requires: ['trade', 'courier', 'surveying', 'vault'],
-    effect: { tradeStoneMult: 0.25 },
-    desc: '把云深谷那头的小集扩成一条街。本家的银钱递过去，'
-      + '对面肯多称几钱灵石——兑率这东西，向来是人多的一方说了算。',
-  },
-  {
-    id: 'yizhuang',
-    name: '义庄',
-    icon: '棺',
-    tier: 6,
-    cost: 9000,
-    requires: ['household', 'seeker'],
-    effect: { deathFlat: -0.0012, birthFlat: 0.0008 },
-    /** 跨树前置：义庄要「悬壶」（仙家的医药）。见 data/immortal-techs.js。 */
-    requiresImmortal: ['xuanhu'],
-    desc: '在城外立一处义庄，收殓无主的尸骨，也给族里老弱一口热粥。'
-      + '悬壶堂的药先紧着老人孩子，死的人少了，活着的人也就敢多生。',
-  },
-  {
-    id: 'jixian',
-    name: '集贤馆',
-    icon: '贤',
-    tier: 6,
-    cost: 11000,
-    requires: ['arithmetic', 'household'],
-    effect: { incomeMult: 0.12, secretChance: 0.03, explorePerSecFlat: 0.00012 },
-    /**
-     * 跨树前置：集贤馆要「聚灵阵」。
-     * 馆里养的不是普通读书人，是**替仙家记档、递帖子的人** ——
-     * 所以它顺带给了「修士自动寻秘」，这也是城里唯一一项
-     * 「仙道进度直接变成凡人科技的产出」。
-     */
-    requiresImmortal: ['julingzhen'],
-    desc: '养几个读书人，管账、修谱、也管往山外递帖子。'
-      + '馆里清静，日子久了，什么话都能听见——哪怕说话的人不在城里。',
-  },
-  {
-    id: 'xiangxian',
-    name: '乡贤祠',
-    icon: '乡',
-    tier: 7,
-    cost: 45000,
-    requires: ['jixian', 'yizhuang'],
-    terminal: true,
-    effect: { incomeMult: 0.25, birthFlat: 0.0015, secretChance: 0.04 },
-    desc: '一姓在此地传了七代，里正见你祖父要叫一声老太爷。'
-      + '祠堂里的牌位比县衙的卷宗还厚——这城里的事，一半在族中过。',
-  },
-  {
     id: 'mutualmarket',
     name: '仙凡互市',
     icon: '互',
-    tier: 7,
+    route: 'base',
+    tier: 5,
     cost: 60000,
     requires: ['marketexp', 'quzhang'],
     /**
      * 跨树前置：仙凡互市要仙道「界墟」。
      * 城里想开一条两边通用的街，先得对面**认你的字号** ——
      * 界墟给的正是这个。这是凡人线最深处的一处「非仙不成」，
-     * 也是本树唯一一处会卡住玩家的跨树前置（因此它必须落在 tier 7 的可选深处）。
+     * 也是本树唯一一处会卡住玩家的跨树前置（因此它必须落在各路线的可选深处）。
      */
     requiresImmortal: ['jiexu'],
     terminal: true,
@@ -4469,7 +4569,7 @@ const TECHS = [
     effect: { tradeIncome: 0.35, tradeStoneMult: 0.35 },
     desc: '凡人卖药、卖铁、卖纸，仙家收的是灵石；仙家卖丹、卖符、卖法器，'
       + '凡人拿银钱接。两边的账本第一次并成了一本'
-      + '——但那条街得等云深谷那头先认了本家的字号。',
+      + '——但那条街得等江南坊市那头先认了本家的字号。',
   },
 ];
 
@@ -4504,13 +4604,21 @@ const EFFECT_LABELS = {
   estateDiscount: (v) => `地产价格 −${Math.round(v * 100)}%`,
   birthFlat: (v) => `基础出生率 ${signedFlat(v)}%/秒`,
   incomeMult: (v) => `银两产出 ${signedPct(v)}`,
-  tradeSpeed: (v) => `商队耗时 −${Math.round(v * 100)}%`,
   fieldBonus: (v) => `田地效果 +${Math.round(v * 100)}%`,
-  tradeIncome: (v) => `商路银两收益 ${signedPct(v)}`,
+  // 【凡人篇 I3】口径从「商路银两收益」改成「探索带回银两」：
+  //   商队（贸易派遣）在 I1 被寻仙探索取代，这个键的消费方已经是
+  //   core/formulas.js 的 `expeditionReward()`（探索归来结算 + 界面报价）。
+  //   键名一个字没改（改键名等于删键，会毁存档里的效果累加口径）。
+  tradeIncome: (v) => `探索带回银两 ${signedPct(v)}`,
   deathFlat: (v) => `死亡率 ${signedFlat(v)}%/秒`,
   secretChance: (v) => `秘闻概率 ${signedPct(v)}`,
   explorePerSecFlat: (v) => `修士自动寻秘 +${(v * 100000).toFixed(1)} 条/万秒`,
   vaultMult: (v) => `银两上限 ${signedPct(v)}`,
+  // ⚠ 【凡人篇 I3】`tradeSpeed`（原「商队耗时 −15%」）已从这张表、从
+  //   core/formulas.js 的 MORTAL_EFFECT_KEYS、从 TECH 表里**一并删除**：
+  //   I1 取消商队后它没有消费者（engine.routeSeconds 不再存在，
+  //   expeditionSeconds 故意不吃科技加速），留着就是「登记了却不生效」的死键。
+  //   原来挂它的「驿道（courier）」改挂 secretChance，见那边的注释。
 
   /* ── 仙道侧 ── */
   immortalCapMult: (v) => `名册容量 +${Math.round(v * 100)}%（随凡人人口放大）`,
@@ -4961,14 +5069,19 @@ const MORTAL_ROUTE = {
 };
 
 /**
- * 云深谷坊市。
+ * 江南坊市（旧称云深谷）。
+ *
+ * ⚠ 【凡人篇 I2/I3 显示名统一】这一座的 id 一直是 `yunshen`，而
+ *   `data/markets.js` 的 `MARKETS` 里另有 `id: 'yunshen', name: '江南坊市'`
+ *   —— 两处指的是同一座坊市。I3 把显示名统一成「江南坊市（旧称云深谷）」，
+ *   并把 `shortName` 给兑换日志/按钮用（长名字放进按钮太挤）。**id 未动。**
  *
  * 集齐 SECRET_UNLOCK 条秘闻才会显现。那边的客人只肯用灵石换银两，
  * 而银两在他们眼里几乎不值钱——这个兑率是刻意压到近乎羞辱的。
  */
 const CULTIVATOR_MARKET = {
   id: 'yunshen',
-  name: '云深谷坊市',
+  name: '江南坊市（旧称云深谷）', shortName: '江南坊市',
   icon: '坊',
   desc: '云深不知处，山中有坊市。以凡间银钱换修行之物，兑率苛刻。',
   requiresSecrets: SECRET_UNLOCK,
@@ -5039,6 +5152,9 @@ const SECRETS = [
  *      不属于凡人篇重构的范围。
  *
  * ⚠ 商品 id 一旦发布**不许改名或删除**（老存档里按 id 记着解锁状态）。
+ *   【凡人篇 I3】`fixtures/save-ids.json` 基线里**已经有 markets.js 与 expeditions.js**
+ *   这两张表了（I3 跑了一次 `node scripts/savecompat.mjs --init` 补上），
+ *   所以这条纪律现在由 `scripts/savecompat.mjs` 机器守着 —— 见 docs/96 §16.7。
  */
 
 /** 每件商品解锁要花的秘闻数。 */
@@ -5061,8 +5177,12 @@ const MARKET_SEGMENTS = {
     { id: 'hidden', name: '隐藏坊市', needSecrets: 10, desc: '柜上只认灵石 —— 银两到这儿才换得动（灵石交易）。' },
     { id: 'gongfa', name: '炼气功法', needSecrets: 12, desc: '黄阶功法摆上架子，炼气期现成的入门货。' },
     { id: 'zhenqi', name: '聚灵阵阵旗', needSecrets: 14, desc: '聚灵阵的阵旗：插上就聚气，省一场采料画符。' },
-    { id: 'pozhang', name: '破障丹', needSecrets: 16, desc: '冲关破障用的丹，不必自己开炉。' },
-    { id: 'lingkuang', name: '灵矿灵池', needSecrets: 18, desc: '灵池蓝图与矿上的营生，最后才现。' },
+    // ⚠ 【凡人篇 I3】段名从「破障丹」改成「**筑基丹**」：这一段卖的从来就是
+    //   data/alchemy.js 里既有的筑基丹（id `zhuji`，见下面 pozhang_dan 那条），
+    //   「破障丹」这个名字在丹表里根本没有对应 id。诚实优先于好听。
+    //   段 id 仍是 `pozhang`（不许改名，老存档按 id 记着显现状态）。
+    { id: 'pozhang', name: '筑基丹', needSecrets: 16, desc: '冲关破障用的丹，不必自己开炉。' },
+    { id: 'lingkuang', name: '灵矿灵池', needSecrets: 18, desc: '矿上的营生，最后才现。' },
   ],
 };
 
@@ -5100,7 +5220,13 @@ const MARKET_GOODS = [
     effect: { kind: 'population', n: 3 },
   },
   {
-    id: 'poolblueprint', market: 'yunshen', segment: 'lingkuang', name: '灵池蓝图',
+    // ⚠ 【凡人篇 I3】灵池蓝图从最后一段（18）**移回第二段（10）**：
+    //   它是凡人篇「后天祛障」的第二条路（不吃丹也能靠灵池抬天生灵根），
+    //   排在最后一段等于让这条路晚一整局才出现 —— 与「不惩罚玩家」的口径不符。
+    //   段 10 正好也是「灵石交易」那条边本身的门槛（CULTIVATOR_MARKET.requiresSecrets），
+    //   所以这一段现在**既开兑换、又上有货**（原来那句「故意没有货」作废）。
+    //   商品 id 未动（老存档按 id 记着解锁状态）。
+    id: 'poolblueprint', market: 'yunshen', segment: 'hidden', name: '灵池蓝图',
     currency: 'stones', price: 2, unlockSecrets: MARKET_UNLOCK_SECRETS,
     desc: '凭蓝图即可营造灵池 —— 后天祛障的第二条路。',
     effect: { kind: 'pool-blueprint' },
@@ -5141,8 +5267,8 @@ const MARKET_GOODS = [
   //     marketUnlocks、以及全部 effect kind 都还在原地。
   // ⚠ 【凡人篇 I2】新加的四件货也必须过这一关：祛障丹与招募流民是银两买的
   //   **实物/人口**；功法、阵旗、破障丹都是修行线上真会用到的东西。
-  //   段 10「隐藏坊市（灵石交易）」**故意没有货**：那一段开的是兑换那条边本身
-  //   （`CULTIVATOR_MARKET.requiresSecrets` 恰好也是 10）。
+  //   段 10「隐藏坊市（灵石交易）」【凡人篇 I3】起**有货**了：灵池蓝图从段 18
+  //   移了进来（它才是「后天祛障」的第二条路，不该排在最后一段）。
   // ⚠ 老存档里可能还记着被删的三个 id，读取端必须容忍未知 id（见 systems/markets.js）。
   // ══════════════════════════════════════════════════════════════════
 ];
@@ -5165,7 +5291,7 @@ const MARKETS = [
   },
   {
     id: 'qingmu', name: '青木集市', requiresSecrets: 0, requiresHeld: 1,
-    desc: '打下第一座势力城之后，商路自然通到这里。',
+    desc: '打下第一座势力城之后，驿路自然通到这里。',
   },
   {
     id: 'heishi', name: '黑石城坊', requiresSecrets: 0, requiresHeld: 2,
@@ -5290,7 +5416,12 @@ function expeditionSurvivors(def, rng = Math.random, n = def.people) {
  * scripts/smoke.mjs 里有断言逐项检查这三处是否对齐。
  */
 const MORTAL_EFFECT_KEYS = [
-  'estateDiscount', 'birthFlat', 'incomeMult', 'tradeSpeed', 'fieldBonus',
+  // ⚠ 【凡人篇 I3】原列表里有 `tradeSpeed`（「商队耗时 −15%」）。I1 取消商队后
+  //   它没有了消费者（engine.routeSeconds 不再存在，expeditionSeconds 故意不吃
+  //   科技加速），而「登记了却不生效」的键正是 docs/15 第八节点名的静默失败。
+  //   I3 把它从累加器、EFFECT_LABELS 与数据表里**一并删除**，原来是唯一用它的
+  //   「驿道（courier）」改挂 `secretChance`（探索真的会读它）。
+  'estateDiscount', 'birthFlat', 'incomeMult', 'fieldBonus',
   'tradeIncome', 'deathFlat', 'secretChance', 'explorePerSecFlat', 'vaultMult',
 ];
 
@@ -5434,8 +5565,13 @@ function isImmortalTechResearched(state, techId) {
  *   都要退化成「无前置」，而不是静默锁死一项科技。
  */
 function isTechUnlocked(state, tech) {
+  if (!tech) return false;
   if (!(tech.requires || []).every((r) => isResearched(state, r))) return false;
-  return (tech.requiresImmortal || []).every((r) => isImmortalTechResearched(state, r));
+  if (!(tech.requiresImmortal || []).every((r) => isImmortalTechResearched(state, r))) return false;
+  // 【凡人篇 I3】三条路线的第 5 阶三选一互斥：研习了其中一块碑，另外两块就
+  // 永久关闭（判据只有一处：systems/progression.js 的 exclusiveResearchBlocker）。
+  // 放在这里的好处：techStatus() / researchableCount() / 界面按钮全部自动跟上。
+  return !exclusiveResearchBlocker(state, tech);
 }
 
 /**
@@ -5973,7 +6109,7 @@ const QI_CHAPTER_THRESHOLD = 1;
  *   guard   驻守 —— 该修士战力 ×1.5，计入家族总战力
  *   retreat 闭关 —— 唯一能吃家族功法加成的路线，随功法收藏成长
  *   labor   劳作 —— 每层修为 +8% 银两产出（上限 +200%）
- *   explore 探索 —— 提高商路寻秘概率，并按修为独立发现秘闻
+ *   explore 探索 —— 提高出门探访寻得秘闻的概率，并按修为独立发现秘闻
  *   sect    宗门 —— 3.5× 固定修为速度、完全安全，但吃不到家族功法
  *                   也不能去洞天、不进阵亡池、不可通过下拉框调回
  */
@@ -5981,7 +6117,7 @@ const CULTIVATOR_JOBS = {
   guard: { name:'驻守', desc:'该修士的战力 +50%' },
   retreat: { name:'闭关', desc:'仅闭关时增加修为；唯一能吃家族功法加成的路线' },
   labor: { name:'劳作', desc:'每层修为增加 8% 银两产出' },
-  explore: { name:'探索', desc:'提高商队寻得秘闻的概率，并有机会独立发现秘闻' },
+  explore: { name:'探索', desc:'提高出门探访时寻得秘闻的概率，并有机会独立发现秘闻' },
   sect: { name:'宗门', desc:'安全驻外修行，只贡献基础战力，不提供家族功法与其他加成' },
   // 镇守：由地图上的「派往镇守」按钮指派，不通过下拉框选（因为它绑定具体领地）
   garrison: { name:'镇守', desc:'坐镇已占领的领地。战力达标才有赋税产出，否则民心离散' },
@@ -12624,6 +12760,38 @@ function techVisible(state, tech, immortal) {
   return !missTech.length && !missImmortal.length && !missSecrets;
 }
 
+/**
+ * 【凡人篇 I3】三条路线第 5 阶「三选一互斥」的判据。
+ *
+ * 为什么要有它：I3 把凡人科技树重做成三条路线 × 5 阶，玩家每周目该能走不同
+ * 方向。**前三阶永不互斥**（早期选择不吃亏），互斥只发生在第 5 阶那三块碑上：
+ * 百年望族（`xiangxian`）/ 江南巨富（`jiangnan_rich`）/ 寻仙世家（`xunxian`）。
+ *
+ * 这个函数是**唯一判据**，两个消费点：
+ *   1. `core/formulas.js` 的 `isTechUnlocked()` —— 于是 `techStatus()` 会把它
+ *      判成 `locked`，界面按钮随之禁用、`researchableCount()` 不再把它算进去；
+ *   2. `core/engine.js` 的 `planResearch()` —— 在通用「缺前置」之前先查这一条，
+ *      于是拒绝理由说的是**互斥**，而不是含混的「须先研习」。
+ *
+ * @param {object} state 游戏状态
+ * @param {object} tech  科技定义
+ * @returns {object|null} 已被研习的那个同组科技（有 ⇒ 本项不可再研习）
+ */
+function exclusiveResearchBlocker(state, tech) {
+  const group = tech && tech.exclusiveGroup;
+  if (!group) return null;
+  return TECHS.find((t) => t.exclusiveGroup === group
+    && t.id !== tech.id
+    && isResearched(state, t.id)) || null;
+}
+
+/** 互斥的说明文案：拒绝理由与界面提示**共用这一句**（免得两处口径漂移）。 */
+function exclusiveResearchReason(blocker) {
+  if (!blocker) return '';
+  const names = CAPSTONE_TECHS.map((id) => `「${techLabelOf(id)}」`).join('');
+  return `${names}三者只能择一 —— 本家已立「${blocker.name}」，此路不再走`;
+}
+
 /* ══════════ src/systems/immortal-economy.js ══════════ */
 
 /* ────────────────────────────────────────────────────────────────
@@ -13566,7 +13734,7 @@ function grantSecret(state, now = Date.now(), rng = Math.random) {
 
   const total = state.secrets.length;
   if (total === SECRET_UNLOCK) {
-    pushLog(state, `秘闻已集 ${SECRET_UNLOCK} 条，云深谷坊市的路，摸到了。`, 'unlock', null, now);
+    pushLog(state, `秘闻已集 ${SECRET_UNLOCK} 条，${CULTIVATOR_MARKET.shortName || CULTIVATOR_MARKET.name}的路，摸到了。`, 'unlock', null, now);
   }
   pushLog(state, `得秘闻一条（${total}/${SECRET_UNLOCK}）：${SECRETS[idx]}`, 'secret', null, now);
   return idx;
@@ -13579,6 +13747,12 @@ function planResearch(state, techId) {
   const tech = TECH_MAP[techId];
   if (!tech) return { ok: false, reason: '并无此术' };
   if (isResearched(state, tech.id)) return { ok: false, reason: '此术已研习' };
+
+  // 【凡人篇 I3】第 5 阶三选一互斥：必须在通用「缺前置」之前查，
+  //   否则玩家看到的理由是含混的「须先研习 …」，而不是「你已经在另一条路上立了碑」。
+  //   判据只有一处：systems/progression.js 的 exclusiveResearchBlocker()。
+  const capstone = exclusiveResearchBlocker(state, tech);
+  if (capstone) return { ok: false, reason: exclusiveResearchReason(capstone) };
 
   if (!isTechUnlocked(state, tech)) {
     const missing = tech.requires
@@ -13619,6 +13793,10 @@ function planResearch(state, techId) {
 function commitResearch(state, techId, now = Date.now()) {
   const tech = TECH_MAP[techId];
   if (!tech || isResearched(state, tech.id)) return { ok: false, reason: '此术已研习' };
+  // 【凡人篇 I3】互斥是硬闸：plan 拦一次、commit 再拦一次 ——
+  //   免得「先算好的 plan 在别人研习了另一块碑之后再兑现」这种绕法。
+  const capstone = exclusiveResearchBlocker(state, tech);
+  if (capstone) return { ok: false, reason: exclusiveResearchReason(capstone) };
   if (state.silver < tech.cost) return { ok: false, reason: '银两不足' };
 
   state.silver -= tech.cost;
@@ -13856,7 +14034,7 @@ function sell(state, id, count = 1, now = Date.now()) {
   return commitSell(state, id, count, now);
 }
 
-/* ────────────────────── 云深谷坊市：银两换灵石 ────────────────────── */
+/* ───── 江南坊市（data/trade.js 的 CULTIVATOR_MARKET，旧称云深谷）：银两换灵石 ───── */
 
 /**
  * 询价：再兑一笔灵石要多少银两、给多少灵石。不改动状态。
@@ -13890,7 +14068,7 @@ function planExchange(state, count = 1) {
   if (done >= limit) {
     return {
       ok: false,
-      reason: `云深谷坊市已吃不下更多银钱（${done}/${limit} 笔）——扩建坊市或通仙凡互市可再开胃口`,
+      reason: `${CULTIVATOR_MARKET.shortName || CULTIVATOR_MARKET.name}已吃不下更多银钱（${done}/${limit} 笔）——扩建坊市或通仙凡互市可再开胃口`,
       exhausted: true,
     };
   }
@@ -13928,7 +14106,7 @@ function planExchange(state, count = 1) {
     remaining: limit - done - batches,
     limit,
     quote: marketExchangeQuote(state, done),
-    label: `云深谷坊市兑灵石 ×${batches}`,
+    label: `${CULTIVATOR_MARKET.shortName || CULTIVATOR_MARKET.name}兑灵石 ×${batches}`,
   };
 }
 
@@ -13943,7 +14121,7 @@ function commitExchange(state, count = 1, now = Date.now()) {
 
   pushLog(
     state,
-    `于云深谷坊市兑得灵石 ${fmtStones(plan.stones)} 枚，耗银 ${fmt(plan.cost)} 两`
+    `于${CULTIVATOR_MARKET.name}兑得灵石 ${fmtStones(plan.stones)} 枚，耗银 ${fmt(plan.cost)} 两`
       + `（第 ${plan.index + plan.count}/${plan.limit} 笔）。`,
     'spirit',
     null,
@@ -14020,8 +14198,12 @@ function commitPill(state, pillId = 'quzhangdan', now = Date.now(), rng = Math.r
  *
  * ⚠ 原 `routeSeconds` **不再有对应物**：`expeditionSeconds` 故意不乘任何科技加速
  *   （加速会把 10/15/20 三道秘闻门变松）—— 详见 systems/expeditions.js 的注释。
- *   ⚠ 连带后果：凡人科技「驿道（courier）」的 `tradeSpeed: 0.15` 现在**没有消费者**，
- *     见 docs/104-凡人篇重构.md「已知遗留」。
+ *   ⚠ 连带后果（【凡人篇 I3】已修）：凡人科技「驿道（courier）」原来挂的
+ *     `tradeSpeed: 0.15` 因此没有消费者（点了等于没点）。I3 把这份额度改挂到
+ *     `secretChance`（探索归来结算 + 界面报价共用 exploreSecretChance），
+ *     并把 `tradeSpeed` 从累加器、EFFECT_LABELS 与数据表里一并删除。
+ *     仍然**生效**的是 `tradeIncome`：它的消费方是 `expeditionReward()`
+ *     （「出门探访带回的银两」，见 core/formulas.js），不是旧商路。
  */
 
 /** 为界面准备一份「可执行的操作」清单状态。 */
@@ -17552,7 +17734,7 @@ const RES_CURRENCY = [
   }),
   makeResource('spiritStones', '灵石', 'currency', 'currency', (s) => resNum(resAt(s, 'spiritStones')), {
     rate: 'stonesPerSec', cap: null, gate: gateSecrets(SECRET_UNLOCK),
-    lockedUi: 'hide', hint: `集齐 ${SECRET_UNLOCK} 条秘闻，云深谷坊市才会开，银钱才换得动灵石`,
+    lockedUi: 'hide', hint: `集齐 ${SECRET_UNLOCK} 条秘闻，江南坊市才会开，银钱才换得动灵石`,
     note: '平价兑率：MARKET_EXCHANGE_BASE_SILVER → BASE_STONES×(1+tradeStoneMult)。',
   }),
   makeResource('secret', '秘闻', 'currency', 'currency', (s) => resCount(s, 'secrets'), {
@@ -18782,7 +18964,7 @@ function createQuizView({ getState, onRender, rng = Math.random }) {
 /* ══════════ src/ui/app.js ══════════ */
 /** 仙途面板的四项指标。 */
 const IMMORTAL_METRICS = [
-  ['secrets', '秘闻', '集齐足量秘闻，才能摸到云深谷坊市'],
+  ['secrets', '秘闻', '集齐足量秘闻，才能摸到江南坊市'],
   ['stones', '灵石', '凡人换来的修行货币'],
   ['qi', '炼气人口', '祛障或天生灵根诞生，每位修士独立管理'],
   ['innate', '天生修士', '上限可达炼气九层'],
@@ -18863,7 +19045,7 @@ function createUI({ getState, actions, rng }) {
    *     说明它靠什么成立，绝不允许「无 id 又能显示」这种第三种形态。
    * `resWhen` 是**已有页签门控**的显式例外（本页本身就是那个门控开的），
    * 唯一用到它的是探索：那一格量的是「在途探索队」，注册表里对应 `usedExpeditions`，
-   * 而它在探索页出现与否只取决于「商路科技已研」——与 `expeditionSlots` 无关，
+   * 而它在探索页出现与否只取决于「驿路科技已研」——与 `expeditionSlots` 无关，
    * 所以按 id 判可见性会误伤（恒隐藏），这里显式点名。
    */
   const PAGE_RES = {
@@ -19018,6 +19200,15 @@ function createUI({ getState, actions, rng }) {
     };
   }
 
+  /**
+   * 【凡人篇 I3】建凡人科技树：**按路线分组**，每条路线内部按 5 阶排。
+   *
+   * 改动前的形状是「七阶一条直线」（for TECH_TIERS → filter(tier)）。
+   * 现在外层是 TECH_ROUTES（三条路线 + 共用的城基组），行上带
+   * `data-route` / `data-tier` 两个属性 —— 这样「三条路线都画出来了」
+   * 与「第二阶开局不出现」都能被 uicheck 在真实浏览器里直接断言，
+   * 不必去数中文标题。
+   */
   function buildTechs() {
     const host = $('tech-list');
     // 【缺陷修复 · 由 6d2ce7f 引入】静态骨架把 #tech-list 包在
@@ -19026,8 +19217,8 @@ function createUI({ getState, actions, rng }) {
     // hidden 祖先内部 —— 界面上一条都看不见（房地产 / 建筑学 / 钱庄 / …），
     // 玩家会以为这些内容被删掉了，而家业页的建筑卡片还在提示
     // 「须研习『房地产』」，形成死结。
-    // smoke 抓不到这个：`#tech-list .tech[data-tech].length === 18` 照样通过，
-    // 因为 DOM 里确实有 18 个子节点 —— 无头垫片不计算可见性。
+    // smoke 抓不到这个：`#tech-list .tech[data-tech].length === TECHS.length` 照样通过，
+    // 因为 DOM 里确实有那么多个子节点 —— 无头垫片不计算可见性。
     // 修法：JS 接管后把占位层的 hidden 摘掉。容器 (#tech-list) 留在原位即可见，
     // 而且保住了原本「JS 接管前藏住静态标记」的防闪意图 —— 因为解除隐藏时
     // 紧跟其后的 innerHTML='' 会把静态标记清掉，玩家只可能看到 JS 构建的结果。
@@ -19039,30 +19230,36 @@ function createUI({ getState, actions, rng }) {
     host.innerHTML = '';
     techGroups.length = 0;
 
-    for (const tier of TECH_TIERS) {
-      const items = TECHS.filter((t) => t.tier === tier.tier);
+    for (const route of TECH_ROUTES) {
+      const items = TECHS.filter((t) => (t.route || 'base') === route.key)
+        .sort((a, b) => (a.tier || 0) - (b.tier || 0) || a.cost - b.cost);
       if (!items.length) continue;
 
       const group = document.createElement('div');
       group.className = 'tech-group';
+      group.dataset.route = route.key;
       const groupIds = items.map((t) => t.id);
 
       const head = document.createElement('div');
       head.className = 'tech-tier';
-      head.innerHTML = `<span class="tier-name">${tier.name}</span><span class="tier-hint">${tier.hint}</span>`;
+      head.innerHTML = `<span class="tier-name">${route.name}</span><span class="tier-hint">${route.hint}</span>`;
       group.appendChild(head);
 
       for (const tech of items) {
         const gains = techGainText(tech, BUILDING_MAP[tech.unlocksBuilding]?.name);
+        const rank = (TECH_TIERS.find((t) => t.tier === tech.tier) || {}).name || '';
         const row = document.createElement('div');
         row.className = 'tech';
         row.dataset.tech = tech.id;
+        row.dataset.route = route.key;
+        row.dataset.tier = String(tech.tier || '');
         row.title = tech.desc;
         row.innerHTML = `
           <div class="tech-mark">${tech.icon}</div>
           <div class="tech-body">
             <div class="tech-title">
               <span class="tech-name">${tech.name}</span>
+              <span class="tech-rank" data-role="rank" title="${rank}">${tech.tier || ''}</span>
               <span class="tech-cost" data-role="cost">—</span>
             </div>
             <div class="tech-gain">${gains.join(' · ')}</div>
@@ -19080,7 +19277,7 @@ function createUI({ getState, actions, rng }) {
       }
 
       host.appendChild(group);
-      techGroups.push({ root: group, ids: groupIds });
+      techGroups.push({ root: group, ids: groupIds, route: route.key });
     }
   }
 
@@ -19216,25 +19413,25 @@ function createUI({ getState, actions, rng }) {
   const GUIDE_STEPS = [
     { done: (s) => s.buildings.field >= 2, name:'添置田地', title:'先有良田，方能养活族人',
       desc:'田地能提升出生率，人口增长后每秒银两也会增加。建议先添置第二块田地。', page:'home', target:'building-list', key:'field', type:'building', button:'查看田地' },
-    { done: (s) => s.techs.includes('realestate'), name:'置办地契', title:'研习房地产，开启置业之路',
-      desc:'当前只能种地。研习「房地产」后才能修建地产，扩大营造容量。', page:'techs', target:'tech-list', key:'realestate', type:'tech', button:'前往格物' },
+    { done: (s) => s.techs.includes('realestate'), name:'置办地契', title:'研习商铺经营，开启置业之路',
+      desc:'当前只能种地。研习「商铺经营」后才能修建地产，扩大营造容量。', page:'techs', target:'tech-list', key:'realestate', type:'tech', button:'前往格物' },
     { done: (s) => s.techs.includes('architecture'), name:'营造屋舍', title:'解锁建筑学，扩充家族居所',
       desc:'人口住得太挤会提高死亡率。研习建筑学，尽快解锁房产。', page:'techs', target:'tech-list', key:'architecture', type:'tech', button:'前往格物' },
     { done: (s) => s.buildings.house >= 1, name:'安置族人', title:'建造房产，让家族兴旺',
       desc:'房产提升人口容纳量，但也会略微抬高其他建筑的价格。', page:'home', target:'building-list', key:'house', type:'building', button:'查看房产' },
-    { done: (s) => s.techs.includes('finance'), name:'经营银库', title:'研习金融，建立钱庄',
+    { done: (s) => s.techs.includes('finance'), name:'经营银库', title:'研习钱庄体系，建立钱庄',
       desc:'钱庄能提高银两储存上限，为后期高价科技和丹药筹备资金。', page:'techs', target:'tech-list', key:'finance', type:'tech', button:'前往格物' },
     { done: (s) => s.techs.includes('expansion'), name:'拓展势力', title:'研习对外扩张，为远行做准备',
       desc:'扩张可解锁演武台，但会带来一定的人口死亡代价。', page:'techs', target:'tech-list', key:'expansion', type:'tech', button:'前往格物' },
-    { done: (s) => s.techs.includes('trade'), name:'开辟驿路', title:'研习商路，让消息流动起来',
-      desc:'商路科技是寻仙探索的门槛，先具备金融与对外扩张能力。', page:'techs', target:'tech-list', key:'trade', type:'tech', button:'前往格物' },
+    { done: (s) => s.techs.includes('trade'), name:'开辟驿路', title:'研习驿路，让消息流动起来',
+      desc:'驿路科技是寻仙探索的门槛（它解锁驿馆，而驿馆是探索名额的唯一来源），先具备钱庄体系与对外扩张能力。', page:'techs', target:'tech-list', key:'trade', type:'tech', button:'前往格物' },
     { done: (s) => s.buildings.caravan >= 1, name:'兴建驿馆', title:'营造驿馆，遣族人出门探访',
       desc:'一座驿馆提供一支在途探索队的名额。族人出门探访能带回秘闻与见闻。', page:'home', target:'building-list', key:'caravan', type:'building', button:'查看驿馆' },
     { done: (s) => s.secrets.length >= SECRET_UNLOCK, name:'探寻秘闻', title:'遣族人探访，寻找修仙机缘',
-      desc:'收集十条秘闻即可找到云深谷坊市。研习「探秘者」能提高秘闻概率，但死亡率也会上升。', page:'trade', target:'route-list', type:'secrets', button:'前往探索' },
+      desc:'收集十条秘闻即可找到江南坊市。研习「江湖耳目」能提高秘闻概率，但死亡率也会上升。', page:'trade', target:'route-list', type:'secrets', button:'前往探索' },
     { done: (s) => s.techs.includes('quzhang'), name:'研习祛障', title:'窥见天光，研习祛障之术',
       desc:'集齐秘闻后研习祛障。后期研习所需银两可能超过原银库上限。', page:'techs', target:'tech-list', key:'quzhang', type:'tech', button:'前往格物' },
-    { done: (s) => s.spiritStones >= 1 || s.cultivation.pills > 0, name:'积攒灵石', title:'云深谷坊市，兑换灵石',
+    { done: (s) => s.spiritStones >= 1 || s.cultivation.pills > 0, name:'积攒灵石', title:'江南坊市，兑换灵石',
       desc:'进入探索界面的坊市，将银两兑换成灵石，准备祛障丹。', page:'trade', target:'market', type:'stones', button:'前往坊市' },
     { done: (s) => s.cultivation.qi >= 1, name:'踏入仙途', title:'服用祛障丹，冲击炼气',
       desc:'祛障丹并非必定成功。储备灵石后到仙途页尝试突破。', page:'immortal', target:'pill-box', type:'qi', button:'前往仙途' },
@@ -19713,7 +19910,12 @@ function createUI({ getState, actions, rng }) {
        *   「祛障」的跨树前置就是这样：不写出来，玩家只会看到它一直锁着。
        */
       const blockers = [];
-      if (status === 'locked' && !isResearched(s, tech.id)) {
+      // 【凡人篇 I3】第 5 阶的三选一互斥：这不是「缺前置」，而是「你已经选了另一块碑」。
+      //   文案与 planResearch 的拒绝理由共用同一条函数（免得两处口径漂移）。
+      const capstone = exclusiveResearchBlocker(s, tech);
+      if (capstone && status !== 'done') {
+        blockers.push(exclusiveResearchReason(capstone));
+      } else if (status === 'locked' && !isResearched(s, tech.id)) {
         // 【修复 用户实机缺陷 ③·拼音泄漏 · 第四落点】两处又是 `TECH_MAP/IMMORTAL_TECH_MAP
         //   …?.name || 原始 id` 的回退。前置条件表是两条线**共用**的，所以两处都用
         //   单一入口 `techLabelOf()`（它自己会先查仙道线再查凡人线）。
@@ -19734,8 +19936,12 @@ function createUI({ getState, actions, rng }) {
       ref.req.textContent = blockers.join(' · ');
 
       ref.btn.disabled = status !== 'ready';
-      ref.btn.textContent = status === 'done' ? '已研习' : status === 'locked' ? '需前置' : status === 'open' ? '银两不足' : '立即研习';
-      ref.btn.title = status === 'open' ? `还缺 ${fmt(Math.ceil(Math.max(0,tech.cost - s.silver)))} 两` : tech.desc;
+      ref.btn.textContent = status === 'done' ? '已研习'
+        : capstone ? '已择别路'
+          : status === 'locked' ? '需前置'
+            : status === 'open' ? '银两不足' : '立即研习';
+      ref.btn.title = capstone ? exclusiveResearchReason(capstone)
+        : status === 'open' ? `还缺 ${fmt(Math.ceil(Math.max(0,tech.cost - s.silver)))} 两` : tech.desc;
     }
 
     updateImmortalTechs(s);
@@ -19860,7 +20066,7 @@ function createUI({ getState, actions, rng }) {
       if (d.expeditionSlots === 0) {
         const div = document.createElement('div');
         div.className = 'caravan empty';
-        div.textContent = d.unlocked.caravan ? '尚无驿馆，驿路未通' : '须研习「商路」并建起驿馆';
+        div.textContent = d.unlocked.caravan ? '尚无驿馆，驿路未通' : '须研习「驿路」并建起驿馆';
         host.appendChild(div);
         return;
       }
@@ -20071,7 +20277,7 @@ function createUI({ getState, actions, rng }) {
     } else if (!researched) {
       note.innerHTML = d.marketUnlocked
         ? '已在「格物」中解锁<b>祛障</b>——研习它，才能服下祛障丹。'
-        : `集齐 <b>${fmt(d.secretGoal)}</b> 条秘闻，才能摸到云深谷坊市；`
+        : `集齐 <b>${fmt(d.secretGoal)}</b> 条秘闻，才能摸到江南坊市；`
           + '那是凡人换到灵石唯一的路。';
     } else {
       note.innerHTML =
@@ -21949,6 +22155,10 @@ window.__xiuxian = {
    *  导出它是为了让「文案里不许出现拼音 id」这件事能被**直接断言**，而不是扫源码去猜。 */
   engine: {
     planBuy: (id, mode) => planBuy(state, id, mode),
+    /** 【凡人篇 I3】研习的询价与兑现：互斥判据（第 5 阶三选一）在这两层各拦一次，
+     *  导出它们是为了让「被拒的理由」与「commit 层也拦得住」都能被直接断言。 */
+    planResearch: (id) => planResearch(state, id),
+    commitResearch: (id) => commitResearch(state, id),
   },
   /** 百科：条目书与统计。*/
   codex: {
@@ -22325,7 +22535,7 @@ ${blk('cave','🌀 洞天秘境 · 赌命求机缘')}<p>探索消耗可用秘闻
 <div class="immortal-mini">${CAVES.map((v)=>{const p=ps.find(q=>q.id===Number(chosenCavePerson))||ps.find(q=>q.job!=='sect');const chance=p?caveSurvival(state,p,v):0;const st=mapNodeStatus(state,v.id);const ok=st!=='locked';return `<div class="immortal-mini-row${ok?'':' is-locked'}"><div><b>${v.name}</b><span class="map-tier">T${v.tier}</span><small>${ok?`建议 ${realmName(v.realm)} · 消耗 ${v.fee} 灵石 / ${v.clues} 线索 · 预估生还 ${(chance*100).toFixed(1)}%`:'与此地不相邻 · 需先打通沿途'}</small></div><button class="btn" data-immortal-action="cave" data-map-node="${v.id}" ${!peopleSelect||!ok?'disabled':''}>${ok?'冒险进入':'未打通'}</button></div>`}).join('')}</div></div>
 ${blk('foe','⚔️ 攻伐势力 · 占领领地')}<p>家族综合战力影响胜率。攻下后获得灵石，可能缴获功法；战败可能有修士阵亡。已占领势力不可重复攻伐。</p>
 <div class="immortal-mini">${FOES.map(f=>{const chance=Math.max(.05,Math.min(.95,derive(state).totalPower/(derive(state).totalPower+f.power)));const st=mapNodeStatus(state,f.id);const held=st==='held';const ok=st!=='locked';const hold=mapHoldPower(f);const strength=held?mapHoldStrength(state,f.id):0;const pacified=held&&strength>=hold;const unrest=Math.round((worldOf(state).unrest[f.id]||0)*100);const opts=mapGarrisonCandidates(state).map(q=>`<option value="${q.id}" ${worldOf(state).garrison[f.id]===q.id?'selected':''}>${q.name}（${realmName(q.realmIndex)} · 战力 ${Math.round(cultivatorPower(state,q))}）</option>`).join('');return `<div class="immortal-mini-row${ok?'':' is-locked'}"><div><b>${f.name}</b><span class="map-tier">T${f.tier}</span><small>${held?(pacified?`镇守 ${Math.round(strength)} / ${hold} · 赋税 ${(f.yield*3600).toFixed(1)} 灵石/时`:`<span class="map-warn">镇守不足 ${Math.round(strength)} / ${hold} · 民怨 ${unrest}%（满则叛离）</span>`):ok?`敌方战力 ${f.power} · 胜算 ${(chance*100).toFixed(1)}% · 攻下得 ${f.stones} 灵石 · 占领后需镇守 ${hold}`:'与此地不相邻 · 需先打通沿途'}</small></div>${held?`<span class="map-garrison"><select data-garrison-for="${f.id}">${opts||'<option value="">无人可派</option>'}</select><button class="btn" data-immortal-action="garrison" data-map-node="${f.id}" ${opts?'':'disabled'}>派往镇守</button></span>`:`<button class="btn" data-immortal-action="attack" data-map-node="${f.id}" ${ok?'':'disabled'}>${ok?'发起攻伐':'未打通'}</button>`}</div>`}).join('')}</div></div>
-${blk('alchemy','⚗️ 丹房 · 炼药', immortalBlockVisible(state,'alchemy'))}<p>药材只从<b>已占领且有效镇守</b>的领地来——所以想炼丹就得先打通商路。每炼一炉<b>失败会损失全部材料</b>，先把丹炉升上去、把熟练度刷起来才划算。丹道属木，灵根带木的丹师有额外成功率。</p>
+${blk('alchemy','⚗️ 丹房 · 炼药', immortalBlockVisible(state,'alchemy'))}<p>药材只从<b>已占领且有效镇守</b>的领地来——所以想炼丹就得先打下产药的势力领地。每炼一炉<b>失败会损失全部材料</b>，先把丹炉升上去、把熟练度刷起来才划算。丹道属木，灵根带木的丹师有额外成功率。</p>
 <div class="immortal-statline">${(()=>{const a=alchemyOf(state);const dm=alchemist(state);return `<span>丹炉 ${a.furnace} 级 · ${furnaceAt(a.furnace).name}（+${(furnaceAt(a.furnace).rateBonus*100).toFixed(0)}%）</span><span>丹师 ${dm?`${dm.name}${alchemyWoodBonus(state)>0?` · 木灵根 +${(alchemyWoodBonus(state)*100).toFixed(0)}%`:' · 无木灵根'}`:'<span class="map-warn">未指派</span>'}</span><span>累计开炉 ${a.crafts||0} 次</span>`})()}</div>
 <div class="immortal-mini">${ALCHEMY_HERBS.map(h=>{const have=herbCount(state,h.id);const per=herbPerSec(state)[h.id]||0;return `<div class="immortal-mini-row"><div><b>${h.name}</b><span class="map-tier">T${h.tier}</span><small>${have.toFixed(1)} 份 · 产地 ${mapNode(h.node)?.name||'—'}${per>0?` · ${(per*3600).toFixed(1)} 份/时`:' · <span class="map-warn">未产出（该地未占领或镇守不足）</span>'}</small></div><span class="herb-count">${Math.floor(have)}</span></div>`}).join('')}</div>
 <div class="immortal-mini">${ALCHEMY_RECIPES.map(r=>{const plan=recipePlan(state,r.id);const mat=Object.entries(r.materials).map(([k,v])=>`${ALCHEMY_HERB_MAP[k].name}×${v}`).join(' ');const need=ALCHEMY_FURNACE[r.furnace-1].name;return `<div class="immortal-mini-row${plan.ok?'':' is-locked'}"><div><b>${r.name}</b><span class="map-tier">${plan.prof?`熟练 ${plan.prof}/${ALCHEMY_PROFICIENCY_MAX}`:''}</span><small>${mat} · 成功率 ${(recipeRate(state,r.id)*100).toFixed(0)}% · 出 ${recipeYield(state,r.id)} 枚 · 需 ${need}</small>${plan.ok?'':`<small class="map-warn">${plan.reason}</small>`}</div><button class="btn" data-immortal-action="craft" data-recipe="${r.id}" ${plan.ok?'':'disabled'}>开炉</button></div>`}).join('')}</div>

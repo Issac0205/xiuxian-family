@@ -19,14 +19,19 @@ const MORTAL_ROUTE = {
 };
 
 /**
- * 云深谷坊市。
+ * 江南坊市（旧称云深谷）。
+ *
+ * ⚠ 【凡人篇 I2/I3 显示名统一】这一座的 id 一直是 `yunshen`，而
+ *   `data/markets.js` 的 `MARKETS` 里另有 `id: 'yunshen', name: '江南坊市'`
+ *   —— 两处指的是同一座坊市。I3 把显示名统一成「江南坊市（旧称云深谷）」，
+ *   并把 `shortName` 给兑换日志/按钮用（长名字放进按钮太挤）。**id 未动。**
  *
  * 集齐 SECRET_UNLOCK 条秘闻才会显现。那边的客人只肯用灵石换银两，
  * 而银两在他们眼里几乎不值钱——这个兑率是刻意压到近乎羞辱的。
  */
 const CULTIVATOR_MARKET = {
   id: 'yunshen',
-  name: '云深谷坊市',
+  name: '江南坊市（旧称云深谷）', shortName: '江南坊市',
   icon: '坊',
   desc: '云深不知处，山中有坊市。以凡间银钱换修行之物，兑率苛刻。',
   requiresSecrets: SECRET_UNLOCK,

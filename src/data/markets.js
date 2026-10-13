@@ -17,6 +17,9 @@
  *      不属于凡人篇重构的范围。
  *
  * ⚠ 商品 id 一旦发布**不许改名或删除**（老存档里按 id 记着解锁状态）。
+ *   【凡人篇 I3】`fixtures/save-ids.json` 基线里**已经有 markets.js 与 expeditions.js**
+ *   这两张表了（I3 跑了一次 `node scripts/savecompat.mjs --init` 补上），
+ *   所以这条纪律现在由 `scripts/savecompat.mjs` 机器守着 —— 见 docs/96 §16.7。
  */
 
 /** 每件商品解锁要花的秘闻数。 */
@@ -39,8 +42,12 @@ const MARKET_SEGMENTS = {
     { id: 'hidden', name: '隐藏坊市', needSecrets: 10, desc: '柜上只认灵石 —— 银两到这儿才换得动（灵石交易）。' },
     { id: 'gongfa', name: '炼气功法', needSecrets: 12, desc: '黄阶功法摆上架子，炼气期现成的入门货。' },
     { id: 'zhenqi', name: '聚灵阵阵旗', needSecrets: 14, desc: '聚灵阵的阵旗：插上就聚气，省一场采料画符。' },
-    { id: 'pozhang', name: '破障丹', needSecrets: 16, desc: '冲关破障用的丹，不必自己开炉。' },
-    { id: 'lingkuang', name: '灵矿灵池', needSecrets: 18, desc: '灵池蓝图与矿上的营生，最后才现。' },
+    // ⚠ 【凡人篇 I3】段名从「破障丹」改成「**筑基丹**」：这一段卖的从来就是
+    //   data/alchemy.js 里既有的筑基丹（id `zhuji`，见下面 pozhang_dan 那条），
+    //   「破障丹」这个名字在丹表里根本没有对应 id。诚实优先于好听。
+    //   段 id 仍是 `pozhang`（不许改名，老存档按 id 记着显现状态）。
+    { id: 'pozhang', name: '筑基丹', needSecrets: 16, desc: '冲关破障用的丹，不必自己开炉。' },
+    { id: 'lingkuang', name: '灵矿灵池', needSecrets: 18, desc: '矿上的营生，最后才现。' },
   ],
 };
 
@@ -78,7 +85,13 @@ const MARKET_GOODS = [
     effect: { kind: 'population', n: 3 },
   },
   {
-    id: 'poolblueprint', market: 'yunshen', segment: 'lingkuang', name: '灵池蓝图',
+    // ⚠ 【凡人篇 I3】灵池蓝图从最后一段（18）**移回第二段（10）**：
+    //   它是凡人篇「后天祛障」的第二条路（不吃丹也能靠灵池抬天生灵根），
+    //   排在最后一段等于让这条路晚一整局才出现 —— 与「不惩罚玩家」的口径不符。
+    //   段 10 正好也是「灵石交易」那条边本身的门槛（CULTIVATOR_MARKET.requiresSecrets），
+    //   所以这一段现在**既开兑换、又上有货**（原来那句「故意没有货」作废）。
+    //   商品 id 未动（老存档按 id 记着解锁状态）。
+    id: 'poolblueprint', market: 'yunshen', segment: 'hidden', name: '灵池蓝图',
     currency: 'stones', price: 2, unlockSecrets: MARKET_UNLOCK_SECRETS,
     desc: '凭蓝图即可营造灵池 —— 后天祛障的第二条路。',
     effect: { kind: 'pool-blueprint' },
@@ -119,8 +132,8 @@ const MARKET_GOODS = [
   //     marketUnlocks、以及全部 effect kind 都还在原地。
   // ⚠ 【凡人篇 I2】新加的四件货也必须过这一关：祛障丹与招募流民是银两买的
   //   **实物/人口**；功法、阵旗、破障丹都是修行线上真会用到的东西。
-  //   段 10「隐藏坊市（灵石交易）」**故意没有货**：那一段开的是兑换那条边本身
-  //   （`CULTIVATOR_MARKET.requiresSecrets` 恰好也是 10）。
+  //   段 10「隐藏坊市（灵石交易）」【凡人篇 I3】起**有货**了：灵池蓝图从段 18
+  //   移了进来（它才是「后天祛障」的第二条路，不该排在最后一段）。
   // ⚠ 老存档里可能还记着被删的三个 id，读取端必须容忍未知 id（见 systems/markets.js）。
   // ══════════════════════════════════════════════════════════════════
 ];
@@ -143,7 +156,7 @@ const MARKETS = [
   },
   {
     id: 'qingmu', name: '青木集市', requiresSecrets: 0, requiresHeld: 1,
-    desc: '打下第一座势力城之后，商路自然通到这里。',
+    desc: '打下第一座势力城之后，驿路自然通到这里。',
   },
   {
     id: 'heishi', name: '黑石城坊', requiresSecrets: 0, requiresHeld: 2,

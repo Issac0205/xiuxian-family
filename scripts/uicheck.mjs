@@ -241,6 +241,88 @@ try {
       segText.indexOf('需 10 条秘闻') >= 0 ? null : '文案是：' + segText.slice(0, 90));
     add('坊市：第二段灰着（is-locked）', seg && seg.classList.contains('is-locked') ? null : '没灰');
   }
+
+  // ── ⑧ 【凡人篇 I3】凡人科技树：三条路线 × 5 阶。
+  //   ①～⑦ 里没有一条能证明「三条路线在浏览器里真的画出来了」——
+  //   行数对得上、容器可见，都可能是「一条线铺满整页」。
+  //   这一块按开局状态（科技全空、零银两）问三件事：
+  //     · 三条路线各自成组、各自有可见行；
+  //     · 每行都带 data-route / data-tier；
+  //     · 第 2 阶**不出现**（可见性门控仍然有效）—— 这是用户定过的口径。
+  //   最后一条走**玩家真正走的那条路**（点 data-action="research" 的按钮），
+  //   验证第 5 阶三选一互斥在浏览器里真的拒绝、且理由写明「择一」。
+  {
+    const s = X.state;
+    s.techs = [];
+    s.immortalTechs = [];
+    s.secrets = [];
+    s.silver = 0;
+    s.settings.quizMode = 'off';
+    if (X.actions.setPage) X.actions.setPage('techs');
+    if (X.ui.setTechLine) X.ui.setTechLine('mortal');
+    X.ui.render();
+
+    const host = document.getElementById('tech-list');
+    const all = host ? Array.prototype.slice.call(host.querySelectorAll('.tech[data-tech]')) : [];
+    const ROUTES = ['clan', 'rich', 'seek'];
+
+    add('I3：三条路线各有一个分组', host && ROUTES.every(function (r) {
+      return host.querySelector('.tech-group[data-route="' + r + '"]');
+    }) ? null : '缺少 clan / rich / seek 之一的分组');
+
+    for (let i = 0; i < ROUTES.length; i += 1) {
+      const r = ROUTES[i];
+      const g = host ? host.querySelector('.tech-group[data-route="' + r + '"]') : null;
+      add('I3：路线 ' + r + ' 的分组可见（不是被整组收掉）', vis(g));
+      const rows = g ? Array.prototype.slice.call(g.querySelectorAll('.tech[data-tech]')) : [];
+      const shown = rows.filter(function (el) { return !vis(el); });
+      add('I3：路线 ' + r + ' 开局有可见行（' + shown.length + '/' + rows.length + '）',
+        shown.length > 0 ? null : '这一条路开局一条都看不见');
+    }
+
+    add('I3：科技行数与数据表一致（' + X.data.techs.length + '）',
+      all.length === X.data.techs.length ? null : '实际 ' + all.length);
+    const undecorated = all.filter(function (el) { return !el.dataset.route || !el.dataset.tier; });
+    add('I3：每一行都带 data-route / data-tier',
+      undecorated.length ? undecorated.length + ' 行缺属性' : null);
+
+    const t2 = all.filter(function (el) { return el.dataset.tier === '2'; });
+    const t2shown = t2.filter(function (el) { return !vis(el); });
+    add('I3 门控：开局第 2 阶不出现（' + t2shown.length + '/' + t2.length + ' 可见）',
+      t2shown.length === 0 ? null
+        : '第 2 阶露出来了：' + t2shown.map(function (el) { return el.dataset.tech; }).join(','));
+
+    const t1shown = all.filter(function (el) { return el.dataset.tier === '1' && !vis(el); });
+    add('I3 门控：开局看得见三条路线的第 1 阶（' + t1shown.length + ' 条）',
+      t1shown.length >= 3 ? null : '只看见 ' + t1shown.length + ' 条 —— 挑不了路');
+
+    // ── 第 5 阶三选一互斥：走玩家路径（点按钮），在真实浏览器里验 ──
+    s.techs = ['household', 'tuntian', 'yizhuang', 'jiangnan_clan',
+      'realestate', 'finance', 'vault', 'arithmetic', 'marketexp',
+      'seeker', 'jixian', 'sishu', 'fanggu',
+      'architecture', 'surveying', 'expansion', 'trade', 'courier'];
+    s.silver = 100000000;
+    s.secrets = Array.from({ length: 10 }, function (_, i) { return i; });
+    s.settings.quizMode = 'off';
+    X.ui.render();
+
+    const pick = document.querySelector('#tech-list [data-action="research"][data-tech="xiangxian"]');
+    add('I3 互斥：研习之前「百年望族」的按钮可点（不该先锁死）',
+      pick ? (pick.disabled ? '按钮 disabled —— 三块碑在选之前都该可选' : null) : '找不到按钮');
+    if (pick && !pick.disabled) pick.click();
+
+    const pickedRow = document.querySelector('#tech-list .tech[data-tech="xiangxian"]');
+    add('I3 互斥：点下之后它真的变成已研习',
+      pickedRow && pickedRow.classList.contains('is-done') ? null : '没变成 is-done');
+
+    const loserBtn = document.querySelector('#tech-list [data-action="research"][data-tech="jiangnan_rich"]');
+    const loserRow = document.querySelector('#tech-list .tech[data-tech="jiangnan_rich"]');
+    const reqText = loserRow ? ((loserRow.querySelector('[data-role="req"]') || {}).textContent || '') : '';
+    add('I3 互斥：另两块碑被拒，且界面写明是「择一」',
+      loserBtn && loserBtn.disabled && reqText.indexOf('择一') >= 0
+        ? null
+        : 'disabled=' + (loserBtn && loserBtn.disabled) + ' ｜ 文案=' + reqText.slice(0, 70));
+  }
 } catch (e) {
   out.error = String((e && e.stack) || e);
 }

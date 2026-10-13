@@ -19,14 +19,16 @@ const pre = readFileSync('src/_shell-pre.js', 'utf8');
 const tail = readFileSync('src/_shell-tail.html', 'utf8');
 const EOL = head.includes('\r\n') ? '\r\n' : '\n';
 
-const parts = [head, pre];
+const parts = [head.replace(/\r?\n/g, EOL), pre.replace(/\r?\n/g, EOL)];
 const report = [];
 for (const entry of manifest) {
-  const code = readFileSync(entry.path, 'utf8');
+  // ⚠ 区块的换行一律对齐到 head 的 EOL（本项目是 CRLF）：
+  //   整体重写过的区块可能落成 LF，直接拼进去会让产物变成混行尾。
+  const code = readFileSync(entry.path, 'utf8').replace(/\r?\n/g, EOL);
   parts.push(`${entry.marker}${EOL}${code}${EOL}`);
   report.push({ path: entry.path, lines: code.split(EOL).length, bytes: Buffer.byteLength(code) });
 }
-parts.push(tail);
+parts.push(tail.replace(/\r?\n/g, EOL));
 const out = parts.join('');
 
 const prev = (() => { try { return readFileSync(OUT, 'utf8'); } catch { return null; } })();

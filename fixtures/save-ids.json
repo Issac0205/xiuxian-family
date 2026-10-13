@@ -42,6 +42,7 @@
       "mech-fold",
       "mech-foundation",
       "mech-garrison",
+      "mech-nascent",
       "mech-offline",
       "mech-percent",
       "mech-push",
@@ -50,6 +51,7 @@
       "mech-root",
       "mech-sect",
       "mech-shelf",
+      "mech-tribulation",
       "morality",
       "morality-change",
       "morality-human-pill",
@@ -60,6 +62,11 @@
       "realm-0",
       "rune",
       "school"
+    ],
+    "expeditions.js": [
+      "guji",
+      "qingshan",
+      "shenshan"
     ],
     "forge.js": [
       "armor",
@@ -140,6 +147,24 @@
       "valley",
       "wastes"
     ],
+    "markets.js": [
+      "gongfa",
+      "heishi",
+      "hidden",
+      "juling_zhenqi",
+      "lianqi_gongfa",
+      "lingkuang",
+      "liumin",
+      "poolblueprint",
+      "pozhang",
+      "pozhang_dan",
+      "qingmu",
+      "quzhangdan",
+      "shiji",
+      "wanxiang",
+      "yunshen",
+      "zhenqi"
+    ],
     "morality.js": [
       "demon",
       "heretic",
@@ -176,6 +201,9 @@
       "memory",
       "ring"
     ],
+    "resources.js": [
+      "silver"
+    ],
     "roots.js": [
       "dual",
       "earth",
@@ -211,24 +239,40 @@
       "arithmetic",
       "courier",
       "expansion",
+      "fanggu",
       "finance",
       "household",
+      "jiangnan_clan",
+      "jiangnan_rich",
       "jixian",
       "marketexp",
       "mutualmarket",
       "quzhang",
       "realestate",
       "seeker",
+      "sishu",
       "surveying",
       "trade",
       "tuntian",
       "vault",
       "xiangxian",
+      "xunxian",
       "yizhuang"
     ],
     "trade.js": [
       "mortal",
       "yunshen"
+    ],
+    "tribulation.js": [
+      "artifact",
+      "broken",
+      "calm",
+      "merit",
+      "perish",
+      "rune",
+      "shaken",
+      "territory",
+      "warden"
     ],
     "words.js": [
       "mol-001",

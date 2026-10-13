@@ -32,10 +32,14 @@ check('构建清单存在', Array.isArray(manifest) && manifest.length > 0, `${m
 {
   const shellHead = readFileSync('src/_shell-head.html', 'utf8');
   const EOL = shellHead.includes('\r\n') ? '\r\n' : '\n';
-  const rebuilt = shellHead
-    + readFileSync('src/_shell-pre.js', 'utf8')
-    + manifest.map((e) => `${e.marker}${EOL}${readFileSync(e.path, 'utf8')}${EOL}`).join('')
-    + readFileSync('src/_shell-tail.html', 'utf8');
+  // ⚠ 区块的换行必须先对齐到 EOL —— 与 scripts/build.mjs 同一口径。
+  //   【凡人篇 I3】整体重写过的区块（techs.js / progression.js）会落成 LF，
+  //   不归一的话这里会比出一个假的「忘了构建」。
+  const norm = (s) => s.replace(/\r?\n/g, EOL);
+  const rebuilt = norm(shellHead)
+    + norm(readFileSync('src/_shell-pre.js', 'utf8'))
+    + manifest.map((e) => `${e.marker}${EOL}${norm(readFileSync(e.path, 'utf8'))}${EOL}`).join('')
+    + norm(readFileSync('src/_shell-tail.html', 'utf8'));
   check('game.html 与 src/ 逐字节一致（没有忘记跑 build）', rebuilt === html,
     rebuilt === html ? '' : `相差 ${Math.abs(rebuilt.length - html.length)} 字符`);
 }
@@ -258,7 +262,11 @@ check('全新状态只露入门科技', (() => {
 
 // 解锁后下一代浮现：研习前置之前不可见 → 之后可见（两侧）
 check('研习前置后，后继科技随之出现', (() => {
-  const withParent = X.data.techs.find((t) => (t.requires || []).length);
+  // ⚠ 【凡人篇 I3】挑「有前置、且**没有**跨树前置」的那一项 ——
+  //   I3 之后 TECHS 的第一项带前置的科技是 tuntian（`requires:['household']`
+  //   之外还要仙道 yinling），拿它当样本会永远看不见，测出的失败与门控无关。
+  const withParent = X.data.techs.find(
+    (t) => (t.requires || []).length && !(t.requiresImmortal || []).length);
   if (!withParent) return false;                       // 数据表变了也要报警，不是静默通过
   const parentId = withParent.requires[0];
   const before = X.visible.techOf({ techs: [], immortalTechs: [], secrets: [] }, withParent, false);
@@ -5211,7 +5219,7 @@ check('仙道科技的效果只用了仙道侧的键（secretChance 除外，两
 {
   const CONSUMERS = {
     estateDiscount: 'estateDiscountTotal', birthFlat: 'birthRate', incomeMult: 'incomeMult',
-    tradeSpeed: 'tradeSpeed', fieldBonus: 'fieldBonus', tradeIncome: 'tradeIncome',
+    fieldBonus: 'fieldBonus', tradeIncome: 'tradeIncome',
     deathFlat: 'deathFlat', secretChance: 'secretChance', explorePerSecFlat: 'explorePerSecFlat',
     vaultMult: 'vaultMult',
     immortalCapFlat: 'cultivatorLimit', innateBirthMult: 'innateMult',
@@ -5411,6 +5419,195 @@ section('仙凡科技线：研习与咬合行为');
   S.exchangeCount = keep.exchange;
   S.population = keep.population;
   S.buildings = keep.buildings;
+}
+
+/* ══════════ 【凡人篇 I3】凡人科技树：三条路线 × 5 阶 ══════════
+ *
+ * 这一节守的是 I3 的三条硬约束：
+ *   ① 三条路线各 5 阶、每阶恰好一项、第 1 阶零前置（开局真的挑得了路）；
+ *   ② 第 5 阶三选一互斥（研习其一后，另两个必须被**拒绝并说明理由**）；
+ *   ③ 老 id 一个不少、`trade` 仍解锁驿馆、`tuntian`/`seeker` 的跨线位置未动；
+ * 外加 I1 留下的**两个死效果**必须真的被修掉（tradeSpeed 键消失、courier 生效）。
+ */
+section('凡人科技线 I3：三条路线 × 5 阶');
+
+{
+  const S = X.state;
+  const keep = {
+    techs: S.techs.slice(), silver: S.silver, secrets: S.secrets.slice(),
+    immortal: (S.immortalTechs || []).slice(), buildings: { ...S.buildings },
+    quiz: S.settings.quizMode,
+  };
+
+  const ROUTES = ['clan', 'rich', 'seek'];
+  const routeOf = (t) => t.route || 'base';
+  const ofRoute = (r) => d.techs.filter((t) => routeOf(t) === r);
+  const capstoneIds = ['xiangxian', 'jiangnan_rich', 'xunxian'];
+
+  // ── ① 结构：三条路线 × 5 阶 ──
+  check('凡人科技树是三条路线 × 5 阶（每阶恰好一项）', ROUTES.every((r) => {
+    const items = ofRoute(r);
+    return items.length === 5
+      && [1, 2, 3, 4, 5].every((k) => items.filter((t) => t.tier === k).length === 1);
+  }), ROUTES.map((r) => `${r}:${ofRoute(r).map((t) => `${t.id}@${t.tier}`).join(',')}`).join(' ｜ '));
+
+  check('每条路线的第 1 阶都零前置（开局即可挑路，不被仙道卡住）',
+    ROUTES.every((r) => {
+      const t1 = ofRoute(r).find((t) => t.tier === 1);
+      return t1 && !(t1.requires || []).length && !(t1.requiresImmortal || []).length;
+    }),
+    ROUTES.map((r) => ofRoute(r).find((t) => t.tier === 1).id).join(','));
+
+  check('每条路线内部逐级 require 上一阶（链不断）', ROUTES.every((r) => {
+    const items = ofRoute(r);
+    return [2, 3, 4, 5].every((k) => {
+      const t = items.find((x) => x.tier === k);
+      const prev = items.find((x) => x.tier === k - 1);
+      return (t.requires || []).includes(prev.id);
+    });
+  }), '把某条路线第 5 阶的前置删掉，这条会红');
+
+  check('三个第 5 阶就是那三块碑，且都带 exclusiveGroup',
+    capstoneIds.every((id) => {
+      const t = d.techs.find((x) => x.id === id);
+      return t && t.tier === 5 && t.terminal === true && t.exclusiveGroup === 'capstone';
+    }), capstoneIds.map((id) => {
+      const t = d.techs.find((x) => x.id === id) || {};
+      return `${id}:T${t.tier}${t.exclusiveGroup ? '/互斥' : ''}`;
+    }).join(' '));
+
+  // ── ② 新增 id 全在；老 id 一个不少 ──
+  const NEW_IDS = ['jiangnan_clan', 'jiangnan_rich', 'sishu', 'fanggu', 'xunxian'];
+  check('I3 新增的 5 个 id 全部出现在 techs.js', NEW_IDS.every((id) => d.techs.some((t) => t.id === id)),
+    NEW_IDS.filter((id) => !d.techs.some((t) => t.id === id)).join(',') || `5/5（现有 ${d.techs.length} 项）`);
+
+  const OLD_IDS = ['realestate', 'architecture', 'finance', 'expansion', 'surveying', 'household',
+    'trade', 'tuntian', 'seeker', 'arithmetic', 'courier', 'vault', 'quzhang', 'marketexp',
+    'yizhuang', 'jixian', 'xiangxian', 'mutualmarket'];
+  const lostOld = OLD_IDS.filter((id) => !d.techs.some((t) => t.id === id));
+  check('I3 不许删/改老 id：18 个老 id 一个不少（改名 = 老存档解锁内容静默消失）',
+    lostOld.length === 0, lostOld.join(',') || `18/18（${d.techs.length} 项）`);
+
+  // ── ③ trade 仍解锁驿馆（探索名额的唯一来源）──
+  check('trade 科技仍解锁驿馆 caravan（双向对齐 + 玩家路径上真的能建）', (() => {
+    const b = d.buildings.find((x) => x.id === 'caravan');
+    const t = d.techs.find((x) => x.id === 'trade');
+    if (!b || !t || b.tech !== 'trade' || t.unlocksBuilding !== 'caravan') return false;
+    const base = ['realestate', 'architecture', 'finance', 'expansion'];
+    S.techs = base.slice();
+    const locked = X.derive().unlocked.caravan;
+    S.techs = base.concat('trade');
+    const open = X.derive().unlocked.caravan;
+    return locked === false && open === true;
+  })(), '切断 trade→caravan 就等于断掉探索名额与秘闻的唯一来源');
+
+  // ── ④ tuntian / seeker 的跨线位置一个字没动 ──
+  check('tuntian 与 seeker 仍在凡人侧，且仙道侧的 required-by 未变', (() => {
+    const lingtian = d.immortalTechs.find((t) => t.id === 'lingtian');
+    const lingmai = d.immortalTechs.find((t) => t.id === 'lingmai');
+    return Boolean(d.techs.find((t) => t.id === 'tuntian'))
+      && Boolean(d.techs.find((t) => t.id === 'seeker'))
+      && (lingtian.requires || []).includes('tuntian')
+      && (lingmai.requires || []).includes('seeker')
+      && X.immortal.crossLinks().length >= 6;
+  })(), `跨树咬合点 ${X.immortal.crossLinks().length} 处`);
+
+  // ── ⑤ 第 5 阶三选一互斥（走玩家真正走的那条路：ui.actions.research）──
+  {
+    S.techs = ['household', 'tuntian', 'yizhuang', 'jiangnan_clan',
+      'realestate', 'finance', 'vault', 'arithmetic', 'marketexp',
+      'seeker', 'jixian', 'sishu', 'fanggu',
+      'architecture', 'surveying', 'expansion', 'trade', 'courier'];
+    S.silver = 1e9;
+    S.secrets = Array.from({ length: 10 }, (_, i) => i);
+    S.immortalTechs = [];
+    S.settings.quizMode = 'off';
+
+    check('三块碑在研习之前都是「可研习」（互斥不锁死选择本身）',
+      capstoneIds.every((id) => X.tech.status(id) === 'ready'),
+      capstoneIds.map((id) => `${id}:${X.tech.status(id)}`).join(' '));
+
+    const picked = ui.actions.research('xiangxian');
+    const other1 = ui.actions.research('jiangnan_rich');
+    const other2 = ui.actions.research('xunxian');
+
+    check('玩家路径：研习「百年望族」成功',
+      picked.ok === true && picked.id === 'xiangxian' && S.techs.includes('xiangxian'),
+      picked.ok ? `ok（耗银 ${picked.cost}）` : picked.reason);
+
+    check('三选一互斥：研习其一后，另两个被拒绝且理由是「择一」',
+      other1.ok === false && other2.ok === false
+        && /择一/.test(other1.reason || '') && /择一/.test(other2.reason || ''),
+      `江南巨富→${other1.ok ? '竟然放行' : other1.reason} ｜ 寻仙世家→${other2.ok ? '竟然放行' : other2.reason}`);
+
+    check('互斥在状态层也成立：另两个变成 locked，且没被写进 techs',
+      X.tech.status('jiangnan_rich') === 'locked' && X.tech.status('xunxian') === 'locked'
+        && !S.techs.includes('jiangnan_rich') && !S.techs.includes('xunxian'),
+      `status=${X.tech.status('jiangnan_rich')}/${X.tech.status('xunxian')}｜techs=${S.techs.length} 项`);
+
+    check('互斥在 commit 层也拦得住（绕过 plan 直接兑现同样被拒）', (() => {
+      const before = S.techs.length;
+      const r = X.engine.commitResearch('xunxian');
+      return r.ok === false && S.techs.length === before && /择一/.test(r.reason || '');
+    })(), 'plan 拦一次、commit 再拦一次，免得「先算好的 plan 后来才兑现」绕过互斥');
+  }
+
+  // ── ⑥ I1 留下的两个死效果必须真的被修掉 ──
+  check('tradeSpeed 键彻底消失（累加器 / 界面文案 / 数据表三处都不在）', (() => {
+    return !d.mortalEffectKeys.includes('tradeSpeed')
+      && !d.effectLabels.tradeSpeed
+      && !d.techs.some((t) => Object.prototype.hasOwnProperty.call(t.effect || {}, 'tradeSpeed'));
+  })(), '留一个没有消费者的键 = docs/15 §八 点名的静默失败');
+
+  check('驿道（courier）现在真的有效果：研习后秘闻概率上升', (() => {
+    S.techs = ['realestate', 'architecture', 'surveying', 'finance', 'expansion', 'trade'];
+    const before = X.derive().fx.secretChance;
+    S.techs = S.techs.concat('courier');
+    const after = X.derive().fx.secretChance;
+    return after > before;
+  })(), `原挂 tradeSpeed（商队耗时），I1 商队取消后没有消费者 —— 现改挂探索秘闻概率`);
+
+  check('探秘者（seeker）的 tradeIncome 仍然生效（消费方是探索结算，不是旧商路）', (() => {
+    S.techs = [];
+    const base = X.derive().fx.tradeIncome;
+    S.techs = ['seeker'];
+    const withSeeker = X.derive().fx.tradeIncome;
+    return withSeeker < base;
+  })(), 'tradeIncome 的消费方是 formulas.expeditionReward（探索归来结算 + 界面报价）');
+
+  check('文案口径已改到「探索」：界面上不再有「商路 / 商队」', (() => {
+    const page = document.querySelector('.page[data-page="techs"]');
+    const txt = (page && page.textContent) || '';
+    return txt.indexOf('商队') < 0 && txt.indexOf('商路') < 0;
+  })(), 'techs.js 的 desc、EFFECT_LABELS、静态骨架三处都要改口径');
+
+  // ── ⑦ 界面结构 + 可见性门控（开局只露三条路线的第 1 阶）──
+  check('界面：三条路线各有一个 data-route 分组（外加共业组）', (() => {
+    const groups = [...document.querySelectorAll('#tech-list .tech-group')];
+    const routes = groups.map((g) => g.dataset.route);
+    return ROUTES.every((r) => routes.includes(r));
+  })(), [...document.querySelectorAll('#tech-list .tech-group')].map((g) => g.dataset.route).join(','));
+
+  check('界面：每一行都带 data-route / data-tier', (() => {
+    const rows = [...document.querySelectorAll('#tech-list .tech[data-tech]')];
+    return rows.length === d.techs.length
+      && rows.every((r) => r.dataset.route && r.dataset.tier);
+  })(), `${document.querySelectorAll('#tech-list .tech[data-tech]').length} / ${d.techs.length}`);
+
+  check('可见性门控仍有效：开局只露三条路线的第 1 阶（第 2 阶不出现）', (() => {
+    const fresh = { techs: [], immortalTechs: [], secrets: [] };
+    const shown = d.techs.filter((t) => X.visible.techOf(fresh, t, false)).map((t) => t.id).sort();
+    const want = d.techs.filter((t) => routeOf(t) !== 'base' && t.tier === 1).map((t) => t.id).sort();
+    return sameIds(shown, want) && want.length === 3;
+  })(), '门控若失效（全露），这条会红：开局就能看见第 2–5 阶');
+
+  // 恢复
+  S.techs = keep.techs;
+  S.silver = keep.silver;
+  S.secrets = keep.secrets;
+  S.immortalTechs = keep.immortal;
+  S.buildings = keep.buildings;
+  S.settings.quizMode = keep.quiz;
 }
 
 section('仙凡经济：城市作坊与兑率');
