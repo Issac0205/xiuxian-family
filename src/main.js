@@ -493,6 +493,14 @@ window.addEventListener('beforeunload', persist);
 
 // 便于调试：控制台可访。__xiuxian.state
 window.__xiuxian = {
+  /** 【架构 · 第 1 轮】事件总线。系统之间靠它解耦；测试与自查读它。 */
+  bus: {
+    events: GAME_EVENTS, on, off: offEvent, emit: emitEvent,
+    listenerCount, snapshot: busSnapshot, reset: resetEventBus,
+  },
+  /** 【架构 · 第 1 轮】修士入册：让测试能走**真实路径**触发事件，
+   *  而不是在测试里自己造一份状态（造状态就测不到接线）。 */
+  joinCultivator: (s) => addCultivator(s || state),
   get state() { return state; },
   get ui() { return ui; },
   /** 界面上所有可发起的操作，控制台里可以直接调定*/

@@ -6328,5 +6328,70 @@ section('名册容量与凡人人口（复现用户报告的离线暴涨）');
     Boolean(rep) && rep.seconds > 0, `seconds=${rep && rep.seconds}`);
 }
 
+/* ══════════════════════ 事件总线（架构 · 第 1 轮） ══════════════════════ */
+
+section('事件总线：系统之间互不知道');
+// 【用户建议 · 第三阶段】系统不该横向调用（修士系统不该知道族谱存在）。
+// 这一轮把「修士入册」的日志**从系统里搬进订阅者**，文案与顺序要求逐字不变。
+{
+  const domE = installDOM(html);
+  new Function(code)();
+  const XE = globalThis.window.__xiuxian;
+  const bus = XE.bus;
+  check('事件总线已挂到调试出口',
+    Boolean(bus) && typeof bus.on === 'function' && typeof bus.emit === 'function');
+
+  // ① 投递与退订
+  let got = 0;
+  const offA = bus.on(bus.events.PILL_CRAFTED, () => { got += 1; });
+  bus.emit(bus.events.PILL_CRAFTED, {});
+  check('emit 会调到订阅者', got === 1, `got=${got}`);
+  offA();
+  bus.emit(bus.events.PILL_CRAFTED, {});
+  check('退订之后不再收到', got === 1, `got=${got}`);
+
+  // ② 硬约束 1：订阅者抛错**不许**影响 emit 的调用方，且后面的订阅者照收
+  let after = false;
+  const offB = bus.on(bus.events.PILL_CRAFTED, () => { throw new Error('订阅者故意炸'); });
+  const offC = bus.on(bus.events.PILL_CRAFTED, () => { after = true; });
+  let threw = null;
+  try { bus.emit(bus.events.PILL_CRAFTED, {}); } catch (e) { threw = e; }
+  offB(); offC();
+  check('订阅者抛错不会把 emit 的调用方炸掉（错误隔离）',
+    threw === null, threw ? String(threw.message) : '（未抛出）');
+  check('一个订阅者炸了，后面的订阅者仍然收到', after === true);
+
+  // ③ 真事件：走**生产路径**入册一位修士，族谱文案必须与旧实现逐字相同
+  const logHead = () => (XE.state.log && XE.state.log[0] && XE.state.log[0].text) || '';
+  const before = logHead();
+  XE.state.population = 9000;                 // 名额足够（1000 人 1 位）
+  XE.state.cultivation.cultivators = [];
+  XE.state.cultivation.nextId = 1;
+  XE.state.cultivation.qi = 0;
+  const seen = [];
+  const offD = bus.on(bus.events.CULTIVATOR_JOINED, (e) => seen.push(e));
+  const joined = XE.joinCultivator(XE.state);
+  offD();
+  check('加入一位修士会广播 CULTIVATOR_JOINED', seen.length === 1, `广播 ${seen.length} 次`);
+  check('广播带上了入册所需的字段（name / qi）',
+    Boolean(seen[0]) && seen[0].qi === 1 && seen[0].name === joined.name,
+    `qi=${seen[0] && seen[0].qi} name=${seen[0] && seen[0].name}`);
+  check('族谱真的被订阅者写进去了（不是只有广播）',
+    logHead() !== before && /成为家族第 1 位炼气修士/.test(logHead()), `「${logHead()}」`);
+  check('日志文案与旧实现逐字一致',
+    logHead() === `${joined.name}祛障成功，成为家族第 1 位炼气修士。`, `「${logHead()}」`);
+
+  // ④ 阳性对照：清空订阅后再入册一人 —— **不该再写日志**。
+  //    若这条为假，说明系统里还留着一份直接 pushLog 的旧代码没搬走。
+  check('（阳性对照）清空订阅后同样入册，却不再写日志 ⇒ 日志确实是订阅者写的',
+    (() => {
+      bus.reset();
+      const t0 = logHead();
+      XE.state.population = 9000;
+      const p = XE.joinCultivator(XE.state);
+      return Boolean(p) && logHead() === t0;
+    })(), '为假就说明「一处改了另一处没改」');
+}
+
 console.log(failed === 0 ? '\n全部通过 ✓\n' : `\n${failed} 项未通过 ✗\n`);
 process.exit(failed ? 1 : 0);

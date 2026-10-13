@@ -4,6 +4,16 @@
     "marker": "/* ══════════ src/core/config.js ══════════ */"
   },
   {
+    "comment": "【架构 · 第 1 轮】事件总线。放在最前：所有系统运行时都可能用它；纯内存，不碰 state 与 DOM。",
+    "path": "src/core/eventBus.js",
+    "marker": "/* ══════════ src/core/eventBus.js ══════════ */"
+  },
+  {
+    "comment": "【架构 · 第 1 轮】族谱以**订阅者**身份存在（修士入册的日志文案原样搬来此处）。跟着 eventBus 排，保证订阅先于任何 emit 注册。",
+    "path": "src/systems/chronicle.js",
+    "marker": "/* ══════════ src/systems/chronicle.js ══════════ */"
+  },
+  {
     "path": "src/core/format.js",
     "marker": "/* ══════════ src/core/format.js ══════════ */"
   },

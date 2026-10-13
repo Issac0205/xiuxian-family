@@ -201,6 +201,10 @@ function commitCraft(state, recipeId, now = Date.now(), rng = Math.random) {
 
   if (rng() >= plan.rate) {
     // 失败不掉熟练度，但也不涨 —— 只是白费一炉材料
+    // 【架构 · 第 1 轮】广播出去，谁关心（族谱/成就/统计）谁自己订阅。
+    emitEvent(GAME_EVENTS.PILL_CRAFT_FAILED, {
+      state, recipeId: r.id, name: r.name, rate: plan.rate,
+    });
     return {
       ok: true, success: false, name: r.name,
       reason: `炼${r.name}失败（成功率 ${(plan.rate * 100).toFixed(0)}%），一炉药材尽废`,
@@ -211,6 +215,10 @@ function commitCraft(state, recipeId, now = Date.now(), rng = Math.random) {
   const before = proficiency(state, r.id);
   a.prof[r.id] = Math.min(ALCHEMY_PROFICIENCY_MAX, before + 1);
   const now2 = proficiency(state, r.id);
+  // 【架构 · 第 1 轮】同上：广播「炼成一炉」。
+  emitEvent(GAME_EVENTS.PILL_CRAFTED, {
+    state, recipeId: r.id, name: r.name, n: plan.out, prof: now2, profUp: now2 > before,
+  });
   return {
     ok: true, success: true, name: r.name, out: plan.out,
     prof: now2, profUp: now2 > before,

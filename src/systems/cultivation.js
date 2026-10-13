@@ -352,9 +352,14 @@ function addCultivator(state, origin='awakened', now=Date.now(), silent=false, p
   c.unlocked=true;
   if(parentage!=='cultivator-cultivator')state.population=Math.max(0,state.population-1); // 修士×凡人：出生的凡人转入修士人口；两修士家庭则直接生下修士
   if (!silent) {
-    pushLog(state,person.origin==='innate'?
-      `天降灵根！${person.name}生而通灵，成为家族第 ${c.qi} 位炼气修士。`:
-      `${person.name}祛障成功，成为家族第 ${c.qi} 位炼气修士。`, 'cultivate',null,now);
+    // 【架构 · 第 1 轮】这里**不再直接写族谱**。原来这一行是 pushLog(...)，
+    //   于是修士系统必须知道族谱存在；现在只广播「有人入册」，
+    //   族谱（systems/chronicle.js）自己订阅。
+    //   ⚠ emit 的位置与原来的 pushLog **同一行位置**，订阅者同步执行 ⇒ 顺序不变。
+    //   payload 带上 state 只是方便订阅者落库，事件本身不含业务判断。
+    emitEvent(GAME_EVENTS.CULTIVATOR_JOINED, {
+      state, name: person.name, qi: c.qi, innate: person.origin === 'innate', now,
+    });
   }
   return person;
 }
